@@ -142,6 +142,13 @@ Design (layered):
 - Optional `upload_and_wait(...)` convenience polls until terminal state.
 - Flow: `upload` → `id_încărcare`; poll `stareMesaj` (`în prelucrare` → `ok`/`nok`);
   `descărcare` → ZIP (signed invoice + ANAF signature).
+- **Listing is one async iterator.** `list_messages` (window by `days` **or**
+  `start`/`end`) pages `listaMesajePaginatieFactura` under the hood and yields each
+  `MessageListItem`; it replaces the old `list_messages` + `list_messages_paged` pair.
+  ANAF overloads its `eroare` field for both "no messages" and real errors, so the former
+  yields an **empty iterator** and the latter **raises `AnafResponseError`** (wording-matched
+  via `is_empty_result_message`; the total-pages field is inferred, so an empty page is the
+  real stop). `ETransportClient.list_notifications` mirrors the shape.
 - **Inbound**: `list_messages` doubles as the received-invoice inbox; `download` plus the
   UBL→flat reader yields the `FlatInvoice` read view of supplier invoices issued to you.
 

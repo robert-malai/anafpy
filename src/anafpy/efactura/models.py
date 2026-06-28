@@ -27,7 +27,6 @@ __all__ = [
     "FlatInvoice",
     "FlatInvoiceLine",
     "FlatParty",
-    "MessageList",
     "MessageListItem",
     "MessageState",
     "MessageStatus",
@@ -131,15 +130,6 @@ class MessageListItem(BaseModel):
     cif_emitent: _StrNone = None
     cif_beneficiar: _StrNone = None
     detalii: _StrNone = None
-
-
-class MessageList(BaseModel):
-    """A page of messages. ``error`` holds ANAF's informational note (e.g. "no
-    messages in interval") when the list is empty."""
-
-    messages: list[MessageListItem] = []
-    error: str | None = None
-    raw: bytes = b""
 
 
 def parse_ubl_document(xml: bytes) -> Invoice | CreditNote | None:

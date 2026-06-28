@@ -7,6 +7,7 @@ import io
 import json
 import time
 import zipfile
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import httpx
@@ -35,7 +36,7 @@ from anafpy.efactura.ubl.common.ubl_common_basic_components_2_1 import (
     IssueDate,
     PayableAmount,
 )
-from anafpy.exceptions import AnafRateLimitError, AnafResponseError
+from anafpy.exceptions import AnafConfigError, AnafRateLimitError, AnafResponseError
 
 BASE = "https://api.anaf.ro/test/FCTEL/rest"
 
@@ -196,45 +197,115 @@ async def test_download_preserves_raw_and_parses_invoice() -> None:
 # --- lists ----------------------------------------------------------------------------
 
 
-@respx.mock
-async def test_list_messages_parses_items_and_filter_param() -> None:
-    payload = {
-        "mesaje": [
-            {
-                "id": "18",
-                "id_solicitare": "3828",
-                "tip": "FACTURA TRIMISA",
-                "data_creare": "202606281200",
-                "cif_emitent": "123",
-                "cif_beneficiar": "456",
-                "detalii": "ok",
-            }
-        ],
-        "titlu": "Lista",
-    }
-    route = respx.get(f"{BASE}/listaMesajeFactura").mock(
-        return_value=httpx.Response(200, json=payload)
-    )
-    async with _client() as client:
-        result = await client.list_messages(days=30, cif="123", filter=Filter.SENT)
-
-    assert len(result.messages) == 1
-    item = result.messages[0]
-    assert item.id == "18" and item.id_solicitare == "3828"
-    assert item.tip == "FACTURA TRIMISA"
-    params = dict(route.calls.last.request.url.params)
-    assert params == {"zile": "30", "cif": "123", "filtru": "T"}
+def _msg(idx: str) -> dict[str, object]:
+    return {"id": idx, "id_solicitare": "3828", "tip": "FACTURA TRIMISA"}
 
 
 @respx.mock
-async def test_list_messages_empty_keeps_anaf_note() -> None:
-    respx.get(f"{BASE}/listaMesajeFactura").mock(
-        return_value=httpx.Response(200, json={"eroare": "Nu exista mesaje"})
+async def test_list_messages_days_window_drives_paginated_endpoint() -> None:
+    route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        side_effect=[
+            httpx.Response(200, json={"mesaje": [_msg("18")]}),
+            httpx.Response(200, json={"mesaje": []}),  # terminates the walk
+        ]
     )
     async with _client() as client:
-        result = await client.list_messages(days=5, cif="123")
-    assert result.messages == []
-    assert result.error == "Nu exista mesaje"
+        items = [
+            m
+            async for m in client.list_messages(days=30, cif="123", filter=Filter.SENT)
+        ]
+
+    assert [m.id for m in items] == ["18"]
+    first = dict(route.calls[0].request.url.params)
+    assert first["cif"] == "123" and first["pagina"] == "1" and first["filtru"] == "T"
+    # days=30 maps to a 30-day millisecond window.
+    assert int(first["endTime"]) - int(first["startTime"]) == 30 * 86_400_000
+
+
+@respx.mock
+async def test_list_messages_explicit_range_passes_exact_ms() -> None:
+    start = datetime(2026, 6, 1, tzinfo=UTC)
+    end = datetime(2026, 6, 29, tzinfo=UTC)
+    route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        return_value=httpx.Response(200, json={"mesaje": []})
+    )
+    async with _client() as client:
+        items = [m async for m in client.list_messages(start=start, end=end, cif="9")]
+
+    assert items == []
+    params = dict(route.calls[0].request.url.params)
+    assert params["startTime"] == str(int(start.timestamp() * 1000))
+    assert params["endTime"] == str(int(end.timestamp() * 1000))
+
+
+@respx.mock
+async def test_list_messages_paginates_until_empty_page() -> None:
+    route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        side_effect=[
+            httpx.Response(200, json={"mesaje": [_msg("1"), _msg("2")]}),
+            httpx.Response(200, json={"mesaje": [_msg("3")]}),
+            httpx.Response(200, json={"mesaje": []}),
+        ]
+    )
+    async with _client() as client:
+        items = [m async for m in client.list_messages(days=10, cif="123")]
+
+    assert [m.id for m in items] == ["1", "2", "3"]
+    assert [c.request.url.params["pagina"] for c in route.calls] == ["1", "2", "3"]
+
+
+@respx.mock
+async def test_list_messages_honours_total_pages_field() -> None:
+    route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        return_value=httpx.Response(
+            200, json={"mesaje": [_msg("1")], "numar_total_pagini": 1}
+        )
+    )
+    async with _client() as client:
+        items = [m async for m in client.list_messages(days=10, cif="123")]
+
+    assert len(items) == 1
+    assert route.call_count == 1  # stopped on total_pages, no extra empty request
+
+
+@respx.mock
+async def test_list_messages_empty_window_yields_nothing() -> None:
+    route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        return_value=httpx.Response(
+            200, json={"eroare": "Nu există mesaje în interval"}
+        )
+    )
+    async with _client() as client:
+        items = [m async for m in client.list_messages(days=5, cif="123")]
+    assert items == []
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_list_messages_real_error_raises() -> None:
+    respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        return_value=httpx.Response(200, json={"eroare": "CIF invalid"})
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError) as ei:
+            [m async for m in client.list_messages(days=5, cif="bad")]
+    assert ei.value.status_code == 200
+    assert "CIF invalid" in str(ei.value)
+
+
+def test_list_messages_window_args_are_validated() -> None:
+    client = _client()
+    with pytest.raises(AnafConfigError):  # both windows
+        client.list_messages(
+            cif="1",
+            days=5,
+            start=datetime(2026, 6, 1, tzinfo=UTC),
+            end=datetime(2026, 6, 2, tzinfo=UTC),
+        )
+    with pytest.raises(AnafConfigError):  # no window
+        client.list_messages(cif="1")
+    with pytest.raises(AnafConfigError):  # out-of-range days
+        client.list_messages(cif="1", days=61)
 
 
 # --- errors & auth --------------------------------------------------------------------

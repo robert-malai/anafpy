@@ -31,7 +31,6 @@ __all__ = [
     "MessageState",
     "MessageStatus",
     "Notification",
-    "NotificationList",
     "NotificationMessage",
     "UploadResult",
     "parse_etransport_document",
@@ -131,14 +130,6 @@ class Notification(BaseModel):
     gr_tot_bruta: _StrNone = None
     val_tot: _StrNone = None
     mesaje: list[NotificationMessage] = []
-
-
-class NotificationList(BaseModel):
-    """Response from ``GET lista/{zile}/{cif}``."""
-
-    notifications: list[Notification] = []
-    error: str | None = None
-    raw: bytes = b""
 
 
 class Location(BaseModel):

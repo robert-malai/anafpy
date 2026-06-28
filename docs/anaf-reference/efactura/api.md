@@ -176,8 +176,7 @@ Both files come from the `descarcare` ZIP.
 | `upload(xml, standard, cif, *, extern, autofactura, executare)` | `POST /FCTEL/rest/upload` |
 | `upload_b2c(...)` | `POST /FCTEL/rest/uploadb2c` |
 | `get_status(index)` | `GET /FCTEL/rest/stareMesaj` |
-| `list_messages(days, cif, filter=None)` | `GET /FCTEL/rest/listaMesajeFactura` |
-| `list_messages_paged(start, end, cif, page, filter=None)` | `GET /FCTEL/rest/listaMesajePaginatieFactura` |
+| `list_messages(cif, *, days \| start+end, filter=None)` → `AsyncIterator[MessageListItem]` | `GET /FCTEL/rest/listaMesajePaginatieFactura` (paged internally) |
 | `download(id)` → `DownloadedMessage` | `GET /FCTEL/rest/descarcare` |
 | `validate_remote(xml, standard)` | `POST /FCTEL/rest/validare/{std}` |
 | `to_pdf(xml, standard, validate=True)` | `POST /FCTEL/rest/transformare/{std}` |
@@ -187,6 +186,14 @@ Both files come from the `descarcare` ZIP.
 
 - Upload/validate/transform bodies are **`Content-Type: text/plain`** with the XML as
   the raw body (per the PDF), despite being XML — follow the spec, not intuition.
+- **Listing**: `list_messages` is a single async iterator that pages
+  `listaMesajePaginatieFactura` under the hood (`days` is converted to a `[now-days, now]`
+  millisecond window; the non-paginated `listaMesajeFactura` (3a) is not used). It stops
+  on the first empty page (and honours a total-pages field if present). ANAF returns the
+  same `eroare` field for both "no messages in interval" and genuine errors — the former
+  yields an **empty iterator**, the latter **raises `AnafResponseError`** (matched by
+  wording; see `is_empty_result_message`). ⚠️ The paginated response's total-page field
+  name is **inferred, not confirmed against live TEST**.
 - `download` returns a **ZIP** (binary) — handle as bytes, unzip to the two XML members.
 - The public `webservicesp.anaf.ro` no-auth `validare`/`transformare` could power a
   zero-credential "lint my invoice" path; keep behind the same `Validator` seam.

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import xml.etree.ElementTree as ET
+from collections.abc import AsyncIterator
 from types import TracebackType
 from typing import Self
 
@@ -25,16 +26,25 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from .._transport.base import Environment, Service, service_base_url
+from .._transport.base import (
+    Environment,
+    Service,
+    is_empty_result_message,
+    service_base_url,
+)
 from ..auth.provider import AnafAuth, TokenProvider
-from ..exceptions import AnafRateLimitError, AnafResponseError, AnafTransportError
+from ..exceptions import (
+    AnafConfigError,
+    AnafRateLimitError,
+    AnafResponseError,
+    AnafTransportError,
+)
 from .models import (
     InfoItem,
     InfoList,
     MessageState,
     MessageStatus,
     Notification,
-    NotificationList,
     UploadResult,
 )
 
@@ -192,17 +202,37 @@ class ETransportClient:
         state = MessageState.from_raw(raw_state)
         return MessageStatus(state=state, errors=errors, raw=body)
 
-    async def list_notifications(self, *, days: int, cif: str) -> NotificationList:
-        """List transport notifications for the last ``days`` (1-60) for ``cif``."""
+    def list_notifications(self, *, days: int, cif: str) -> AsyncIterator[Notification]:
+        """Iterate transport notifications from the last ``days`` (1-60) for ``cif``.
+
+        Yields each :class:`Notification`; an empty window yields nothing. The
+        ``lista`` endpoint is not paginated, so this is a single request under the hood.
+
+        Consume with ``async for``. Raises :class:`AnafConfigError` for a bad ``days``
+        (eagerly), and :class:`AnafResponseError` if ANAF reports a genuine list error
+        (a benign "no notifications" note yields an empty iterator instead).
+        """
+        if not 1 <= days <= 60:
+            raise AnafConfigError("list_notifications: `days` must be between 1 and 60")
+        return self._iter_notifications(days, cif)
+
+    async def _iter_notifications(
+        self, days: int, cif: str
+    ) -> AsyncIterator[Notification]:
         response = await self._request("GET", f"lista/{days}/{cif}")
-        return self._parse_list(response.content)
+        for notification in self._parse_notifications(response.content):
+            yield notification
 
     @staticmethod
-    def _parse_list(body: bytes) -> NotificationList:
+    def _parse_notifications(body: bytes) -> list[Notification]:
+        """Parse a ``lista`` response to notifications.
+
+        Raises :class:`AnafResponseError` when ANAF's ``eroare`` is a real error; a
+        benign "no notifications" note returns an empty list.
+        """
         data = json.loads(body)
         if isinstance(data, list):
             raw_items = data
-            error = None
         else:
             raw_items = (
                 data.get("found")
@@ -211,12 +241,15 @@ class ETransportClient:
                 or []
             )
             error = data.get("eroare") or data.get("error")
-        notifications = [Notification.model_validate(item) for item in raw_items]
-        return NotificationList(
-            notifications=notifications,
-            error=str(error) if error is not None else None,
-            raw=body,
-        )
+            if not raw_items and error is not None:
+                if is_empty_result_message(str(error)):
+                    return []
+                raise AnafResponseError(
+                    f"ANAF e-Transport list error: {error}",
+                    status_code=200,
+                    body=_as_text(body),
+                )
+        return [Notification.model_validate(item) for item in raw_items]
 
     async def info(
         self,

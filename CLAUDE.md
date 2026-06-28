@@ -143,6 +143,10 @@ Hybrid, per design — do not collapse it:
 - **Business outcomes** (e-Factura `nok`/`REJECTED`, upload rejections with BR-RO
   findings) are returned as **typed values** (e.g. `UploadResult.accepted is False`,
   `MessageStatus.state`), never raised.
+- **Listing** (`list_messages` / `list_notifications`) is the one place a 200-with-`eroare`
+  is split: ANAF overloads `eroare` for both "no results" and real errors, so a no-results
+  note yields an **empty iterator** while a genuine list error **raises `AnafResponseError`**
+  (`status_code=200`). The classifier is `_transport.base.is_empty_result_message`.
 
 ## Generated code — do not hand-edit
 

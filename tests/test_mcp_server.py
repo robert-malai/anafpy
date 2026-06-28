@@ -11,6 +11,7 @@ import base64
 import json
 import time
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -89,12 +90,33 @@ async def test_auth_status_authenticated(tmp_path: Path) -> None:
 
 @respx.mock
 async def test_efactura_list_messages(tmp_path: Path) -> None:
-    respx.get(f"{EFACTURA}/listaMesajeFactura").mock(
-        return_value=httpx.Response(200, json={"mesaje": [{"id": "1", "tip": "T"}]})
+    respx.get(f"{EFACTURA}/listaMesajePaginatieFactura").mock(
+        side_effect=[
+            httpx.Response(200, json={"mesaje": [{"id": "1", "tip": "T"}]}),
+            httpx.Response(200, json={"mesaje": []}),
+        ]
     )
     server = create_server(_config(tmp_path))
     out = await _call(server, "efactura_list_messages", days=7)
     assert out["messages"][0]["id"] == "1"
+    assert out["count"] == 1
+
+
+@respx.mock
+async def test_efactura_list_messages_date_range(tmp_path: Path) -> None:
+    route = respx.get(f"{EFACTURA}/listaMesajePaginatieFactura").mock(
+        side_effect=[
+            httpx.Response(200, json={"mesaje": [{"id": "9", "tip": "T"}]}),
+            httpx.Response(200, json={"mesaje": []}),
+        ]
+    )
+    server = create_server(_config(tmp_path))
+    out = await _call(
+        server, "efactura_list_messages", start="2026-06-01", end="2026-06-29"
+    )
+    assert out["count"] == 1
+    params = dict(route.calls[0].request.url.params)
+    assert params["startTime"] == str(int(datetime(2026, 6, 1).timestamp() * 1000))
 
 
 @respx.mock

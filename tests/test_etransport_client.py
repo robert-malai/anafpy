@@ -17,7 +17,11 @@ from anafpy.etransport import (
     ETransportClient,
     MessageState,
 )
-from anafpy.exceptions import AnafRateLimitError, AnafResponseError
+from anafpy.exceptions import (
+    AnafConfigError,
+    AnafRateLimitError,
+    AnafResponseError,
+)
 
 BASE = "https://api.anaf.ro/test/ETRANSPORT/ws/v1"
 
@@ -188,28 +192,8 @@ async def test_list_notifications_parses_json_array() -> None:
             "tip": "NOT",
             "stare": "OK",
             "uit": "UITABC",
-            "cod_decl": "1",
-            "ref_decl": "REF1",
-            "post_avarie": "N",
-            "sursa": "A",
-            "id_incarcare": "5001",
-            "data_creare": "20260628120000",
-            "data_modif": "20260628120500",
             "tip_op": "10",
-            "data_transp": "20260630",
-            "pc_tara": "RO",
-            "pc_cod": "RO12345",
-            "pc_den": "Partner SRL",
-            "tr_tara": "RO",
-            "tr_cod": "TR123",
-            "tr_den": "Transport SRL",
             "nr_veh": "B01ABC",
-            "nr_rem1": None,
-            "nr_rem2": None,
-            "nr_linii": "3",
-            "gr_tot_neta": "1000.00",
-            "gr_tot_bruta": "1100.00",
-            "val_tot": "5000.00",
             "mesaje": [],
         }
     ]
@@ -217,28 +201,45 @@ async def test_list_notifications_parses_json_array() -> None:
         return_value=httpx.Response(200, json=payload)
     )
     async with _client() as client:
-        result = await client.list_notifications(days=30, cif="123456789")
+        items = [n async for n in client.list_notifications(days=30, cif="123456789")]
 
     assert route.called
-    assert len(result.notifications) == 1
-    n = result.notifications[0]
+    assert len(items) == 1
+    n = items[0]
     assert n.tip == "NOT"
     assert n.stare == "OK"
     assert n.uit == "UITABC"
     assert n.tip_op == "10"
     assert n.nr_veh == "B01ABC"
-    assert result.error is None
 
 
 @respx.mock
-async def test_list_notifications_wrapped_object_with_error() -> None:
-    respx.get(f"{BASE}/lista/5/123").mock(
+async def test_list_notifications_empty_window_yields_nothing() -> None:
+    route = respx.get(f"{BASE}/lista/5/123").mock(
         return_value=httpx.Response(200, json={"eroare": "Nu exista notificari"})
     )
     async with _client() as client:
-        result = await client.list_notifications(days=5, cif="123")
-    assert result.notifications == []
-    assert result.error == "Nu exista notificari"
+        items = [n async for n in client.list_notifications(days=5, cif="123")]
+    assert items == []
+    assert route.called
+
+
+@respx.mock
+async def test_list_notifications_real_error_raises() -> None:
+    respx.get(f"{BASE}/lista/5/123").mock(
+        return_value=httpx.Response(200, json={"eroare": "CUI invalid"})
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError) as ei:
+            [n async for n in client.list_notifications(days=5, cif="123")]
+    assert ei.value.status_code == 200
+    assert "CUI invalid" in str(ei.value)
+
+
+async def test_list_notifications_validates_days() -> None:
+    client = _client()
+    with pytest.raises(AnafConfigError):
+        client.list_notifications(days=0, cif="1")
 
 
 @respx.mock
@@ -247,7 +248,8 @@ async def test_list_notifications_uses_path_params() -> None:
         return_value=httpx.Response(200, json=[])
     )
     async with _client() as client:
-        await client.list_notifications(days=60, cif="777")
+        items = [n async for n in client.list_notifications(days=60, cif="777")]
+    assert items == []
     assert route.called
     # Confirm no query params.
     assert route.calls.last.request.url.query == b""
@@ -268,8 +270,8 @@ async def test_list_notification_with_error_messages() -> None:
     ]
     respx.get(f"{BASE}/lista/1/42").mock(return_value=httpx.Response(200, json=payload))
     async with _client() as client:
-        result = await client.list_notifications(days=1, cif="42")
-    n = result.notifications[0]
+        items = [n async for n in client.list_notifications(days=1, cif="42")]
+    n = items[0]
     assert n.stare == "ERR"
     assert len(n.mesaje) == 2
     assert n.mesaje[0].tip == "ERR"

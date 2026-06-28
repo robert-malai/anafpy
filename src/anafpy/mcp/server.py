@@ -13,13 +13,14 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from ..efactura.models import Filter
-from ..exceptions import AnafError
+from ..exceptions import AnafConfigError, AnafError
 from ..validation import ValidationFinding
 from .config import ServerConfig
 from .context import AppContext, AuthStatus
@@ -55,6 +56,18 @@ _MUTATING = ToolAnnotations(
 
 _INVOICE_KIND = "efactura.invoice"
 _TRANSPORT_KIND = "etransport.declaration"
+
+
+def _parse_window_dt(value: str | None, *, field: str) -> datetime | None:
+    """Parse an ISO 8601 date/datetime string for a list window, or ``None``."""
+    if value is None:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise AnafConfigError(
+            f"efactura_list_messages: `{field}` must be ISO 8601 (got {value!r})"
+        ) from exc
 
 
 def _run_validation(
@@ -109,18 +122,32 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
 def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         annotations=_READ_ONLY,
-        description="List e-Factura messages (sent/received/errors) from the last "
-        "`days` (1-60) for a fiscal code.",
+        description="List e-Factura messages (sent/received/errors) for a fiscal code. "
+        "Give a window as EITHER `days` (1-60) OR an ISO `start`+`end` date range "
+        "(e.g. '2026-06-01'); all pages are fetched and flattened automatically.",
     )
     async def efactura_list_messages(
-        days: int, cif: str | None = None, filter: str | None = None
+        cif: str | None = None,
+        days: int | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        filter: str | None = None,
     ) -> dict[str, object]:
         resolved = cfg.require_cif(cif)
         flt = Filter(filter) if filter else None
-        result = await ctx.efactura().list_messages(days=days, cif=resolved, filter=flt)
+        messages = [
+            m
+            async for m in ctx.efactura().list_messages(
+                cif=resolved,
+                days=days,
+                start=_parse_window_dt(start, field="start"),
+                end=_parse_window_dt(end, field="end"),
+                filter=flt,
+            )
+        ]
         return {
-            "messages": [m.model_dump() for m in result.messages],
-            "error": result.error,
+            "messages": [m.model_dump() for m in messages],
+            "count": len(messages),
         }
 
     @mcp.tool(
@@ -254,10 +281,13 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
     )
     async def etransport_list(days: int, cif: str | None = None) -> dict[str, object]:
         resolved = cfg.require_cif(cif)
-        result = await ctx.etransport().list_notifications(days=days, cif=resolved)
+        notifications = [
+            n
+            async for n in ctx.etransport().list_notifications(days=days, cif=resolved)
+        ]
         return {
-            "notifications": [n.model_dump() for n in result.notifications],
-            "error": result.error,
+            "notifications": [n.model_dump() for n in notifications],
+            "count": len(notifications),
         }
 
     @mcp.tool(

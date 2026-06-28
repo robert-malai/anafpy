@@ -25,12 +25,13 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
 - **OAuth2 auth layer** — Authorization-Code bootstrap (browser + qualified
   certificate), local token store, and headless refresh, exposed via the `anafpy` CLI
   and an `httpx.Auth` integration for the clients.
-- **`EFacturaClient`** (async) — `upload`, `get_status`, `download`, `list_messages` /
-  `list_messages_paged`, `to_pdf`, and the `upload_and_wait` poll-until-terminal helper.
-  `download` exposes three read tiers: raw signed bytes, the full UBL model, and an
-  easy-to-read `FlatInvoice` **view**.
-- **`ETransportClient`** (async) — `upload`, `get_status`, `list_notifications`, `info`,
-  and `upload_and_wait`.
+- **`EFacturaClient`** (async) — `upload`, `get_status`, `download`, `to_pdf`, the
+  `upload_and_wait` poll-until-terminal helper, and `list_messages` — a single async
+  iterator that pages the message list under the hood (window by `days` or `start`/`end`;
+  empty window → empty iterator, real ANAF errors → raise). `download` exposes three read
+  tiers: raw signed bytes, the full UBL model, and an easy-to-read `FlatInvoice` **view**.
+- **`ETransportClient`** (async) — `upload`, `get_status`, `info`, `upload_and_wait`, and
+  `list_notifications` (same async-iterator shape).
 - **Flat read views** — `read_flat_invoice` / `read_flat_transport` project UBL /
   e-Transport documents into small, easy-to-read shapes (lossy, with a `complete` flag);
   anafpy reads documents into these, it never composes documents from them.

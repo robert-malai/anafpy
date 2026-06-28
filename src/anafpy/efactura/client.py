@@ -10,7 +10,10 @@ the processing state with ``tenacity``. HTTP/auth failures raise; business outco
 from __future__ import annotations
 
 import json
+import time
 import xml.etree.ElementTree as ET
+from collections.abc import AsyncIterator
+from datetime import datetime
 from types import TracebackType
 from typing import Self
 
@@ -23,13 +26,22 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from .._transport.base import Environment, Service, service_base_url
+from .._transport.base import (
+    Environment,
+    Service,
+    is_empty_result_message,
+    service_base_url,
+)
 from ..auth.provider import AnafAuth, TokenProvider
-from ..exceptions import AnafRateLimitError, AnafResponseError, AnafTransportError
+from ..exceptions import (
+    AnafConfigError,
+    AnafRateLimitError,
+    AnafResponseError,
+    AnafTransportError,
+)
 from .models import (
     DownloadedMessage,
     Filter,
-    MessageList,
     MessageListItem,
     MessageState,
     MessageStatus,
@@ -43,6 +55,41 @@ __all__ = ["EFacturaClient"]
 # ANAF wants the XML payload as a raw text/plain body (per the API PDF), despite it
 # being XML.
 _XML_BODY_HEADERS = {"Content-Type": "text/plain"}
+
+# Defensive upper bound on pages walked by ``list_messages`` — guards against a
+# misbehaving server that never returns an empty/terminal page.
+_MAX_LIST_PAGES = 10_000
+# Candidate field names for the paginated response's total-page count (inferred from
+# docs; honoured only when present — the empty-page stop is the real terminator).
+_PAGE_COUNT_KEYS = ("numar_total_pagini", "numarTotalPagini", "totalPagini")
+
+
+def _to_ms(moment: datetime) -> int:
+    return int(moment.timestamp() * 1000)
+
+
+def _resolve_window(
+    days: int | None, start: datetime | None, end: datetime | None
+) -> tuple[int, int]:
+    """Normalise the requested window to a ``(start_ms, end_ms)`` pair.
+
+    Exactly one of ``days`` (1-60) or both ``start`` and ``end`` must be given.
+    """
+    has_days = days is not None
+    has_range = start is not None or end is not None
+    if has_days and has_range:
+        raise AnafConfigError(
+            "list_messages: pass either `days` or `start`+`end`, not both"
+        )
+    if has_days:
+        assert days is not None
+        if not 1 <= days <= 60:
+            raise AnafConfigError("list_messages: `days` must be between 1 and 60")
+        end_ms = int(time.time() * 1000)
+        return end_ms - days * 86_400_000, end_ms
+    if start is not None and end is not None:
+        return _to_ms(start), _to_ms(end)
+    raise AnafConfigError("list_messages: pass `days` or both `start` and `end`")
 
 
 def _local(tag: str) -> str:
@@ -214,50 +261,87 @@ class EFacturaClient:
         response = await self._request("GET", "descarcare", params={"id": message_id})
         return DownloadedMessage.from_zip(response.content)
 
-    async def list_messages(
-        self, *, days: int, cif: str, filter: Filter | None = None
-    ) -> MessageList:
-        """List messages from the last ``days`` (1-60) for ``cif``."""
-        params = {"zile": str(days), "cif": cif}
-        if filter is not None:
-            params["filtru"] = filter.value
-        response = await self._request("GET", "listaMesajeFactura", params=params)
-        return self._parse_list(response.content)
-
-    async def list_messages_paged(
+    def list_messages(
         self,
         *,
-        start_ms: int,
-        end_ms: int,
         cif: str,
-        page: int = 1,
+        days: int | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
         filter: Filter | None = None,
-    ) -> MessageList:
-        """List messages in a time range (unix-millisecond bounds), one page."""
-        params = {
-            "startTime": str(start_ms),
-            "endTime": str(end_ms),
-            "cif": cif,
-            "pagina": str(page),
-        }
-        if filter is not None:
-            params["filtru"] = filter.value
-        response = await self._request(
-            "GET", "listaMesajePaginatieFactura", params=params
-        )
-        return self._parse_list(response.content)
+    ) -> AsyncIterator[MessageListItem]:
+        """Iterate every e-Factura message in a window, paging under the hood.
+
+        Specify the window with **either** ``days`` (1-60) **or** both ``start`` and
+        ``end`` (datetimes) — not both. Yields each :class:`MessageListItem` across all
+        pages of ``listaMesajePaginatieFactura``; an empty window yields nothing.
+
+        Consume with ``async for``; materialise via
+        ``[m async for m in client.list_messages(...)]``.
+
+        Raises:
+            AnafConfigError: the window arguments are invalid (raised eagerly).
+            AnafResponseError: ANAF reported a genuine list error (bad CIF/interval, …);
+                a benign "no messages" note yields an empty iterator instead.
+            AnafRateLimitError / AnafTransportError: as for any request.
+        """
+        start_ms, end_ms = _resolve_window(days, start, end)  # eager validation
+        return self._iter_messages(start_ms, end_ms, cif, filter)
+
+    async def _iter_messages(
+        self, start_ms: int, end_ms: int, cif: str, filter: Filter | None
+    ) -> AsyncIterator[MessageListItem]:
+        page = 1
+        while page <= _MAX_LIST_PAGES:
+            params = {
+                "startTime": str(start_ms),
+                "endTime": str(end_ms),
+                "cif": cif,
+                "pagina": str(page),
+            }
+            if filter is not None:
+                params["filtru"] = filter.value
+            response = await self._request(
+                "GET", "listaMesajePaginatieFactura", params=params
+            )
+            messages, total_pages = self._parse_message_page(response.content)
+            if not messages:
+                break  # empty/no-results page terminates the walk
+            for item in messages:
+                yield item
+            if total_pages is not None and page >= total_pages:
+                break
+            page += 1
 
     @staticmethod
-    def _parse_list(body: bytes) -> MessageList:
+    def _parse_message_page(body: bytes) -> tuple[list[MessageListItem], int | None]:
+        """Parse one page → ``(messages, total_pages|None)``.
+
+        Raises :class:`AnafResponseError` when ANAF's ``eroare`` is a real error; a
+        benign "no messages" note returns an empty page so iteration stops cleanly.
+        """
         data = json.loads(body)
-        raw_messages = data.get("mesaje") or []
-        messages = [MessageListItem.model_validate(m) for m in raw_messages]
         error = data.get("eroare")
-        return MessageList(
-            messages=messages,
-            error=str(error) if error is not None else None,
-            raw=body,
-        )
+        if error is not None:
+            if is_empty_result_message(str(error)):
+                return [], None
+            raise AnafResponseError(
+                f"ANAF e-Factura list error: {error}",
+                status_code=200,
+                body=_as_text(body),
+            )
+        messages = [
+            MessageListItem.model_validate(m) for m in (data.get("mesaje") or [])
+        ]
+        total_pages: int | None = None
+        for key in _PAGE_COUNT_KEYS:
+            if key in data:
+                try:
+                    total_pages = int(data[key])
+                except (TypeError, ValueError):
+                    total_pages = None
+                break
+        return messages, total_pages
 
     async def to_pdf(
         self,
