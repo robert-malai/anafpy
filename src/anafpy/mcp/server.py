@@ -1,0 +1,448 @@
+"""The anafpy MCP server: e-Factura / e-Transport operations as Cowork skills.
+
+Built on the phase-1 async clients (``DESIGN.md`` §7). Read-only skills (status, list,
+download, lookup, validate) are freely callable. Mutating skills are **two-step**: a
+``prepare`` tool validates locally, returns a preview + a confirmation token, and the
+matching ``submit`` tool will only file when handed that token back with the *same*
+document and an explicit ``confirm=True``. The compiled ANAF reference is surfaced as
+read-only MCP resources so the model can ground BR-RO explanations and code lists.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
+
+from ..efactura.models import Filter
+from ..exceptions import AnafError
+from ..validation import ValidationFinding
+from .config import ServerConfig
+from .context import AppContext, AuthStatus
+from .mapping import (
+    build_invoice_xml,
+    build_transport_xml,
+    invoice_preview,
+    transport_preview,
+)
+from .models import (
+    FlatInvoice,
+    FlatTransport,
+    InvoiceInput,
+    PreparedSubmission,
+    SubmitResult,
+    TransportInput,
+)
+from .tokens import ConfirmationError, issue_token, verify_token
+
+__all__ = ["create_server"]
+
+_INSTRUCTIONS = """\
+Typed access to Romania's ANAF e-Factura (e-invoicing) and e-Transport services.
+
+Filing an invoice or transport declaration is a two-step, human-gated flow:
+  1. call `efactura_prepare_invoice` / `etransport_prepare` — this validates the
+     document locally, returns a preview and totals, and (if valid) a confirmation
+     token;
+  2. show the preview to the user, get explicit approval, then call the matching
+     `*_submit_*` tool with that token and confirm=True.
+
+Local Schematron validation is a fast pre-filter only; ANAF is authoritative. If a
+tool reports "not authenticated", the user must run `anafpy auth login` host-side.
+"""
+
+_READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
+_MUTATING = ToolAnnotations(
+    readOnlyHint=False, idempotentHint=False, openWorldHint=True
+)
+
+_INVOICE_KIND = "efactura.invoice"
+_TRANSPORT_KIND = "etransport.declaration"
+
+
+def _run_validation(
+    validator: object | None, xml: bytes
+) -> tuple[bool, list[ValidationFinding], bool]:
+    """Return ``(valid, findings, available)`` for *xml* against *validator*.
+
+    When the validator is absent (``anafpy[validation]`` not installed), reports
+    ``available=False`` and treats the document as provisionally valid — ANAF remains
+    the authority and the human still confirms.
+    """
+    if validator is None:
+        return True, [], False
+    from ..validation import SchematronValidator
+
+    assert isinstance(validator, SchematronValidator)
+    result = validator.validate(xml)
+    return result.is_valid, result.findings, True
+
+
+def create_server(config: ServerConfig | None = None) -> FastMCP:
+    """Build the configured :class:`FastMCP` server (stdio transport)."""
+    cfg = config or ServerConfig.from_env()
+    ctx = AppContext(cfg)
+
+    @asynccontextmanager
+    async def lifespan(_server: FastMCP) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await ctx.aclose()
+
+    mcp = FastMCP("anafpy", instructions=_INSTRUCTIONS, lifespan=lifespan)
+
+    # -- auth ------------------------------------------------------------------------
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Report whether a usable ANAF session is present, and when the "
+        "tokens expire. Call this first; if not authenticated, ask the user to run "
+        "`anafpy auth login` host-side.",
+    )
+    def auth_status() -> AuthStatus:
+        return ctx.auth_status()
+
+    _register_efactura(mcp, ctx, cfg)
+    _register_etransport(mcp, ctx, cfg)
+    _register_resources(mcp)
+    return mcp
+
+
+def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="List e-Factura messages (sent/received/errors) from the last "
+        "`days` (1-60) for a fiscal code.",
+    )
+    async def efactura_list_messages(
+        days: int, cif: str | None = None, filter: str | None = None
+    ) -> dict[str, object]:
+        resolved = cfg.require_cif(cif)
+        flt = Filter(filter) if filter else None
+        result = await ctx.efactura().list_messages(days=days, cif=resolved, filter=flt)
+        return {
+            "messages": [m.model_dump() for m in result.messages],
+            "error": result.error,
+        }
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Get the processing state of an e-Factura upload by its upload id "
+        "(index_incarcare). Returns ok / nok / in prelucrare and a download id when "
+        "ready.",
+    )
+    async def efactura_get_status(upload_id: str) -> dict[str, object]:
+        status = await ctx.efactura().get_status(upload_id)
+        return {
+            "state": status.state.value,
+            "download_id": status.download_id,
+            "errors": status.errors,
+            "is_terminal": status.is_terminal,
+        }
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Download a processed e-Factura message (the signed invoice/errors "
+        "ZIP) by id and return its decoded content.",
+    )
+    async def efactura_download(message_id: str) -> dict[str, object]:
+        msg = await ctx.efactura().download(message_id)
+        content = (
+            msg.content_xml.decode("utf-8", errors="replace")
+            if msg.content_xml is not None
+            else None
+        )
+        return {
+            "has_content": msg.content_xml is not None,
+            "has_signature": msg.signature_xml is not None,
+            "content_xml": content,
+        }
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Locally Schematron-validate an invoice (flat fields or UBL XML) "
+        "against EN 16931 + CIUS-RO without filing. A fast pre-filter; ANAF is "
+        "authoritative.",
+    )
+    async def efactura_validate(document: InvoiceInput) -> PreparedSubmission:
+        return _prepare_invoice(ctx, cfg, document, with_token=False)
+
+    @mcp.tool(
+        annotations=_MUTATING,
+        description="STEP 1 of filing an invoice: validate locally and return a "
+        "preview + totals + a confirmation token. Show the preview to the user for "
+        "approval; then call efactura_submit_invoice with the token. Does NOT file.",
+    )
+    async def efactura_prepare_invoice(document: InvoiceInput) -> PreparedSubmission:
+        return _prepare_invoice(ctx, cfg, document, with_token=True)
+
+    @mcp.tool(
+        annotations=_MUTATING,
+        description="STEP 2 of filing an invoice: file it with ANAF. Requires the "
+        "confirmation_token from efactura_prepare_invoice for the SAME document and "
+        "confirm=True (set only after the user approved the preview).",
+    )
+    async def efactura_submit_invoice(
+        document: InvoiceInput,
+        confirmation_token: str,
+        confirm: bool = False,
+        cif: str | None = None,
+    ) -> SubmitResult:
+        if not confirm:
+            return SubmitResult(
+                accepted=False,
+                message="confirm=False — set confirm=True only after the user "
+                "approves the preview from efactura_prepare_invoice.",
+            )
+        try:
+            xml = build_invoice_xml(document)
+        except AnafError as exc:
+            return SubmitResult(accepted=False, errors=[str(exc)])
+        try:
+            verify_token(
+                cfg.signing_key, confirmation_token, kind=_INVOICE_KIND, payload=xml
+            )
+        except ConfirmationError as exc:
+            return SubmitResult(accepted=False, message=str(exc))
+        resolved = cfg.require_cif(cif)
+        result = await ctx.efactura().upload(xml, cif=resolved)
+        return SubmitResult(
+            accepted=result.accepted,
+            upload_id=result.upload_id,
+            errors=result.errors,
+            message=(
+                f"filed — poll efactura_get_status with upload_id {result.upload_id}"
+                if result.accepted
+                else "ANAF rejected the document at submission"
+            ),
+        )
+
+
+def _prepare_invoice(
+    ctx: AppContext,
+    cfg: ServerConfig,
+    document: InvoiceInput,
+    *,
+    with_token: bool,
+) -> PreparedSubmission:
+    try:
+        xml = build_invoice_xml(document)
+    except AnafError as exc:
+        return PreparedSubmission(valid=False, message=str(exc))
+    valid, findings, available = _run_validation(ctx.efactura_validator(), xml)
+    preview = invoice_preview(document) if isinstance(document, FlatInvoice) else None
+    token = (
+        issue_token(cfg.signing_key, kind=_INVOICE_KIND, payload=xml)
+        if with_token and valid
+        else None
+    )
+    return PreparedSubmission(
+        valid=valid,
+        findings=findings,
+        validation_available=available,
+        confirmation_token=token,
+        invoice_preview=preview,
+        message=_prepare_message(valid, available, with_token),
+    )
+
+
+def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="List e-Transport notifications from the last `days` (1-60) for a "
+        "fiscal code.",
+    )
+    async def etransport_list(days: int, cif: str | None = None) -> dict[str, object]:
+        resolved = cfg.require_cif(cif)
+        result = await ctx.etransport().list_notifications(days=days, cif=resolved)
+        return {
+            "notifications": [n.model_dump() for n in result.notifications],
+            "error": result.error,
+        }
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Get the processing state of an e-Transport upload by its upload "
+        "id (index_incarcare).",
+    )
+    async def etransport_get_status(upload_id: str) -> dict[str, object]:
+        status = await ctx.etransport().get_status(upload_id)
+        return {
+            "state": status.state.value,
+            "errors": status.errors,
+            "is_terminal": status.is_terminal,
+        }
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Look up active e-Transport declarations where a fiscal code is "
+        "the transport organiser (the `info` endpoint).",
+    )
+    async def etransport_lookup(
+        cui_op: str,
+        cui_decl: str | None = None,
+        uit: str | None = None,
+        ref_decl: str | None = None,
+    ) -> dict[str, object]:
+        result = await ctx.etransport().info(
+            cui_op=cui_op, cui_decl=cui_decl, uit=uit, ref_decl=ref_decl
+        )
+        return {
+            "items": [i.model_dump() for i in result.items],
+            "error": result.error,
+        }
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Locally Schematron-validate an e-Transport declaration (flat "
+        "fields or XML) without filing. A fast pre-filter; ANAF is authoritative.",
+    )
+    async def etransport_validate(document: TransportInput) -> PreparedSubmission:
+        return _prepare_transport(ctx, cfg, document, with_token=False)
+
+    @mcp.tool(
+        annotations=_MUTATING,
+        description="STEP 1 of filing an e-Transport declaration: validate locally and "
+        "return a preview + a confirmation token. Show the preview for approval; then "
+        "call etransport_submit with the token. Does NOT file.",
+    )
+    async def etransport_prepare(document: TransportInput) -> PreparedSubmission:
+        return _prepare_transport(ctx, cfg, document, with_token=True)
+
+    @mcp.tool(
+        annotations=_MUTATING,
+        description="STEP 2 of filing an e-Transport declaration: file it with ANAF "
+        "and return the UIT code. Requires the confirmation_token from "
+        "etransport_prepare for the SAME document and confirm=True.",
+    )
+    async def etransport_submit(
+        document: TransportInput,
+        confirmation_token: str,
+        confirm: bool = False,
+        cif: str | None = None,
+    ) -> SubmitResult:
+        if not confirm:
+            return SubmitResult(
+                accepted=False,
+                message="confirm=False — set confirm=True only after the user "
+                "approves the preview from etransport_prepare.",
+            )
+        resolved = cfg.require_cif(cif)
+        try:
+            xml = build_transport_xml(document, cif=resolved)
+        except AnafError as exc:
+            return SubmitResult(accepted=False, errors=[str(exc)])
+        try:
+            verify_token(
+                cfg.signing_key, confirmation_token, kind=_TRANSPORT_KIND, payload=xml
+            )
+        except ConfirmationError as exc:
+            return SubmitResult(accepted=False, message=str(exc))
+        result = await ctx.etransport().upload(xml, cif=resolved)
+        return SubmitResult(
+            accepted=result.accepted,
+            upload_id=result.upload_id,
+            uit=result.uit,
+            errors=result.errors,
+            message=(
+                f"filed — UIT {result.uit}"
+                if result.accepted
+                else "ANAF rejected the declaration at submission"
+            ),
+        )
+
+
+def _prepare_transport(
+    ctx: AppContext,
+    cfg: ServerConfig,
+    document: TransportInput,
+    *,
+    with_token: bool,
+) -> PreparedSubmission:
+    # The declarant code is baked into the XML, so the token binds to a specific CIF.
+    cif = cfg.default_cif or "0"
+    try:
+        xml = build_transport_xml(document, cif=cif)
+    except AnafError as exc:
+        return PreparedSubmission(valid=False, message=str(exc))
+    valid, findings, available = _run_validation(ctx.etransport_validator(), xml)
+    preview = (
+        transport_preview(document) if isinstance(document, FlatTransport) else None
+    )
+    token = (
+        issue_token(cfg.signing_key, kind=_TRANSPORT_KIND, payload=xml)
+        if with_token and valid
+        else None
+    )
+    return PreparedSubmission(
+        valid=valid,
+        findings=findings,
+        validation_available=available,
+        confirmation_token=token,
+        transport_preview=preview,
+        message=_prepare_message(valid, available, with_token),
+    )
+
+
+def _prepare_message(valid: bool, available: bool, with_token: bool) -> str:
+    if not valid:
+        return "local validation failed — fix the findings and prepare again"
+    note = (
+        "passes local CIUS-RO / e-Transport validation"
+        if available
+        else "local validation unavailable (install anafpy[validation]); not "
+        "pre-checked"
+    )
+    if with_token:
+        return f"{note}. Review the preview, then submit with the confirmation token."
+    return note
+
+
+def _docs_dir() -> Path | None:
+    override = os.environ.get("ANAFPY_DOCS_DIR")
+    if override:
+        path = Path(override).expanduser()
+        return path if path.is_dir() else None
+    candidate = Path(__file__).resolve().parents[3] / "docs" / "anaf-reference"
+    return candidate if candidate.is_dir() else None
+
+
+def _register_resources(mcp: FastMCP) -> None:
+    """Expose the compiled ANAF reference Markdown as read-only resources."""
+    docs = _docs_dir()
+    if docs is None:
+        return
+    for md in sorted(docs.rglob("*.md")):
+        if md.name == "README.md" or "_sources" in md.parts:
+            continue
+        rel = md.relative_to(docs).with_suffix("")
+        uri = f"anafref://{rel.as_posix()}"
+        mcp.resource(
+            uri,
+            name=f"ANAF reference: {rel.as_posix()}",
+            description=(
+                "Compiled ANAF API reference (status may be draft; partly Romanian)."
+            ),
+            mime_type="text/markdown",
+        )(_make_reader(md))
+
+
+def _make_reader(path: Path) -> Callable[[], str]:
+    def read() -> str:
+        return path.read_text(encoding="utf-8")
+
+    return read
+
+
+def main() -> None:
+    """Console entry point: run the server over stdio."""
+    create_server().run("stdio")
+
+
+if __name__ == "__main__":
+    main()

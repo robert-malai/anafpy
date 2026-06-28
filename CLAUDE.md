@@ -8,9 +8,10 @@ reference of ANAF's APIs.
 
 `anafpy` — typed Python clients for Romania's **ANAF** tax-authority web services,
 **e-Factura** (electronic invoicing) and **e-Transport** (goods transport). Phase 1 is
-the typed async clients; phase 2 (later) is an **MCP server** exposing the operations as
-Claude Cowork skills. Client methods are deliberately shaped to map 1:1 onto future MCP
-tools — discrete operations, serializable typed inputs/outputs, good docstrings.
+the typed async clients; phase 2 is the **MCP server** (`anafpy.mcp`, extra
+`anafpy[mcp]`) exposing the operations as Claude Cowork skills. The client methods map
+1:1 onto MCP tools — discrete operations, serializable typed inputs/outputs, good
+docstrings.
 
 Python **3.12+** (test 3.12 and 3.13). Built on **httpx** and **Pydantic v2**.
 
@@ -23,6 +24,20 @@ uv run pytest tests/test_auth.py     # one file
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                          # strict
 ```
+
+Run the MCP server (host-side, where the `anafpy auth login` token store lives):
+
+```bash
+ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
+  uv run python -m anafpy.mcp        # stdio; or the `anafpy-mcp` console script
+```
+
+Config is env-only — `anafpy.mcp.config.ServerConfig` is a `pydantic-settings`
+`BaseSettings` (use `ServerConfig.from_env()` for a friendly `AnafConfigError`):
+`ANAFPY_CLIENT_ID`,
+`ANAFPY_CLIENT_SECRET` (required), `ANAFPY_TOKEN_STORE` (default `~/.anafpy/tokens.json`),
+`ANAFPY_ENV` (`test`/`prod`), `ANAFPY_CIF` (default fiscal code), `ANAFPY_DOCS_DIR`
+(reference resources, defaults to the repo `docs/anaf-reference/`).
 
 Codegen (only when re-vendoring XSDs — see below):
 
@@ -50,6 +65,14 @@ src/anafpy/
     schema/              # GENERATED e-Transport XSD models — do not hand-edit
     client.py            # ETransportClient (async)
     models.py            # value types
+  mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2
+    config.py            # ServerConfig.from_env (creds, store path, env, default CIF)
+    context.py           # AppContext: TokenProvider + lazy clients + validators; auth_status
+    models.py            # curated FLAT skill models + XML pass-through unions + previews
+    mapping.py           # FlatInvoice→UBL XML, FlatTransport→e-Transport XML (+ totals)
+    tokens.py            # HMAC confirmation tokens for two-step gated mutations
+    server.py            # FastMCP server: tools + resources; `create_server`, `main`
+    __main__.py          # `python -m anafpy.mcp` (stdio)
 schemas/                 # vendored XSDs (git-tracked, NOT shipped in the wheel)
 scripts/                 # codegen scripts
 docs/anaf-reference/     # compiled ANAF API reference (oauth/efactura/etransport)
@@ -74,6 +97,27 @@ tests/                   # respx-mocked unit tests
 - **Module style**: `from __future__ import annotations`, explicit `__all__`, module +
   class docstrings, Google-style docstring sections. Line length 88. Keep new code in the
   voice of the surrounding files.
+
+## MCP server (`anafpy.mcp`)
+
+- **Local stdio connector built on the phase-1 clients.** `create_server(config)`
+  returns a `FastMCP`; `AppContext` owns one `TokenProvider` + lazily-built clients and
+  closes them in the server lifespan. The server reads the existing token store and
+  refreshes headlessly — it never drives the cert/browser step (that stays the CLI).
+- **The MCP layer owns its own curated, FLAT models** (`mcp/models.py`) — never reuse the
+  generated UBL / e-Transport schema models as tool input. The flat shape is the LLM
+  authoring surface; the **escape hatch is XML pass-through** (`UblXmlInput` /
+  `EtransportXmlInput`), not the structured UBL model. `mcp/mapping.py` is the only
+  hand-written serializer (flat → wire XML, computing all totals).
+- **Read-first, two-step gated mutations.** Read-only tools (`*_list*`, `*_status`,
+  `*_download`, `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
+  freely callable. Filing is split `*_prepare*` → `*_submit*`: prepare validates locally,
+  returns a preview + an HMAC **confirmation token** (`mcp/tokens.py`) bound to the exact
+  XML bytes; submit requires that token (same document) **and** `confirm=True`. Don't
+  collapse this into a `dry_run` bool.
+- **Validation degrades gracefully**: if `anafpy[validation]` is absent the validator is
+  `None`, prepare reports `validation_available=False` and still issues a token (ANAF is
+  authoritative; the human still confirms). Local pass is never authoritative.
 
 ## Error model (important)
 

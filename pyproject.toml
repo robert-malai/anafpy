@@ -32,10 +32,12 @@ dependencies = [
 # Local Schematron pre-validation (EN 16931 + CIUS-RO / e-Transport rules).
 validation = ["saxonche>=12.5"]
 # MCP server exposing the clients as Cowork skills.
-mcp = ["mcp>=1.2"]
+mcp = ["mcp>=1.2", "pydantic-settings>=2.4"]
 
 [project.scripts]
 anafpy = "anafpy.cli.main:main"
+# Runs the MCP server over stdio; requires the anafpy[mcp] extra.
+anafpy-mcp = "anafpy.mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/robertmalai/anafpy"

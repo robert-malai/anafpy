@@ -71,14 +71,20 @@ def _check_iso_xsls() -> bool:
     if missing:
         print(f"Missing ISO Schematron XSLTs: {missing}", file=sys.stderr)
         print(
-            "Download from https://github.com/Schematron/schematron to schemas/iso-schematron/",
+            "Download from https://github.com/Schematron/schematron to "
+            "schemas/iso-schematron/",
             file=sys.stderr,
         )
         return False
     return True
 
 
-def _xslt(proc: object, xsl_file: Path, src_file: Path | None = None, src_text: str | None = None) -> str:
+def _xslt(
+    proc: object,
+    xsl_file: Path,
+    src_file: Path | None = None,
+    src_text: str | None = None,
+) -> str:
     """Apply an XSLT stylesheet and return the result as a string."""
     import saxonche  # type: ignore[import-untyped]
 
@@ -97,8 +103,7 @@ def _xslt(proc: object, xsl_file: Path, src_file: Path | None = None, src_text: 
         try:
             result = exe.transform_to_string(source_file=tmp)
         finally:
-            import os
-            os.unlink(tmp)
+            Path(tmp).unlink()
     if result is None:
         raise RuntimeError(f"XSLT produced no output: {xsl_file.name}")
     return result
@@ -111,7 +116,10 @@ def compile_etransport(proc: object) -> bool:
     compiled = _xslt(proc, _SVRL_XSL, src_file=_ETRANSPORT_SCH)
     _ETRANSPORT_OUT.parent.mkdir(parents=True, exist_ok=True)
     _ETRANSPORT_OUT.write_text(compiled, encoding="utf-8")
-    print(f"  OK: {_ETRANSPORT_OUT.relative_to(ROOT)} ({len(compiled)} chars, {time.time()-t0:.1f}s)")
+    print(
+        f"  OK: {_ETRANSPORT_OUT.relative_to(ROOT)} "
+        f"({len(compiled)} chars, {time.time() - t0:.1f}s)"
+    )
     return True
 
 
@@ -124,7 +132,10 @@ def compile_efactura(proc: object) -> bool:
     compiled = _xslt(proc, _SVRL_XSL, src_text=step2)
     _EFACTURA_OUT.parent.mkdir(parents=True, exist_ok=True)
     _EFACTURA_OUT.write_text(compiled, encoding="utf-8")
-    print(f"  OK: {_EFACTURA_OUT.relative_to(ROOT)} ({len(compiled)} chars, {time.time()-t0:.1f}s)")
+    print(
+        f"  OK: {_EFACTURA_OUT.relative_to(ROOT)} "
+        f"({len(compiled)} chars, {time.time() - t0:.1f}s)"
+    )
     return True
 
 
@@ -148,7 +159,8 @@ def main() -> int:
         import saxonche  # type: ignore[import-untyped]
     except ImportError:
         print(
-            "saxonche is required: uv add saxonche --group validation  (or pip install saxonche)",
+            "saxonche is required: uv add saxonche --group validation  "
+            "(or pip install saxonche)",
             file=sys.stderr,
         )
         return 1

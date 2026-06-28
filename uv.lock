@@ -26,6 +26,7 @@ dependencies = [
 [package.optional-dependencies]
 mcp = [
     { name = "mcp" },
+    { name = "pydantic-settings" },
 ]
 validation = [
     { name = "saxonche" },
@@ -64,6 +65,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2" },
     { name = "pydantic", specifier = ">=2.7" },
+    { name = "pydantic-settings", marker = "extra == 'mcp'", specifier = ">=2.4" },
     { name = "saxonche", marker = "extra == 'validation'", specifier = ">=12.5" },
     { name = "tenacity", specifier = ">=8.3" },
     { name = "xsdata-pydantic", specifier = ">=24.5" },

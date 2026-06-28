@@ -12,7 +12,7 @@
 - **Phase 1 — typed clients** for **e-Factura** and **e-Transport** (both use ANAF
   OAuth2 + a qualified digital certificate, XML payloads).
 - **Phase 2 — a local MCP server** wrapping the clients, exposing operations as
-  skills/tools for Claude Cowork.
+  skills/tools for Claude Cowork. *(Implemented — see §7.)*
 - **Local ANAF API reference docs**, compiled from ANAF's scattered online sources.
 - General requirements: **Python 3.12+**, **httpx**, **Pydantic v2**.
 
@@ -178,6 +178,11 @@ doc — see `docs/anaf-reference/etransport/api.md`):
   - Keep **original Romanian** (+ English index). Organize by service.
 
 ## 7. MCP server (phase 2)
+
+> **Implemented** in `src/anafpy/mcp/` (extra `anafpy[mcp]`): `python -m anafpy.mcp`.
+> 13 tools (`auth_status`, e-Factura/e-Transport read-only + two-step gated filing) and
+> the compiled reference as resources. Common-case flat→UBL/e-Transport mapping +
+> XML pass-through; advanced flat fields grow on demand.
 
 - Local stdio connector built on the phase-1 clients. The MCP layer owns its own
   curated, flat, skill-friendly models (not in the client).

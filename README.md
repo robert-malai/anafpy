@@ -1,14 +1,14 @@
 # anafpy
 
 Typed Python clients for Romania's **ANAF** tax-authority web services —
-**e-Factura** (electronic invoicing) and **e-Transport** (goods transport) — with a
-later MCP server that will expose the functionality as
+**e-Factura** (electronic invoicing) and **e-Transport** (goods transport) — plus an
+MCP server that exposes the functionality as
 [Claude Cowork](https://claude.com) skills.
 
-> Status: **early / alpha** (`0.x`), not yet published to PyPI. The OAuth2 auth layer
-> and both async clients are implemented and tested; local Schematron validation and the
-> MCP server are designed but not built. See [`DESIGN.md`](DESIGN.md) for the full design
-> and [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of
+> Status: **early / alpha** (`0.x`), not yet published to PyPI. The OAuth2 auth layer,
+> both async clients, local Schematron pre-validation, and the MCP server are
+> implemented and tested. See [`DESIGN.md`](DESIGN.md) for the full design and
+> [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of
 > ANAF's APIs.
 
 Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
@@ -24,9 +24,12 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   and `upload_and_wait`.
 - **Generated models** — UBL 2.1 / CIUS-RO (`from anafpy.efactura import Invoice,
   CreditNote`) and the proprietary e-Transport XSD, generated from vendored schemas.
+- **Local Schematron pre-validation** (`anafpy[validation]`) — EN 16931 + CIUS-RO and
+  e-Transport rules via `saxonche`, returning structured BR-RO findings.
+- **MCP server** (`anafpy[mcp]`) — a local stdio connector exposing the operations as
+  Cowork skills, with read-first, two-step gated filing (see below).
 
-Not yet built: local Schematron pre-validation (`[validation]` extra), the MCP server
-(`[mcp]` extra), a sync facade, CI, and PyPI publishing.
+Not yet built: a sync facade, CI, and PyPI publishing.
 
 ## Install
 
@@ -37,8 +40,8 @@ git clone https://github.com/robertmalai/anafpy && cd anafpy
 uv sync --all-extras
 ```
 
-The published distribution will offer extras: `anafpy[validation]` (local Schematron via
-saxonche) and `anafpy[mcp]` (the MCP server).
+The distribution offers extras: `anafpy[validation]` (local Schematron via saxonche),
+`anafpy[mcp]` (the MCP server), and `anafpy[cli]`.
 
 ## Authentication
 
@@ -82,6 +85,27 @@ Discrete methods make a single call (no transport retry). HTTP/auth problems rai
 `AnafError` subclasses; **business outcomes** (a `nok` rejection, BR-RO findings) come
 back as typed values, not exceptions. On HTTP 429 the client raises `AnafRateLimitError`
 exposing `retry_after` rather than backing off itself.
+
+## MCP server
+
+The `anafpy[mcp]` extra ships a **local stdio MCP server** that wraps the clients as
+Cowork skills. Run it host-side, where the token store written by `anafpy auth login`
+lives:
+
+```bash
+ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
+  python -m anafpy.mcp        # or the `anafpy-mcp` console script
+```
+
+It exposes **read-only** tools (`auth_status`, `efactura_list_messages` /
+`efactura_get_status` / `efactura_download`, `etransport_list` / `etransport_get_status`
+/ `etransport_lookup`, and `*_validate`) plus **two-step gated filing**: `*_prepare*`
+validates locally and returns a preview + a confirmation token; `*_submit*` files only
+when given that token (for the same document) and `confirm=True`. The compiled ANAF
+reference is surfaced as read-only resources. Invoices/declarations are authored with
+small **flat** models, or passed through as existing UBL / e-Transport XML. Auth stays
+the host-side CLI — the server only reads and refreshes the token store. Configuration
+is environment-only; see [`CLAUDE.md`](CLAUDE.md).
 
 ## Development
 
