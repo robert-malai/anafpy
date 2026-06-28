@@ -47,7 +47,16 @@ Issues = "https://github.com/robertmalai/anafpy/issues"
 test = ["pytest>=8.2", "pytest-asyncio>=0.23", "respx>=0.21"]
 lint = ["ruff>=0.5", "mypy>=1.10"]
 docs = ["markitdown>=0.0.1"]
-dev = [{ include-group = "test" }, { include-group = "lint" }, { include-group = "docs" }]
+# Code generation of UBL / e-Transport models from vendored XSDs (dev-only).
+# xsdata is pinned to the 24.x line that the xsdata-pydantic plugin targets; newer
+# xsdata core drifts from the plugin and emits invalid Pydantic field definitions.
+codegen = ["xsdata-pydantic>=24.5", "xsdata[cli]>=24.5,<25"]
+dev = [
+    { include-group = "test" },
+    { include-group = "lint" },
+    { include-group = "docs" },
+    { include-group = "codegen" },
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/anafpy"]
@@ -56,6 +65,8 @@ packages = ["src/anafpy"]
 line-length = 88
 target-version = "py312"
 src = ["src", "tests"]
+# Generated model packages are formatted by their regeneration scripts, not linted.
+extend-exclude = ["src/anafpy/efactura/ubl", "src/anafpy/etransport/schema"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PTH", "RUF"]
