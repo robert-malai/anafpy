@@ -18,6 +18,7 @@ import httpx
 import pytest
 import respx
 
+from _wire import invoice_xml, transport_xml
 from anafpy._transport.base import Environment
 from anafpy.auth import FileTokenStore, TokenSet
 from anafpy.mcp.config import ServerConfig
@@ -110,40 +111,20 @@ async def test_efactura_get_status(tmp_path: Path) -> None:
 # --- gated submit: e-Factura --------------------------------------------------------
 
 
-def _flat_invoice_arg() -> dict[str, Any]:
-    party = {
-        "name": "Seller",
-        "vat_id": "RO1",
-        "county": "RO-B",
-        "city": "Bucuresti",
-        "address": "Str A 1",
-    }
-    return {
-        "kind": "flat",
-        "invoice_number": "INV-1",
-        "issue_date": "2026-06-28",
-        "currency": "RON",
-        "seller": party,
-        "buyer": {**party, "name": "Buyer", "vat_id": "RO2"},
-        "lines": [
-            {
-                "description": "Widget",
-                "quantity": "2",
-                "unit_price": "10.50",
-                "vat_category": "S",
-                "vat_rate": "19",
-            }
-        ],
-    }
+def _invoice_doc(*, number: str = "INV-1") -> dict[str, Any]:
+    return {"xml": invoice_xml(number=number)}
 
 
 async def test_prepare_invoice_returns_token_and_preview(tmp_path: Path) -> None:
     server = create_server(_config(tmp_path))
-    out = await _call(server, "efactura_prepare_invoice", document=_flat_invoice_arg())
+    out = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
     assert out["valid"] is True
     assert out["validation_available"] is False
     assert out["confirmation_token"]
+    # Preview is the read view parsed back out of the supplied XML.
+    assert out["invoice_preview"]["number"] == "INV-1"
     assert out["invoice_preview"]["total_with_vat"] == "24.99"
+    assert out["invoice_preview"]["complete"] is True
 
 
 async def test_submit_invoice_requires_confirm(tmp_path: Path) -> None:
@@ -151,7 +132,7 @@ async def test_submit_invoice_requires_confirm(tmp_path: Path) -> None:
     out = await _call(
         server,
         "efactura_submit_invoice",
-        document=_flat_invoice_arg(),
+        document=_invoice_doc(),
         confirmation_token="whatever",
         confirm=False,
     )
@@ -164,7 +145,7 @@ async def test_submit_invoice_rejects_bad_token(tmp_path: Path) -> None:
     out = await _call(
         server,
         "efactura_submit_invoice",
-        document=_flat_invoice_arg(),
+        document=_invoice_doc(),
         confirmation_token="v1.efactura.invoice.9999999999.deadbeef",
         confirm=True,
     )
@@ -178,14 +159,12 @@ async def test_prepare_then_submit_files_invoice(tmp_path: Path) -> None:
         return_value=httpx.Response(200, text='<header index_incarcare="777"/>')
     )
     server = create_server(_config(tmp_path))
-    prepared = await _call(
-        server, "efactura_prepare_invoice", document=_flat_invoice_arg()
-    )
+    prepared = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
     token = prepared["confirmation_token"]
     out = await _call(
         server,
         "efactura_submit_invoice",
-        document=_flat_invoice_arg(),
+        document=_invoice_doc(),
         confirmation_token=token,
         confirm=True,
     )
@@ -200,16 +179,13 @@ async def test_submit_rejects_token_for_different_document(tmp_path: Path) -> No
         return_value=httpx.Response(200, text='<header index_incarcare="1"/>')
     )
     server = create_server(_config(tmp_path))
-    prepared = await _call(
-        server, "efactura_prepare_invoice", document=_flat_invoice_arg()
-    )
+    prepared = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
     token = prepared["confirmation_token"]
-    tampered = _flat_invoice_arg()
-    tampered["lines"][0]["unit_price"] = "999.00"  # changed after prepare
+    # A different document (different XML bytes) must not match the token.
     out = await _call(
         server,
         "efactura_submit_invoice",
-        document=tampered,
+        document=_invoice_doc(number="INV-2"),
         confirmation_token=token,
         confirm=True,
     )
@@ -220,39 +196,8 @@ async def test_submit_rejects_token_for_different_document(tmp_path: Path) -> No
 # --- gated submit: e-Transport ------------------------------------------------------
 
 
-def _flat_transport_arg() -> dict[str, Any]:
-    return {
-        "kind": "flat",
-        "operation_type": "30",
-        "partner": {"name": "Foreign GmbH", "country": "DE", "code": "DE9"},
-        "vehicle": {
-            "plate": "B100XYZ",
-            "carrier_name": "Carrier SRL",
-            "carrier_country": "RO",
-            "carrier_code": "123",
-            "transport_date": "2026-06-28",
-        },
-        "start_location": {
-            "county_code": "40",
-            "locality": "Bucuresti",
-            "street": "Str A",
-            "number": "1",
-        },
-        "end_location": {
-            "county_code": "12",
-            "locality": "Cluj",
-            "street": "Str B",
-        },
-        "goods": [
-            {
-                "operation_scope": "301",
-                "name": "Marfa",
-                "quantity": "100",
-                "unit_code": "KGM",
-                "gross_weight": "120",
-            }
-        ],
-    }
+def _transport_doc() -> dict[str, Any]:
+    return {"xml": transport_xml()}
 
 
 @respx.mock
@@ -263,12 +208,13 @@ async def test_prepare_then_submit_files_transport(tmp_path: Path) -> None:
         )
     )
     server = create_server(_config(tmp_path))
-    prepared = await _call(server, "etransport_prepare", document=_flat_transport_arg())
+    prepared = await _call(server, "etransport_prepare", document=_transport_doc())
     assert prepared["transport_preview"]["total_gross_weight"] == "120"
+    assert prepared["transport_preview"]["operation_type"] == "30"
     out = await _call(
         server,
         "etransport_submit",
-        document=_flat_transport_arg(),
+        document=_transport_doc(),
         confirmation_token=prepared["confirmation_token"],
         confirm=True,
     )

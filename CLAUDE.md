@@ -7,11 +7,15 @@ reference of ANAF's APIs.
 ## What this is
 
 `anafpy` — typed Python clients for Romania's **ANAF** tax-authority web services,
-**e-Factura** (electronic invoicing) and **e-Transport** (goods transport). Phase 1 is
-the typed async clients; phase 2 is the **MCP server** (`anafpy.mcp`, extra
-`anafpy[mcp]`) exposing the operations as Claude Cowork skills. The client methods map
-1:1 onto MCP tools — discrete operations, serializable typed inputs/outputs, good
-docstrings.
+**e-Factura** (electronic invoicing) and **e-Transport** (goods transport). It is a
+**thin, stateless transport client, not invoicing software**: callers bring complete
+invoice XML their own system produced, and anafpy validates, files, tracks, and downloads.
+Outbound is **XML pass-through** (no invoice composition); received UBL is wrapped in a
+friendly **flat read view** (`FlatInvoice`, UBL→flat only) reused for the e-Factura inbox
+and the outbound `prepare` preview. Phase 1 is the typed async clients; phase 2 is the
+**MCP server** (`anafpy.mcp`, extra `anafpy[mcp]`) exposing the operations as Claude Cowork
+skills. The client methods map 1:1 onto MCP tools — discrete operations,
+serializable typed inputs/outputs, good docstrings.
 
 Python **3.12+** (test 3.12 and 3.13). Built on **httpx** and **Pydantic v2**.
 
@@ -59,17 +63,17 @@ src/anafpy/
   efactura/
     ubl/                 # GENERATED UBL 2.1 models (xsdata-pydantic) — do not hand-edit
     client.py            # EFacturaClient (async)
-    models.py            # value types (UploadResult, MessageStatus, ...)
+    models.py            # value types (UploadResult, MessageStatus, ...) + FlatInvoice read view + UBL→flat reader
     __init__.py          # re-exports Invoice, CreditNote from ubl.maindoc
   etransport/
     schema/              # GENERATED e-Transport XSD models — do not hand-edit
     client.py            # ETransportClient (async)
-    models.py            # value types
+    models.py            # value types + FlatTransport read view + reader
   mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2
     config.py            # ServerConfig.from_env (creds, store path, env, default CIF)
     context.py           # AppContext: TokenProvider + lazy clients + validators; auth_status
-    models.py            # curated FLAT skill models + XML pass-through unions + previews
-    mapping.py           # FlatInvoice→UBL XML, FlatTransport→e-Transport XML (+ totals)
+    models.py            # XML pass-through inputs (no authoring); reuses the client flat read view
+    documents.py         # resolve XML input -> bytes; parse bytes -> client flat read view
     tokens.py            # HMAC confirmation tokens for two-step gated mutations
     server.py            # FastMCP server: tools + resources; `create_server`, `main`
     __main__.py          # `python -m anafpy.mcp` (stdio)
@@ -104,11 +108,20 @@ tests/                   # respx-mocked unit tests
   returns a `FastMCP`; `AppContext` owns one `TokenProvider` + lazily-built clients and
   closes them in the server lifespan. The server reads the existing token store and
   refreshes headlessly — it never drives the cert/browser step (that stays the CLI).
-- **The MCP layer owns its own curated, FLAT models** (`mcp/models.py`) — never reuse the
-  generated UBL / e-Transport schema models as tool input. The flat shape is the LLM
-  authoring surface; the **escape hatch is XML pass-through** (`UblXmlInput` /
-  `EtransportXmlInput`), not the structured UBL model. `mcp/mapping.py` is the only
-  hand-written serializer (flat → wire XML, computing all totals).
+- **Outbound filing is XML pass-through only.** The tool input is the complete UBL /
+  e-Transport XML the caller's invoicing software exported (`UblXmlInput` /
+  `EtransportXmlInput` in `mcp/models.py`) — the MCP layer does **not** compose invoices,
+  and must never reuse the generated UBL / e-Transport schema models as tool input.
+  `prepare` parses the supplied XML with the shared client-layer **UBL→flat reader** into a
+  `FlatInvoice` read view to build the preview; there is no flat→XML write mapping.
+- **`FlatInvoice` / `FlatTransport` are a read view, not an authoring surface.** Defined at
+  the **client layer** ([efactura/models.py](src/anafpy/efactura/models.py),
+  [etransport/models.py](src/anafpy/etransport/models.py)) and produced *from* UBL by
+  `read_flat_invoice` / `read_flat_transport` (UBL→flat only). They back three things:
+  `DownloadedMessage.view` (`download` tier 3), the e-Factura inbox, and the `prepare`
+  preview. The view is lossy by design — raw bytes + full UBL stay authoritative — and
+  carries `complete` / `dropped_fields` when it can't represent something. There is no
+  flat→UBL path; do not add one.
 - **Read-first, two-step gated mutations.** Read-only tools (`*_list*`, `*_status`,
   `*_download`, `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
   freely callable. Filing is split `*_prepare*` → `*_submit*`: prepare validates locally,

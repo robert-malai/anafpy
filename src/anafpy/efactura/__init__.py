@@ -12,6 +12,9 @@ from .client import EFacturaClient
 from .models import (
     DownloadedMessage,
     Filter,
+    FlatInvoice,
+    FlatInvoiceLine,
+    FlatParty,
     MessageList,
     MessageListItem,
     MessageState,
@@ -19,6 +22,8 @@ from .models import (
     TransformStandard,
     UploadResult,
     UploadStandard,
+    parse_ubl_document,
+    read_flat_invoice,
 )
 from .ubl.maindoc import CreditNote, CreditNoteType, Invoice, InvoiceType
 
@@ -28,6 +33,9 @@ __all__ = [
     "DownloadedMessage",
     "EFacturaClient",
     "Filter",
+    "FlatInvoice",
+    "FlatInvoiceLine",
+    "FlatParty",
     "Invoice",
     "InvoiceType",
     "MessageList",
@@ -37,4 +45,6 @@ __all__ = [
     "TransformStandard",
     "UploadResult",
     "UploadStandard",
+    "parse_ubl_document",
+    "read_flat_invoice",
 ]

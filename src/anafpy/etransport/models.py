@@ -10,12 +10,21 @@ Key differences from e-Factura:
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator
 
+from .schema.schema_etr_v2_20230126 import ETransport
+
 __all__ = [
+    "FlatTransport",
+    "FlatTransportDocument",
+    "FlatTransportGood",
+    "FlatTransportLocation",
+    "FlatTransportPartner",
+    "FlatTransportVehicle",
     "InfoItem",
     "InfoList",
     "Location",
@@ -25,6 +34,8 @@ __all__ = [
     "NotificationList",
     "NotificationMessage",
     "UploadResult",
+    "parse_etransport_document",
+    "read_flat_transport",
 ]
 
 # Coerce any non-None JSON value to str; mirrors the defensive s() helper previously
@@ -165,3 +176,201 @@ class InfoList(BaseModel):
     items: list[InfoItem] = []
     error: str | None = None
     raw: bytes = b""
+
+
+# --- flat read view: e-Transport XSD -> easy-to-read projection ---------------------
+#
+# Produced *from* a parsed declaration only (read direction); anafpy never composes the
+# XSD from these. Used for the MCP ``prepare`` preview of a declaration about to be
+# filed. Lossy: ``complete`` / ``dropped_fields`` mark anything the shape leaves out.
+
+
+class FlatTransportPartner(BaseModel):
+    """Commercial partner of the transport."""
+
+    name: str | None = None
+    country: str | None = None
+    code: str | None = None
+
+
+class FlatTransportVehicle(BaseModel):
+    """Vehicle and carrier details."""
+
+    plate: str | None = None
+    trailer1: str | None = None
+    trailer2: str | None = None
+    carrier_name: str | None = None
+    carrier_country: str | None = None
+    carrier_code: str | None = None
+    transport_date: str | None = None
+
+
+class FlatTransportLocation(BaseModel):
+    """A national address at the start or end of the road route."""
+
+    county_code: str | None = None
+    locality: str | None = None
+    street: str | None = None
+    number: str | None = None
+    postal_code: str | None = None
+    other: str | None = None
+
+
+class FlatTransportGood(BaseModel):
+    """One transported-goods line."""
+
+    operation_scope: str | None = None
+    name: str | None = None
+    quantity: Decimal | None = None
+    unit_code: str | None = None
+    gross_weight: Decimal | None = None
+    net_weight: Decimal | None = None
+    tariff_code: str | None = None
+    value_ron: Decimal | None = None
+
+
+class FlatTransportDocument(BaseModel):
+    """A transport document reference."""
+
+    doc_type: str | None = None
+    number: str | None = None
+    date: str | None = None
+    note: str | None = None
+
+
+class FlatTransport(BaseModel):
+    """An e-Transport declaration flattened into an easy-to-read shape.
+
+    A lossy projection of the ANAF XSD for display; ``complete`` is ``False`` (and
+    ``dropped_fields`` names what) when the declaration carries structure this shape
+    cannot represent.
+    """
+
+    operation_type: str | None = None
+    declarant_code: str | None = None
+    declarant_ref: str | None = None
+    partner: FlatTransportPartner = FlatTransportPartner()
+    vehicle: FlatTransportVehicle = FlatTransportVehicle()
+    start_location: FlatTransportLocation = FlatTransportLocation()
+    end_location: FlatTransportLocation = FlatTransportLocation()
+    goods: list[FlatTransportGood] = []
+    documents: list[FlatTransportDocument] = []
+    goods_count: int = 0
+    total_gross_weight: Decimal | None = None
+    complete: bool = True
+    dropped_fields: list[str] = []
+
+
+def parse_etransport_document(xml: bytes) -> ETransport | None:
+    """Parse e-Transport wire XML into its :class:`ETransport` model, or ``None`` when
+    the bytes are not a parseable declaration. Never raises on bad input."""
+    from xsdata.exceptions import ParserError
+    from xsdata_pydantic.bindings import XmlParser
+
+    try:
+        return XmlParser().from_bytes(xml, ETransport)
+    except (ParserError, ValueError):
+        return None
+
+
+def _enum_str(obj: Any) -> str | None:
+    """Render an enum-or-scalar XSD value as text (codes are exposed as their value)."""
+    if obj is None:
+        return None
+    value = getattr(obj, "value", obj)
+    return None if value is None else str(value)
+
+
+def _dec(value: Any) -> Decimal | None:
+    """Parse a (string) XSD numeric into a ``Decimal``, tolerating bad input."""
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _read_location(route: Any) -> FlatTransportLocation:
+    loc = getattr(route, "locatie", None) if route else None
+    if loc is None:
+        return FlatTransportLocation()
+    return FlatTransportLocation(
+        county_code=_enum_str(getattr(loc, "cod_judet", None)),
+        locality=getattr(loc, "denumire_localitate", None),
+        street=getattr(loc, "denumire_strada", None),
+        number=getattr(loc, "numar", None),
+        postal_code=getattr(loc, "cod_postal", None),
+        other=getattr(loc, "alte_info", None),
+    )
+
+
+def _read_good(good: Any) -> FlatTransportGood:
+    return FlatTransportGood(
+        operation_scope=_enum_str(getattr(good, "cod_scop_operatiune", None)),
+        name=getattr(good, "denumire_marfa", None),
+        quantity=_dec(getattr(good, "cantitate", None)),
+        unit_code=getattr(good, "cod_unitate_masura", None),
+        gross_weight=_dec(getattr(good, "greutate_bruta", None)),
+        net_weight=_dec(getattr(good, "greutate_neta", None)),
+        tariff_code=getattr(good, "cod_tarifar", None),
+        value_ron=_dec(getattr(good, "valoare_lei_fara_tva", None)),
+    )
+
+
+def read_flat_transport(doc: ETransport) -> FlatTransport:
+    """Project a parsed :class:`ETransport` declaration to a :class:`FlatTransport`."""
+    notif = getattr(doc, "notificare", None)
+    if notif is None:
+        return FlatTransport(
+            declarant_code=getattr(doc, "cod_declarant", None),
+            declarant_ref=getattr(doc, "ref_declarant", None),
+            complete=False,
+            dropped_fields=["notificare"],
+        )
+
+    transport = getattr(notif, "date_transport", None)
+    partner = getattr(notif, "partener_comercial", None)
+    goods = [_read_good(g) for g in getattr(notif, "bunuri_transportate", None) or []]
+    documents = [
+        FlatTransportDocument(
+            doc_type=_enum_str(getattr(d, "tip_document", None)),
+            number=getattr(d, "numar_document", None),
+            date=_date_str(getattr(d, "data_document", None)),
+            note=getattr(d, "observatii", None),
+        )
+        for d in getattr(notif, "documente_transport", None) or []
+    ]
+    weights = [g.gross_weight for g in goods if g.gross_weight is not None]
+    return FlatTransport(
+        operation_type=_enum_str(getattr(notif, "cod_tip_operatiune", None)),
+        declarant_code=getattr(doc, "cod_declarant", None),
+        declarant_ref=getattr(doc, "ref_declarant", None),
+        partner=FlatTransportPartner(
+            name=getattr(partner, "denumire", None),
+            country=_enum_str(getattr(partner, "cod_tara", None)),
+            code=getattr(partner, "cod", None),
+        ),
+        vehicle=FlatTransportVehicle(
+            plate=getattr(transport, "nr_vehicul", None),
+            trailer1=getattr(transport, "nr_remorca1", None),
+            trailer2=getattr(transport, "nr_remorca2", None),
+            carrier_name=getattr(transport, "denumire_org_transport", None),
+            carrier_country=_enum_str(
+                getattr(transport, "cod_tara_org_transport", None)
+            ),
+            carrier_code=getattr(transport, "cod_org_transport", None),
+            transport_date=_date_str(getattr(transport, "data_transport", None)),
+        ),
+        start_location=_read_location(getattr(notif, "loc_start_traseu_rutier", None)),
+        end_location=_read_location(getattr(notif, "loc_final_traseu_rutier", None)),
+        goods=goods,
+        documents=documents,
+        goods_count=len(goods),
+        total_gross_weight=sum(weights, Decimal(0)) if weights else None,
+    )
+
+
+def _date_str(obj: Any) -> str | None:
+    """Render an ``XmlDate`` (or text date) as ISO text, or ``None``."""
+    return None if obj is None else str(obj)

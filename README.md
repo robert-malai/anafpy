@@ -1,15 +1,22 @@
 # anafpy
 
 Typed Python clients for Romania's **ANAF** tax-authority web services —
-**e-Factura** (electronic invoicing) and **e-Transport** (goods transport) — plus an
-MCP server that exposes the functionality as
-[Claude Cowork](https://claude.com) skills.
+**e-Factura** (electronic invoicing) and **e-Transport** (goods transport) — plus a local
+MCP server that exposes them as [Claude Cowork](https://claude.com) skills.
+
+anafpy is a **thin transport client**, not invoicing software: you bring invoice XML that
+your own invoicing system produced, and anafpy validates it, files it with ANAF, tracks
+status, and pulls documents back — wrapping the XML you read back (your filings and
+invoices suppliers issued to you) in a friendly **flat read view** for easy display.
+(e-Factura is a filing endpoint; Romanian law presumes you already run an invoicing
+system.)
 
 > Status: **early / alpha** (`0.x`), not yet published to PyPI. The OAuth2 auth layer,
-> both async clients, local Schematron pre-validation, and the MCP server are
-> implemented and tested. See [`DESIGN.md`](DESIGN.md) for the full design and
-> [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of
-> ANAF's APIs.
+> both async clients (with an easy-to-read flat view of downloaded documents), local
+> Schematron pre-validation, and the MCP server (XML pass-through filing + read-only
+> inbox) are implemented and tested. See [`DESIGN.md`](DESIGN.md) for the full design and
+> [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
+> APIs.
 
 Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
 
@@ -20,14 +27,20 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   and an `httpx.Auth` integration for the clients.
 - **`EFacturaClient`** (async) — `upload`, `get_status`, `download`, `list_messages` /
   `list_messages_paged`, `to_pdf`, and the `upload_and_wait` poll-until-terminal helper.
+  `download` exposes three read tiers: raw signed bytes, the full UBL model, and an
+  easy-to-read `FlatInvoice` **view**.
 - **`ETransportClient`** (async) — `upload`, `get_status`, `list_notifications`, `info`,
   and `upload_and_wait`.
+- **Flat read views** — `read_flat_invoice` / `read_flat_transport` project UBL /
+  e-Transport documents into small, easy-to-read shapes (lossy, with a `complete` flag);
+  anafpy reads documents into these, it never composes documents from them.
 - **Generated models** — UBL 2.1 / CIUS-RO (`from anafpy.efactura import Invoice,
   CreditNote`) and the proprietary e-Transport XSD, generated from vendored schemas.
 - **Local Schematron pre-validation** (`anafpy[validation]`) — EN 16931 + CIUS-RO and
   e-Transport rules via `saxonche`, returning structured BR-RO findings.
 - **MCP server** (`anafpy[mcp]`) — a local stdio connector exposing the operations as
-  Cowork skills, with read-first, two-step gated filing (see below).
+  Cowork skills, with read-first, two-step gated filing and a read-only e-Factura inbox
+  (see below).
 
 Not yet built: a sync facade, CI, and PyPI publishing.
 
@@ -97,15 +110,18 @@ ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
   python -m anafpy.mcp        # or the `anafpy-mcp` console script
 ```
 
-It exposes **read-only** tools (`auth_status`, `efactura_list_messages` /
-`efactura_get_status` / `efactura_download`, `etransport_list` / `etransport_get_status`
-/ `etransport_lookup`, and `*_validate`) plus **two-step gated filing**: `*_prepare*`
-validates locally and returns a preview + a confirmation token; `*_submit*` files only
-when given that token (for the same document) and `confirm=True`. The compiled ANAF
-reference is surfaced as read-only resources. Invoices/declarations are authored with
-small **flat** models, or passed through as existing UBL / e-Transport XML. Auth stays
-the host-side CLI — the server only reads and refreshes the token store. Configuration
-is environment-only; see [`CLAUDE.md`](CLAUDE.md).
+It exposes **read-only** tools (`auth_status`; the e-Factura inbox via
+`efactura_list_messages` / `efactura_get_status` / `efactura_download`; `etransport_list`
+/ `etransport_get_status` / `etransport_lookup`; and `*_validate`) plus **two-step gated
+filing**: `*_prepare*` validates the supplied XML locally and returns a preview + a
+confirmation token; `*_submit*` files only when given that token (for the same document)
+and `confirm=True`. Filing is **XML pass-through** — you hand it the complete UBL /
+e-Transport XML your invoicing software exported; the server does not compose invoices.
+Both the inbox and the `prepare` preview present invoices as a friendly **flat read view**
+(`FlatInvoice`) parsed from the XML — easy to read, lossy by design (the raw bytes stay
+authoritative). The compiled ANAF reference is surfaced as read-only resources. Auth stays
+the host-side CLI — the server only reads and refreshes the token store. Configuration is
+environment-only; see [`CLAUDE.md`](CLAUDE.md).
 
 ## Development
 

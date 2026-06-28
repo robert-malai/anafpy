@@ -9,15 +9,41 @@
 
 ## 1. Goals & scope
 
-- **Phase 1 — typed clients** for **e-Factura** and **e-Transport** (both use ANAF
-  OAuth2 + a qualified digital certificate, XML payloads).
-- **Phase 2 — a local MCP server** wrapping the clients, exposing operations as
-  skills/tools for Claude Cowork. *(Implemented — see §7.)*
-- **Local ANAF API reference docs**, compiled from ANAF's scattered online sources.
-- General requirements: **Python 3.12+**, **httpx**, **Pydantic v2**.
+anafpy is a **thin, stateless transport client** for ANAF's **e-Factura** and
+**e-Transport** services, optimized **MCP/Claude-first**. It is **not** invoice-authoring
+software: Romanian law presumes the entity already runs its own invoicing system, and
+e-Factura is a *filing endpoint*, not an invoicing app. anafpy moves documents to and from
+ANAF; it does not compose them.
 
-Out of scope (for now): the public CUI/VAT lookup web service; SPV; e-TVA; CII syntax;
-e-Transport API v1.
+- **Outbound = XML pass-through.** The caller (or Claude) supplies a **complete UBL /
+  e-Transport XML**, exported by their invoicing software. anafpy validates it locally
+  (Schematron), uploads, polls, and downloads. It never builds invoice XML from
+  structured input.
+- **Read-only inbound (e-Factura only).** List the message inbox (id, type, date,
+  counterparty CIF), download the original zip/XML/PDF **as-is**, and parse received UBL
+  into a friendly **flat read view** (`FlatInvoice`) for display/triage. e-Transport stays
+  outbound + own-declaration status only.
+- **Flat models are a read view, not an authoring surface.** The small, readable
+  `FlatInvoice` / `FlatTransport` shapes are produced *from* UBL — the only mapping
+  direction is **UBL → flat**. They render both the inbound inbox and the outbound
+  `prepare` preview. The view is intentionally **lossy** (raw bytes + full UBL stay
+  authoritative) and carries a `complete` flag + `dropped_fields` when it can't represent
+  something. anafpy still never goes flat → UBL: no invoice composition.
+- **Stateless** beyond the OAuth token store: callers own persistence of upload indices,
+  message ids, and statuses. Discrete one-call-one-result methods, no transport retry.
+
+Phases & requirements:
+
+- **Phase 1 — typed async clients** for e-Factura and e-Transport (ANAF OAuth2 + a
+  qualified digital certificate, XML payloads). *(Implemented.)*
+- **Phase 2 — a local MCP server** wrapping the clients, exposing the operations as Claude
+  Cowork skills. *(In progress — see §7.)*
+- **Local ANAF API reference docs**, compiled from ANAF's scattered online sources.
+- **Python 3.12+**, **httpx**, **Pydantic v2**.
+
+Out of scope: invoice composition / structured authoring; local persistence of documents;
+reconciliation / accounting logic; inbound e-Transport; the public CUI/VAT lookup web
+service; SPV; e-TVA; CII syntax; e-Transport API v1.
 
 ## 2. Cross-cutting architecture
 
@@ -37,15 +63,18 @@ src/anafpy/
   efactura/
     ubl/           # generated UBL models (Invoice + CreditNote closure)
     client.py
+    models.py      # value types + FlatInvoice read view + UBL→flat reader
     schematron/    # vendored CIUS-RO .sch/.xsl (versioned)
   etransport/
     schema/        # generated models from ANAF e-Transport XSD (v2)
     client.py
+    models.py      # value types + FlatTransport read view + reader
     schematron/    # vendored e-Transport .sch (versioned)
   cli/             # `anafpy auth login`, etc.
   mcp/             # MCP server (extra: anafpy[mcp])
-    models.py      # curated flat skill models
-    mapping.py     # curated <-> UBL converters
+    models.py      # XML pass-through inputs + prepared-submission gate (no authoring)
+    documents.py   # resolve XML input -> bytes; parse bytes -> client flat read view
+    server.py      # FastMCP tools + resources; config.py / context.py / tokens.py
 docs/anaf-reference/   # agent-compiled local reference (+ _sources/)
 ```
 
@@ -100,16 +129,21 @@ Design (layered):
   XSDs + a regeneration script. The **client speaks these UBL models** internally and
   as its public surface.
 - **Serialization**: no marshmallow. UBL ⇄ XML via `xsdata-pydantic`'s
-  `XmlParser`/`XmlSerializer` (zero serializer code). The only hand-written piece is
-  the curated⇄UBL mapping (MCP layer).
+  `XmlParser`/`XmlSerializer` (zero serializer code). The one hand-written piece is a
+  defensive **UBL→flat reader** producing the `FlatInvoice` read view (parties, lines, VAT
+  breakdown, totals, dates; `complete`/`dropped_fields` on loss), reused for the outbound
+  `prepare` preview and the inbound inbox. There is **no flat→UBL write mapping**: anafpy
+  reads UBL into the flat view, it never composes UBL.
 
 ### Operations (option C: discrete primary + optional orchestration)
 
-- Discrete 1:1 methods are the **primary** surface (and the future MCP tools):
-  `upload`, `get_status`, `download`, `list_messages`, plus XML→PDF conversion.
+- Discrete 1:1 methods are the **primary** surface (and the MCP tools): `upload`,
+  `get_status`, `download`, `list_messages`, plus XML→PDF conversion.
 - Optional `upload_and_wait(...)` convenience polls until terminal state.
 - Flow: `upload` → `id_încărcare`; poll `stareMesaj` (`în prelucrare` → `ok`/`nok`);
   `descărcare` → ZIP (signed invoice + ANAF signature).
+- **Inbound**: `list_messages` doubles as the received-invoice inbox; `download` plus the
+  UBL→flat reader yields the `FlatInvoice` read view of supplier invoices issued to you.
 
 ### Retries & errors
 
@@ -126,9 +160,11 @@ Design (layered):
 
 ### Download
 
-- `download` returns a **raw-preserving `DownloadedMessage`**: raw ZIP bytes + raw
-  signed-invoice XML bytes (the legally valid artifact, archived ~10 years) + a
-  lazily-parsed `ubl.Invoice` + signature. Never parse-only.
+- `download` returns a **raw-preserving `DownloadedMessage`** with three read tiers:
+  (1) raw ZIP + raw signed-invoice XML bytes (the legally valid artifact, archived
+  ~10 years) + signature; (2) a lazily-parsed full `ubl.Invoice`; (3) the lazily-built
+  `FlatInvoice` read view (easy to read; lossy with `complete`/`dropped_fields`). Tier 1 is
+  authoritative; never parse-only.
 
 ### Validation
 
@@ -179,27 +215,34 @@ doc — see `docs/anaf-reference/etransport/api.md`):
 
 ## 7. MCP server (phase 2)
 
-> **Implemented** in `src/anafpy/mcp/` (extra `anafpy[mcp]`): `python -m anafpy.mcp`.
-> 13 tools (`auth_status`, e-Factura/e-Transport read-only + two-step gated filing) and
-> the compiled reference as resources. Common-case flat→UBL/e-Transport mapping +
-> XML pass-through; advanced flat fields grow on demand.
+A **local stdio connector** built on the phase-1 clients (extra `anafpy[mcp]`,
+`python -m anafpy.mcp`). It exposes the operations as Claude Cowork skills, owns the
+XML pass-through tool *inputs* (the friendly `FlatInvoice` read view comes from the client
+layer, §4), reads the existing token store, and refreshes headlessly. *(Implemented: the
+XML-only filing inputs, the gated prepare→submit flow, the UBL→flat read view for previews
+and the e-Factura inbox, and the compiled reference as resources.)*
 
-- Local stdio connector built on the phase-1 clients. The MCP layer owns its own
-  curated, flat, skill-friendly models (not in the client).
-- **Safety: read-first, two-step gated mutations.** Read-only skills (status, list,
-  download, **validate**) are freely callable. Mutating skills (`submit_invoice`,
-  `create_transport`) are two-step: `prepare` returns a preview + local Schematron
-  result + a **confirmation token**; `submit` requires that token + explicit human
-  confirmation. Mutating tools annotated non-read-only so Cowork prompts.
-- **Curated model (tiered)**: a flat `FlatInvoice` (seller, buyer, currency, dates,
-  lines, + optional typed advanced fields) is the **LLM authoring surface**, grown on
-  demand. **Escape hatch = UBL-XML pass-through** (`{kind:"ubl_xml", xml|path}`) for
-  existing ERP/user UBL — not the structured model. The structured full UBL model is
-  **library-only** (its JSON Schema is too large/awkward for an LLM to author).
-- **ANAF reference exposed as MCP resources** (with draft/Romanian notes) so the skill
-  can ground BR-RO explanations and code lists. Prompts deferred.
-- **Auth handling**: server reads the token store + transparent refresh; interactive
-  login stays the host-side CLI. Expose a read-only **`auth_status`**; all tools fail
+- **Outbound = XML pass-through only.** The filing tool takes complete XML the caller's
+  invoicing software exported — `UblXmlInput {xml|path}` for e-Factura and
+  `EtransportXmlInput` for e-Transport. The MCP layer does **not** compose invoices: no
+  flat→XML mapping. (`FlatInvoice` is only ever a *read* projection of UBL — never an input.)
+- **Safety: read-first, two-step gated filing.** Read-only tools (`*_list*`, `*_status`,
+  `*_download`, `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
+  freely callable. Filing is split `*_prepare*` → `*_submit*`: `prepare` parses the
+  supplied XML into the **flat read view** to render a preview, runs local Schematron, and
+  returns an HMAC **confirmation token** bound to the exact XML bytes; `submit` requires
+  that token (same bytes) **and** `confirm=True`. Not a `dry_run` bool.
+- **Validation degrades gracefully**: without `anafpy[validation]` the validator is
+  `None`, `prepare` reports `validation_available=False` and still issues a token (ANAF is
+  authoritative; the human still confirms).
+- **Read-only e-Factura inbox**: `efactura_list_messages` (id, type, date, counterparty
+  CIF) → `efactura_download` (raw zip/XML/PDF) → the `FlatInvoice` **read view** for
+  display/triage, from the same client-layer reader. e-Transport stays outbound +
+  `lista`/`stareMesaj`.
+- **ANAF reference exposed as MCP resources** (with draft/Romanian notes) so the skill can
+  ground BR-RO explanations and code lists. Prompts deferred.
+- **Auth handling**: server reads the token store + transparent refresh; interactive login
+  stays the host-side CLI. A read-only **`auth_status`** reports validity; all tools fail
   with a clear "run `anafpy auth login`" remediation when unauthenticated.
 
 ## 8. Tooling
@@ -231,3 +274,8 @@ doc — see `docs/anaf-reference/etransport/api.md`):
 5. **Phase-2 MCP prompts** and in-session `begin_login` — deferred by design.
 6. **Public CUI/VAT lookup, SPV, e-TVA, CII, e-Transport v1** — out of scope; revisit
    only if needed.
+7. ~~Code realignment to thin transport~~ **DONE.** Outbound is XML pass-through (flat→UBL
+   mapping removed); `FlatInvoice`/`FlatTransport` are client-layer read views built by a
+   single `read_flat_invoice` / `read_flat_transport` (+ `complete` / `dropped_fields`),
+   exposed as `download` tier 3 (`DownloadedMessage.view`), the MCP prepare preview, and
+   the e-Factura inbox. All three gates green.
