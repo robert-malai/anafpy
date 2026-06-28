@@ -8,11 +8,33 @@ re-exported here for convenience; richer component types live under
 
 from __future__ import annotations
 
+from .client import EFacturaClient
+from .models import (
+    DownloadedMessage,
+    Filter,
+    MessageList,
+    MessageListItem,
+    MessageState,
+    MessageStatus,
+    TransformStandard,
+    UploadResult,
+    UploadStandard,
+)
 from .ubl.maindoc import CreditNote, CreditNoteType, Invoice, InvoiceType
 
 __all__ = [
     "CreditNote",
     "CreditNoteType",
+    "DownloadedMessage",
+    "EFacturaClient",
+    "Filter",
     "Invoice",
     "InvoiceType",
+    "MessageList",
+    "MessageListItem",
+    "MessageState",
+    "MessageStatus",
+    "TransformStandard",
+    "UploadResult",
+    "UploadStandard",
 ]
