@@ -34,7 +34,9 @@ __all__ = [
 
 # Coerce any non-None JSON value to str; mirrors the defensive s() helper previously
 # used in from_json classmethods (ANAF occasionally returns numeric ids as numbers).
-_StrNone = Annotated[str | None, BeforeValidator(lambda v: None if v is None else str(v))]
+_StrNone = Annotated[
+    str | None, BeforeValidator(lambda v: None if v is None else str(v))
+]
 
 
 class UploadStandard(StrEnum):

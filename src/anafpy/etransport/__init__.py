@@ -14,8 +14,10 @@ from .models import (
     NotificationMessage,
     UploadResult,
 )
+from .schema.schema_etr_v2_20230126 import ETransport
 
 __all__ = [
+    "ETransport",
     "ETransportClient",
     "InfoItem",
     "InfoList",

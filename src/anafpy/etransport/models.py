@@ -29,7 +29,9 @@ __all__ = [
 
 # Coerce any non-None JSON value to str; mirrors the defensive s() helper previously
 # used in from_json classmethods (ANAF occasionally returns numeric ids as numbers).
-_StrNone = Annotated[str | None, BeforeValidator(lambda v: None if v is None else str(v))]
+_StrNone = Annotated[
+    str | None, BeforeValidator(lambda v: None if v is None else str(v))
+]
 
 
 class MessageState(StrEnum):
@@ -131,7 +133,7 @@ class NotificationList(BaseModel):
 class Location(BaseModel):
     """A ``loc_start`` or ``loc_final`` from an ``info`` record."""
 
-    tip_loc: _StrNone = None  # PTF = border point / BV = customs / ADR = national address
+    tip_loc: _StrNone = None  # PTF = border / BV = customs / ADR = national address
     judet: _StrNone = None
     localitate: _StrNone = None
     strada: _StrNone = None
