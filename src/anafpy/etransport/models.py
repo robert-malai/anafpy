@@ -10,8 +10,10 @@ Key differences from e-Factura:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Annotated
+
+from pydantic import BaseModel, BeforeValidator
 
 __all__ = [
     "InfoItem",
@@ -24,6 +26,10 @@ __all__ = [
     "NotificationMessage",
     "UploadResult",
 ]
+
+# Coerce any non-None JSON value to str; mirrors the defensive s() helper previously
+# used in from_json classmethods (ANAF occasionally returns numeric ids as numbers).
+_StrNone = Annotated[str | None, BeforeValidator(lambda v: None if v is None else str(v))]
 
 
 class MessageState(StrEnum):
@@ -43,8 +49,7 @@ class MessageState(StrEnum):
         raise ValueError(f"unrecognised stareMesaj state: {value!r}")
 
 
-@dataclass(slots=True)
-class UploadResult:
+class UploadResult(BaseModel):
     """Outcome of ``POST /upload/ETRANSP/{cif}/{versiune}``.
 
     ``upload_id`` (``index_incarcare``) feeds ``get_status``; ``uit`` is the transport
@@ -53,7 +58,7 @@ class UploadResult:
 
     upload_id: str | None
     uit: str | None = None
-    errors: list[str] = field(default_factory=list)
+    errors: list[str] = []
     raw: bytes = b""
 
     @property
@@ -61,12 +66,11 @@ class UploadResult:
         return self.upload_id is not None
 
 
-@dataclass(slots=True)
-class MessageStatus:
+class MessageStatus(BaseModel):
     """Outcome of ``GET stareMesaj/{id_incarcare}``."""
 
     state: MessageState
-    errors: list[str] = field(default_factory=list)
+    errors: list[str] = []
     raw: bytes = b""
 
     @property
@@ -78,177 +82,84 @@ class MessageStatus:
         return self.state in (MessageState.OK, MessageState.NOK)
 
 
-@dataclass(slots=True)
-class NotificationMessage:
+class NotificationMessage(BaseModel):
     """One entry in a notification's ``mesaje`` array (tip ERR|WARN|INFO)."""
 
-    tip: str | None
-    mesaj: str | None
-
-    @classmethod
-    def from_json(cls, obj: dict[str, object]) -> NotificationMessage:
-        def s(k: str) -> str | None:
-            v = obj.get(k)
-            return None if v is None else str(v)
-
-        return cls(tip=s("tip"), mesaj=s("mesaj"))
+    tip: _StrNone = None
+    mesaj: _StrNone = None
 
 
-@dataclass(slots=True)
-class Notification:
+class Notification(BaseModel):
     """One entry from ``GET lista/{zile}/{cif}``."""
 
-    tip: str | None  # NOT / COR / DEL / CON / MVH
-    stare: str | None  # OK / ERR
-    uit: str | None
-    cod_decl: str | None
-    ref_decl: str | None
-    post_avarie: str | None
-    sursa: str | None  # A = API, I = web app
-    id_incarcare: str | None
-    data_creare: str | None
-    data_modif: str | None
-    tip_op: str | None  # 10/12/14/20/22/24/30/40/50/60/70
-    data_transp: str | None
-    pc_tara: str | None
-    pc_cod: str | None
-    pc_den: str | None
-    tr_tara: str | None
-    tr_cod: str | None
-    tr_den: str | None
-    nr_veh: str | None
-    nr_rem1: str | None
-    nr_rem2: str | None
-    nr_linii: str | None
-    gr_tot_neta: str | None
-    gr_tot_bruta: str | None
-    val_tot: str | None
-    mesaje: list[NotificationMessage] = field(default_factory=list)
-
-    @classmethod
-    def from_json(cls, obj: dict[str, object]) -> Notification:
-        def s(k: str) -> str | None:
-            v = obj.get(k)
-            return None if v is None else str(v)
-
-        raw_mesaje = obj.get("mesaje")
-        mesaje = [
-            NotificationMessage.from_json(m)
-            for m in (raw_mesaje if isinstance(raw_mesaje, list) else [])
-        ]
-        return cls(
-            tip=s("tip"),
-            stare=s("stare"),
-            uit=s("uit"),
-            cod_decl=s("cod_decl"),
-            ref_decl=s("ref_decl"),
-            post_avarie=s("post_avarie"),
-            sursa=s("sursa"),
-            id_incarcare=s("id_incarcare"),
-            data_creare=s("data_creare"),
-            data_modif=s("data_modif"),
-            tip_op=s("tip_op"),
-            data_transp=s("data_transp"),
-            pc_tara=s("pc_tara"),
-            pc_cod=s("pc_cod"),
-            pc_den=s("pc_den"),
-            tr_tara=s("tr_tara"),
-            tr_cod=s("tr_cod"),
-            tr_den=s("tr_den"),
-            nr_veh=s("nr_veh"),
-            nr_rem1=s("nr_rem1"),
-            nr_rem2=s("nr_rem2"),
-            nr_linii=s("nr_linii"),
-            gr_tot_neta=s("gr_tot_neta"),
-            gr_tot_bruta=s("gr_tot_bruta"),
-            val_tot=s("val_tot"),
-            mesaje=mesaje,
-        )
+    tip: _StrNone = None  # NOT / COR / DEL / CON / MVH
+    stare: _StrNone = None  # OK / ERR
+    uit: _StrNone = None
+    cod_decl: _StrNone = None
+    ref_decl: _StrNone = None
+    post_avarie: _StrNone = None
+    sursa: _StrNone = None  # A = API, I = web app
+    id_incarcare: _StrNone = None
+    data_creare: _StrNone = None
+    data_modif: _StrNone = None
+    tip_op: _StrNone = None  # 10/12/14/20/22/24/30/40/50/60/70
+    data_transp: _StrNone = None
+    pc_tara: _StrNone = None
+    pc_cod: _StrNone = None
+    pc_den: _StrNone = None
+    tr_tara: _StrNone = None
+    tr_cod: _StrNone = None
+    tr_den: _StrNone = None
+    nr_veh: _StrNone = None
+    nr_rem1: _StrNone = None
+    nr_rem2: _StrNone = None
+    nr_linii: _StrNone = None
+    gr_tot_neta: _StrNone = None
+    gr_tot_bruta: _StrNone = None
+    val_tot: _StrNone = None
+    mesaje: list[NotificationMessage] = []
 
 
-@dataclass(slots=True)
-class NotificationList:
+class NotificationList(BaseModel):
     """Response from ``GET lista/{zile}/{cif}``."""
 
-    notifications: list[Notification] = field(default_factory=list)
+    notifications: list[Notification] = []
     error: str | None = None
     raw: bytes = b""
 
 
-@dataclass(slots=True)
-class Location:
+class Location(BaseModel):
     """A ``loc_start`` or ``loc_final`` from an ``info`` record."""
 
-    tip_loc: str | None  # PTF = border point / BV = customs / ADR = national address
-    judet: str | None
-    localitate: str | None
-    strada: str | None
-    numar: str | None
-
-    @classmethod
-    def from_json(cls, obj: dict[str, object]) -> Location:
-        def s(k: str) -> str | None:
-            v = obj.get(k)
-            return None if v is None else str(v)
-
-        return cls(
-            tip_loc=s("tip_loc"),
-            judet=s("judet"),
-            localitate=s("localitate"),
-            strada=s("strada"),
-            numar=s("numar"),
-        )
+    tip_loc: _StrNone = None  # PTF = border point / BV = customs / ADR = national address
+    judet: _StrNone = None
+    localitate: _StrNone = None
+    strada: _StrNone = None
+    numar: _StrNone = None
 
 
-@dataclass(slots=True)
-class InfoItem:
+class InfoItem(BaseModel):
     """One record from ``GET info?cui_op=...``."""
 
-    uit: str | None
-    cod_decl: str | None
-    den_decl: str | None
-    ref_decl: str | None
-    data_transp: str | None
-    data_exp_uit: str | None
-    tr_tara: str | None
-    tr_cod: str | None
-    tr_den: str | None
-    nr_veh: str | None
-    nr_rem1: str | None
-    nr_rem2: str | None
+    uit: _StrNone = None
+    cod_decl: _StrNone = None
+    den_decl: _StrNone = None
+    ref_decl: _StrNone = None
+    data_transp: _StrNone = None
+    data_exp_uit: _StrNone = None
+    tr_tara: _StrNone = None
+    tr_cod: _StrNone = None
+    tr_den: _StrNone = None
+    nr_veh: _StrNone = None
+    nr_rem1: _StrNone = None
+    nr_rem2: _StrNone = None
     loc_start: Location | None = None
     loc_final: Location | None = None
 
-    @classmethod
-    def from_json(cls, obj: dict[str, object]) -> InfoItem:
-        def s(k: str) -> str | None:
-            v = obj.get(k)
-            return None if v is None else str(v)
 
-        loc_s = obj.get("loc_start")
-        loc_f = obj.get("loc_final")
-        return cls(
-            uit=s("uit"),
-            cod_decl=s("cod_decl"),
-            den_decl=s("den_decl"),
-            ref_decl=s("ref_decl"),
-            data_transp=s("data_transp"),
-            data_exp_uit=s("data_exp_uit"),
-            tr_tara=s("tr_tara"),
-            tr_cod=s("tr_cod"),
-            tr_den=s("tr_den"),
-            nr_veh=s("nr_veh"),
-            nr_rem1=s("nr_rem1"),
-            nr_rem2=s("nr_rem2"),
-            loc_start=Location.from_json(loc_s) if isinstance(loc_s, dict) else None,
-            loc_final=Location.from_json(loc_f) if isinstance(loc_f, dict) else None,
-        )
-
-
-@dataclass(slots=True)
-class InfoList:
+class InfoList(BaseModel):
     """Response from ``GET info?cui_op=...``."""
 
-    items: list[InfoItem] = field(default_factory=list)
+    items: list[InfoItem] = []
     error: str | None = None
     raw: bytes = b""

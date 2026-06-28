@@ -251,7 +251,7 @@ class EFacturaClient:
     def _parse_list(body: bytes) -> MessageList:
         data = json.loads(body)
         raw_messages = data.get("mesaje") or []
-        messages = [MessageListItem.from_json(m) for m in raw_messages]
+        messages = [MessageListItem.model_validate(m) for m in raw_messages]
         error = data.get("eroare")
         return MessageList(
             messages=messages,

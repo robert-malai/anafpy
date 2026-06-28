@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import io
 import zipfile
-from dataclasses import dataclass, field
 from enum import StrEnum
 from functools import cached_property
-from typing import cast
+from typing import Annotated, cast
+
+from pydantic import BaseModel, BeforeValidator, ConfigDict
 
 from .ubl.maindoc import CreditNote, Invoice
 
@@ -30,6 +31,10 @@ __all__ = [
     "UploadResult",
     "UploadStandard",
 ]
+
+# Coerce any non-None JSON value to str; mirrors the defensive s() helper previously
+# used in from_json classmethods (ANAF occasionally returns numeric ids as numbers).
+_StrNone = Annotated[str | None, BeforeValidator(lambda v: None if v is None else str(v))]
 
 
 class UploadStandard(StrEnum):
@@ -74,8 +79,7 @@ class MessageState(StrEnum):
         raise ValueError(f"unrecognised stareMesaj state: {value!r}")
 
 
-@dataclass(slots=True)
-class UploadResult:
+class UploadResult(BaseModel):
     """Outcome of ``/upload``.
 
     ``upload_id`` (``index_incarcare``) is set when ANAF accepted the document for
@@ -83,7 +87,7 @@ class UploadResult:
     """
 
     upload_id: str | None
-    errors: list[str] = field(default_factory=list)
+    errors: list[str] = []
     raw: bytes = b""
 
     @property
@@ -91,13 +95,12 @@ class UploadResult:
         return self.upload_id is not None
 
 
-@dataclass(slots=True)
-class MessageStatus:
+class MessageStatus(BaseModel):
     """Outcome of ``stareMesaj``."""
 
     state: MessageState
     download_id: str | None = None
-    errors: list[str] = field(default_factory=list)
+    errors: list[str] = []
     raw: bytes = b""
 
     @property
@@ -109,54 +112,36 @@ class MessageStatus:
         return self.state in (MessageState.OK, MessageState.NOK)
 
 
-@dataclass(slots=True)
-class MessageListItem:
+class MessageListItem(BaseModel):
     """One entry from a message-list response."""
 
-    id: str | None
-    id_solicitare: str | None
-    tip: str | None
-    data_creare: str | None
-    cif: str | None
-    cif_emitent: str | None
-    cif_beneficiar: str | None
-    detalii: str | None
-
-    @classmethod
-    def from_json(cls, obj: dict[str, object]) -> MessageListItem:
-        def s(key: str) -> str | None:
-            value = obj.get(key)
-            return None if value is None else str(value)
-
-        return cls(
-            id=s("id"),
-            id_solicitare=s("id_solicitare"),
-            tip=s("tip"),
-            data_creare=s("data_creare"),
-            cif=s("cif"),
-            cif_emitent=s("cif_emitent"),
-            cif_beneficiar=s("cif_beneficiar"),
-            detalii=s("detalii"),
-        )
+    id: _StrNone = None
+    id_solicitare: _StrNone = None
+    tip: _StrNone = None
+    data_creare: _StrNone = None
+    cif: _StrNone = None
+    cif_emitent: _StrNone = None
+    cif_beneficiar: _StrNone = None
+    detalii: _StrNone = None
 
 
-@dataclass(slots=True)
-class MessageList:
+class MessageList(BaseModel):
     """A page of messages. ``error`` holds ANAF's informational note (e.g. "no
     messages in interval") when the list is empty."""
 
-    messages: list[MessageListItem] = field(default_factory=list)
+    messages: list[MessageListItem] = []
     error: str | None = None
     raw: bytes = b""
 
 
-@dataclass
-class DownloadedMessage:
+class DownloadedMessage(BaseModel):
     """A ``descarcare`` ZIP, with raw bytes preserved.
 
     The signed invoice/errors XML and the MF signature are the legally meaningful
     artifacts and are kept verbatim; ``document`` parses the content member lazily.
     """
+
+    model_config = ConfigDict(ignored_types=(cached_property,))
 
     raw_zip: bytes
     content_xml: bytes | None = None

@@ -211,7 +211,7 @@ class ETransportClient:
                 or []
             )
             error = data.get("eroare") or data.get("error")
-        notifications = [Notification.from_json(item) for item in raw_items]
+        notifications = [Notification.model_validate(item) for item in raw_items]
         return NotificationList(
             notifications=notifications,
             error=str(error) if error is not None else None,
@@ -248,7 +248,7 @@ class ETransportClient:
                 data.get("found") or data.get("items") or data.get("notificari") or []
             )
             error = data.get("eroare") or data.get("error")
-        items = [InfoItem.from_json(item) for item in raw_items]
+        items = [InfoItem.model_validate(item) for item in raw_items]
         return InfoList(
             items=items,
             error=str(error) if error is not None else None,
