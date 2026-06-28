@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.so
+
+# Environments / tooling
+.venv/
+venv/
+.uv/
+uv.lock.bak
+
+# Caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local secrets / tokens (never commit ANAF credentials or token stores)
+*.token.json
+.anafpy/
+secrets.toml
+.env

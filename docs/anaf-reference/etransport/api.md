@@ -1,0 +1,157 @@
+---
+title: e-Transport — Web Services API (ETRANSPORT/ws/v1)
+service: etransport
+language: en
+sources:
+  - url: https://mfinante.gov.ro/static/10/eTransport/etransport_29072024.pdf
+    title: "Serviciile Etransport (official API PDF, 4 pp)"
+    source_revision: "29.07.2024"
+    retrieved: 2026-06-28
+    local_copy: ../_sources/etransport_29072024.pdf
+  - url: https://mfinante.gov.ro/ro/web/etransport/informatii-tehnice
+    title: "MF — Informații tehnice e-Transport"
+    retrieved: 2026-06-28
+  - url: https://mfinante.gov.ro/static/10/eTransport/schema_ETR_v2_20230126.xsd
+    title: "e-Transport v2 XSD"
+    source_revision: "2023-01-26"
+    retrieved: 2026-06-28
+  - url: https://mfinante.gov.ro/static/10/eTransport/eTransport-validation_v.2.0.2_12082024.sch
+    title: "e-Transport Schematron"
+    source_revision: "v2.0.2, 12.08.2024"
+    retrieved: 2026-06-28
+compiled: 2026-06-28
+compiled_by: claude-opus-4-8
+last_verified: 2026-06-28
+status: draft
+---
+
+# e-Transport — Web Services API
+
+Operations for the RO e-Transport system (declaring road transport of goods).
+Authentication is the shared [OAuth2 flow](../oauth/authentication.md). The declaration
+**schema** (ANAF-proprietary XSD v2, not UBL) and **Schematron** (v2.0.2) are covered
+with the modeling/validation work; this doc is the **transport/API surface**.
+
+> **Status:** draft, from the official **29.07.2024** API PDF — the current version,
+> which **supersedes** older 2023 specs. It corrected two earlier assumptions (see
+> "Corrections" below).
+
+## Access modes & base URLs
+
+| Mode | Host | Used by `anafpy` |
+|---|---|---|
+| **OAuth2** (Bearer) | `https://api.anaf.ro/{prod\|test}` | **Yes** |
+| Certificate-at-call-time | `https://webserviceapl.anaf.ro/{prod\|test}` | No |
+
+Path prefix: **`/ETRANSPORT/ws/v1/`** (the `ws/v1` is the web-service version and is
+constant; the *data-schema* version is a separate `{versiune}` path segment — see
+Upload v2). Bodies are **`Content-Type: application/xml`** (note: e-Factura uses
+`text/plain`; e-Transport uses `application/xml`).
+
+> Provenance: PDF pp. 1–3.
+
+## 1. Upload — `POST /ETRANSPORT/ws/v1/upload/...`
+
+**v1 form:**
+```
+POST https://api.anaf.ro/prod/ETRANSPORT/ws/v1/upload/{standard}/{cif}
+```
+**v2 form (adds schema version):**
+```
+POST https://api.anaf.ro/prod/ETRANSPORT/ws/v1/upload/{standard}/{cif}/{versiune}
+```
+
+| Path seg | Req | Values |
+|---|---|---|
+| `standard` | ✔ | **`ETRANSP`** (string). |
+| `cif` | ✔ | Numeric fiscal code, max 13 digits. |
+| `versiune` | ✔ (v2 form) | `1` or `2` (data-schema version). **`anafpy` uses `2`.** |
+
+Body = the transport declaration **XML**; `Content-Type: application/xml`. The response
+carries the **UIT** code and an **`index_incarcare`** (the upload index for
+`stareMesaj`).
+
+> `anafpy`: use the **v2 form with `versiune=2`** (decided). `standard` is `ETRANSP`
+> (not the 2022 OAuth PDF's stale `ETRANSPORT`).
+>
+> Provenance: PDF p. 1.
+
+## 2. Status — `GET /ETRANSPORT/ws/v1/stareMesaj/{id_incarcare}`
+
+```
+GET https://api.anaf.ro/prod/ETRANSPORT/ws/v1/stareMesaj/{id_incarcare}
+```
+`id_incarcare` = the numeric `index_incarcare` from the Upload response.
+
+> Provenance: PDF pp. 2–3.
+
+## 3. List — `GET /ETRANSPORT/ws/v1/lista/{zile}/{cif}`
+
+```
+GET https://api.anaf.ro/prod/ETRANSPORT/ws/v1/lista/{zile}/{cif}
+```
+`zile` = 1..60, `cif` = numeric. Returns **final** states of valid notifications +
+valid vehicle changes + any error notifications. Intermediate states (corrections,
+deletions) of valid notifications are **not** returned. Records are **not sorted** —
+sort locally by `data_creare`.
+
+**Notification types (`tip`):** `NOT` (notification), `COR` (correction), `DEL`
+(deletion), `CON` (confirmation), `MVH` (vehicle change).
+
+**Key returned fields:** `tip`, `stare` (`OK` valid / `ERR` error), `uit`, `cod_decl`,
+`ref_decl`, `post_avarie` (D/N), `sursa` (A=api / I=web app), `id_incarcare`,
+`data_creare`, `data_modif`, **`tip_op`** (operation type — see code list), `data_transp`,
+partner `pc_tara`/`pc_cod`/`pc_den`, transporter `tr_tara`/`tr_cod`/`tr_den`, vehicle
+`nr_veh`/`nr_rem1`/`nr_rem2`, `modif_veh[]`, `nr_linii`, `gr_tot_neta`, `gr_tot_bruta`,
+`val_tot`, `confirmare{}`, and `mesaje[]` (`{tip: ERR|WARN|INFO, mesaj}` — for error
+records at least one `ERR`).
+
+**`tip_op` codes:** `10`=AIC, `12`=LHI, `14`=SCI, `20`=LIC, `22`=LHE, `24`=SCE,
+`30`=TTN, `40`=IMP, `50`=EXP, `60`=DIN, `70`=DIE (see XSD for details).
+
+> Provenance: PDF pp. 1–2.
+
+## 4. Info for transporters — `GET /ETRANSPORT/ws/v1/info`
+
+```
+GET .../ETRANSPORT/ws/v1/info?cui_op={cui_op}[&cui_decl=][&uit=][&ref_decl=]
+```
+For transport organizers: active notifications where `cui_op` is the declared organizer.
+
+| Param | Req | Meaning |
+|---|---|---|
+| `cui_op` | ✔ | Transport organizer/transporter fiscal code (numeric). |
+| `cui_decl` | — | Original declarant's fiscal code. |
+| `uit` | — | UIT of interest. |
+| `ref_decl` | — | Declarant's reference supplied when the UIT was obtained. |
+
+Returns per record: `uit`, `cod_decl`, `den_decl`, `ref_decl`, `data_transp`,
+**`data_exp_uit`** (UIT expiry), transporter, vehicle, `modif_veh[]`,
+`loc_start`/`loc_final` (`tip_loc`: `PTF` border point / `BV` customs office / `ADR`
+national address; with `judet`, `localitate`, `strada`, `numar`, …), and `documente[]`.
+
+> Provenance: PDF pp. 3–4.
+
+## Corrections to earlier assumptions (surfaced by this doc)
+
+1. **OAuth host is `api.anaf.ro` — same as e-Factura**, *not* a different host. The
+   per-service difference is the **path** (`/ETRANSPORT/ws/v1/` vs `/FCTEL/rest/`).
+   (`webserviceapl.anaf.ro` is only the *certificate-direct* host, which `anafpy`
+   doesn't use.) → the shared `_transport` varies the **path prefix**, not the host.
+2. **No `descarcare`/ZIP endpoint** in the current e-Transport API. Unlike e-Factura,
+   e-Transport returns the **UIT + signed content at upload time** and exposes state via
+   `lista`/`stareMesaj` — there is no separate signed-ZIP download. So e-Transport does
+   **not** mirror e-Factura's `download`→`DownloadedMessage`; adjust the client design.
+3. `standard` = **`ETRANSP`** (the 2022 OAuth PDF's `ETRANSPORT` was stale), and the
+   `{versiune}` (data-schema, 1|2) is appended in the v2 upload form.
+
+## `anafpy` endpoint map
+
+| `anafpy` method | HTTP |
+|---|---|
+| `upload(xml, cif, *, version=2)` | `POST /ETRANSPORT/ws/v1/upload/ETRANSP/{cif}/{version}` |
+| `get_status(index)` | `GET /ETRANSPORT/ws/v1/stareMesaj/{index}` |
+| `list(days, cif)` | `GET /ETRANSPORT/ws/v1/lista/{days}/{cif}` |
+| `info(cui_op, *, cui_decl=None, uit=None, ref_decl=None)` | `GET /ETRANSPORT/ws/v1/info` |
+
+(No `download` — see Corrections #2.)

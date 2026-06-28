@@ -1,0 +1,1 @@
+"""anafpy command-line interface."""

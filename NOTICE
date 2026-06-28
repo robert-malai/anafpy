@@ -1,0 +1,17 @@
+anafpy
+Copyright 2026 anafpy contributors
+
+This product includes software developed by the anafpy contributors.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+---
+
+This package interacts with web services operated by ANAF (Agenția Națională de
+Administrare Fiscală) and the Romanian Ministry of Finance. It is an independent,
+unofficial client and is not affiliated with, endorsed by, or supported by ANAF or
+the Ministry of Finance.
+
+Reference material under docs/anaf-reference/_sources/ is reproduced from official
+ANAF / Ministry of Finance publications and remains the property of its respective
+authors; it is included for reference only.

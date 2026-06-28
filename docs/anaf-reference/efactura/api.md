@@ -1,0 +1,192 @@
+---
+title: e-Factura — Web Services API (FCTEL/rest)
+service: efactura
+language: en
+sources:
+  - url: https://mfinante.gov.ro/static/10/eFactura/prezentare%20api%20efactura.pdf
+    title: "Prezentare servicii web — Sistemul național RO e-Factura (official PDF, 5 pp)"
+    retrieved: 2026-06-28
+    local_copy: ../_sources/efactura_prezentare_api.pdf
+  - url: https://mfinante.gov.ro/ro/web/efactura/informatii-tehnice
+    title: "MF — Informații tehnice e-Factura (index of current technical resources)"
+    retrieved: 2026-06-28
+  - title: "Validation artifacts package"
+    url: https://mfinante.gov.ro/static/10/eFactura/ro16931-ubl-1.0.9.zip
+    source_revision: "ro16931-ubl 1.0.9 (latest; 1.0.7/1.0.8 also published)"
+    retrieved: 2026-06-28
+compiled: 2026-06-28
+compiled_by: claude-opus-4-8
+last_verified: 2026-06-28
+status: draft
+---
+
+# e-Factura — Web Services API
+
+Operations for the RO e-Factura system. Authentication is the shared
+[OAuth2 flow](../oauth/authentication.md) (Bearer token). Invoice **format** (UBL 2.1 /
+CIUS-RO) and **validation** (Schematron) are covered separately; this doc is the
+**transport/API surface**.
+
+> **Status:** draft, compiled from the official 5-page API PDF (current as linked from
+> the e-Factura *informații tehnice* page on 2026-06-28). Re-confirm endpoint behaviour
+> with a live test-environment call during implementation.
+
+## Access modes & base URLs
+
+Every endpoint has **two access modes**, differing only by host:
+
+| Mode | Host | How `anafpy` uses it |
+|---|---|---|
+| **OAuth2** (Bearer token) | `https://api.anaf.ro/{prod\|test}` | **This is what `anafpy` uses.** |
+| Certificate-at-call-time | `https://webserviceapl.anaf.ro/{prod\|test}` | Not used (direct mTLS per call). |
+| Public (no auth) — validate/PDF only | `https://webservicesp.anaf.ro/prod` | Optional, for `validare`/`transformare`. |
+
+All paths below are shown for the **OAuth2** mode, e.g.
+`https://api.anaf.ro/prod/FCTEL/rest/...`. Swap `prod`↔`test` for the environments.
+
+> Provenance: PDF pp. 1–5 (each operation lists both `webserviceapl` cert mode and
+> `api.anaf.ro` oauth2 mode).
+
+## 1. Upload — `POST /FCTEL/rest/upload`
+
+Submit an invoice/credit-note/message XML.
+
+```
+POST https://api.anaf.ro/prod/FCTEL/rest/upload?standard={std}&cif={cif}
+     [&extern=DA][&autofactura=DA][&executare=DA]
+Content-Type: text/plain        # XML in the body
+Authorization: Bearer <token>
+```
+
+| Param | Req | Values / meaning |
+|---|---|---|
+| `standard` | ✔ | `UBL` (invoice), `CN` (Credit Note), `CII`, or `RASP` (buyer→issuer message). |
+| `cif` | ✔ | Numeric CIF that receives the error message if the seller can't be identified from the XML. You must have SPV rights for it. |
+| `extern` | — | `DA` only — buyer is outside Romania (no CUI/NIF). |
+| `autofactura` | — | `DA` only — self-billing (beneficiary issues on supplier's behalf). |
+| `executare` | — | `DA` only — filed by an enforcement body on the debtor's behalf. |
+
+Returns an **upload index** (`id_încărcare` / `index_incarcare`) used by `stareMesaj`.
+
+**B2C variant:** identical, at `POST /FCTEL/rest/uploadb2c?...`.
+
+> Provenance: PDF pp. 1–2.
+
+## 2. Message status — `GET /FCTEL/rest/stareMesaj`
+
+```
+GET https://api.anaf.ro/prod/FCTEL/rest/stareMesaj?id_incarcare={index}
+```
+
+`id_incarcare` (✔) = the numeric upload index. Response field **`stare`**:
+
+| `stare` | Meaning |
+|---|---|
+| `ok` | Validated & processed. Download = original invoice + MF e-signature. Invoice reaches the buyer. |
+| `nok` | Errors found, not processed. Download = errors file + MF e-signature. Invoice does **not** reach the buyer. |
+| `XML cu erori nepreluat de sistem` | Rejected at upload; the error was already returned in the upload response. |
+| `in prelucrare` | Still processing — keep polling. |
+
+> `anafpy`: `ok`/`nok` are terminal; `in prelucrare` drives the `upload_and_wait` poll
+> loop. `nok` is a typed business outcome (not an exception).
+>
+> Provenance: PDF p. 2.
+
+## 3. Message lists
+
+### 3a. `GET /FCTEL/rest/listaMesajeFactura` (by days)
+
+```
+GET .../listaMesajeFactura?zile={1..60}&cif={cif}[&filtru={E|T|P|R}]
+```
+
+### 3b. `GET /FCTEL/rest/listaMesajePaginatieFactura` (paginated, by time range)
+
+```
+GET .../listaMesajePaginatieFactura?startTime={ms}&endTime={ms}&cif={cif}&pagina={n}[&filtru=...]
+```
+`startTime`/`endTime` = **unix-timestamp milliseconds** (e.g. `1646037374000`).
+
+**`filtru`** (optional): `E`=ERORI FACTURA, `T`=FACTURA TRIMISĂ, `P`=FACTURA PRIMITĂ,
+`R`=MESAJ CUMPĂRĂTOR.
+
+**Response fields (per message):** `data_creare`, `cif`, `id_solicitare` (the upload
+index), `detalii`, `cif_emitent` (seller), `cif_beneficiar` (buyer), `tip`
+(`FACTURA TRIMISA` | `FACTURA PRIMITA` | `ERORI FACTURA` | `MESAJ CUMPARATOR …`), and
+**`id`** (used by `descarcare`).
+
+> Provenance: PDF pp. 2–4.
+
+## 4. Download — `GET /FCTEL/rest/descarcare`
+
+```
+GET https://api.anaf.ro/prod/FCTEL/rest/descarcare?id={id}
+```
+`id` (✔) = the `id` from a `listaMesaje` entry. Returns a **ZIP with two XML files**:
+the original invoice **or** the identified errors (as applicable), and the **MF
+electronic signature**.
+
+> `anafpy`: this is the `DownloadedMessage` — preserve both raw XML bytes (the signed
+> original is the legally valid artifact).
+>
+> Provenance: PDF p. 4.
+
+## 5. Validate XML — `POST /FCTEL/rest/validare/{std}`
+
+```
+POST https://api.anaf.ro/prod/FCTEL/rest/validare/{FACT1|FCN}      # oauth2
+POST https://webservicesp.anaf.ro/prod/FCTEL/rest/validare/{FACT1|FCN}   # no auth
+Content-Type: text/plain        # XML in the body
+```
+`std` (✔): `FACT1` (invoice) or `FCN` (credit note). **Server-side** validation —
+distinct from `anafpy`'s optional local Schematron pre-check. Available **without auth**
+on `webservicesp.anaf.ro`.
+
+> Provenance: PDF p. 4.
+
+## 6. XML → PDF — `POST /FCTEL/rest/transformare/{std}[/{novld}]`
+
+```
+POST https://api.anaf.ro/prod/FCTEL/rest/transformare/{FACT1|FCN}[/DA]
+Content-Type: text/plain        # XML in the body
+```
+`std` (✔): `FACT1` | `FCN`. Optional `novld=DA` skips validation (⚠️ ANAF does not
+guarantee correctness of the PDF for unvalidated XML). Also available no-auth on
+`webservicesp.anaf.ro`.
+
+> Provenance: PDF p. 5.
+
+## 7. Validate signature — `POST /api/validate/signature`
+
+```
+POST https://api.anaf.ro/api/validate/signature                  # oauth2
+POST https://webservicesp.anaf.ro/api/validate/signature         # no auth
+multipart/form-data:
+  file      = invoice XML
+  signature = signature XML
+```
+Both files come from the `descarcare` ZIP.
+
+> Provenance: PDF p. 5.
+
+## `anafpy` endpoint map
+
+| `anafpy` method | HTTP |
+|---|---|
+| `upload(xml, standard, cif, *, extern, autofactura, executare)` | `POST /FCTEL/rest/upload` |
+| `upload_b2c(...)` | `POST /FCTEL/rest/uploadb2c` |
+| `get_status(index)` | `GET /FCTEL/rest/stareMesaj` |
+| `list_messages(days, cif, filter=None)` | `GET /FCTEL/rest/listaMesajeFactura` |
+| `list_messages_paged(start, end, cif, page, filter=None)` | `GET /FCTEL/rest/listaMesajePaginatieFactura` |
+| `download(id)` → `DownloadedMessage` | `GET /FCTEL/rest/descarcare` |
+| `validate_remote(xml, standard)` | `POST /FCTEL/rest/validare/{std}` |
+| `to_pdf(xml, standard, validate=True)` | `POST /FCTEL/rest/transformare/{std}` |
+| `validate_signature(file, signature)` | `POST /api/validate/signature` |
+
+**Implementation notes**
+
+- Upload/validate/transform bodies are **`Content-Type: text/plain`** with the XML as
+  the raw body (per the PDF), despite being XML — follow the spec, not intuition.
+- `download` returns a **ZIP** (binary) — handle as bytes, unzip to the two XML members.
+- The public `webservicesp.anaf.ro` no-auth `validare`/`transformare` could power a
+  zero-credential "lint my invoice" path; keep behind the same `Validator` seam.
