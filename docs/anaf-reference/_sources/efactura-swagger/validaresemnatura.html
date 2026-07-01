@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Swagger UI</title>
+    <link
+      href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui.css"
+    />
+    <style>
+      html {
+        box-sizing: border-box;
+        overflow: -moz-scrollbars-vertical;
+        overflow-y: scroll;
+      }
+      *,
+      *:before,
+      *:after {
+        box-sizing: inherit;
+      }
+      body {
+        margin: 0;
+        background: #fafafa;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = function () {
+        var spec = {
+          openapi: "3.0.1",
+          info: {
+            title: "XML Signature Validation API",
+            description:
+              "API pentru validarea semnăturilor la facturile electronice",
+            version: "1.0",
+          },
+          tags: [
+            {
+              name: "XML Signature Validation",
+              description: "API pentru validarea semnăturii electronice",
+            },
+          ],
+          paths: {
+            "/api/validate/signature": {
+              post: {
+                tags: ["XML Signature Validation"],
+                summary: "Validează semnătura electronică",
+                description:
+                  "Validează o semnătură electronică de tip 'detached' pentru un fișier XML",
+                operationId: "validateSignature",
+                requestBody: {
+                  content: {
+                    "multipart/form-data": {
+                      schema: {
+                        required: ["file", "signature"],
+                        type: "object",
+                        properties: {
+                          file: {
+                            type: "string",
+                            description: "Fișierul XML care a fost semnat",
+                            format: "binary",
+                          },
+                          signature: {
+                            type: "string",
+                            description:
+                              "Fișierul semnătură electronică de tip 'detached'",
+                            format: "binary",
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+                responses: {
+                  200: {
+                    description: "Validare / Nevalidare fișiere încărcate",
+                    content: {
+                      "application/json": {
+                        schema: { type: "string" },
+                        examples: {
+                          "Validare fisiere incarcate": {
+                            description: "Validare fisiere incarcate",
+                            value: {
+                              msg: "Fișierele încărcate au fost validate cu succes, din perspectiva autenticității semnăturii aplicate și a apartenenței acesteia la XML-ul ce reprezintă factura electronică. Documentul factură de tip XML cu semnătura de validare atașată, este considerat document original din perspectiva legislativă și este generat prin intermediul sistemului național RO e-Factura.",
+                            },
+                          },
+                          "Nevalidare fisiere incarcate": {
+                            description: "Nevalidare fisiere incarcate",
+                            value: {
+                              msg: "Fișierele încărcate NU au putut fi validate cu succes, din perspectiva autenticității semnăturii aplicate și a apartenenței acesteia la XML-ul ce reprezintă factura electronică. Documentul factură de tip XML cu semnătura de validare atașată, NU poate fi considerat document original din perspectiva legislativă și NU este generat prin intermediul sistemului național RO e-Factura.",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  400: {
+                    description: "Eroare tehnică validare",
+                    content: {
+                      "application/json": {
+                        schema: { type: "string" },
+                        example: {
+                          msg: "Eroare tehnică: request incorect. Cauza: cel puțin unul din documente NU a fost încărcat sau NU este un fisier de tip XML specific facturii electronice.",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          components: {},
+        };
+        // Build a system
+        const ui = SwaggerUIBundle({
+          spec: spec,
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+          layout: "StandaloneLayout",
+          supportedSubmitMethods: [],
+        });
+        window.ui = ui;
+      };
+    </script>
+  </body>
+</html>

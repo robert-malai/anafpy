@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Swagger UI</title>
+    <link
+      href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui.css"
+    />
+    <style>
+      html {
+        box-sizing: border-box;
+        overflow: -moz-scrollbars-vertical;
+        overflow-y: scroll;
+      }
+
+      *,
+      *:before,
+      *:after {
+        box-sizing: inherit;
+      }
+
+      body {
+        margin: 0;
+        background: #fafafa;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = function () {
+        var spec = {
+          openapi: "3.0.1",
+          info: {
+            title: "eFactura",
+            description: "Serviciu de listare mesaje",
+            version: "1.0",
+          },
+          tags: [
+            {
+              name: "EFacturaListaMesaje",
+              description: "EFactura ListaMesaje API",
+            },
+          ],
+          paths: {
+            "/listaMesajePaginatieFactura": {
+              get: {
+                tags: ["EFacturaListaMesaje"],
+                operationId: "getPaginatie",
+                parameters: [
+                  {
+                    name: "startTime",
+                    in: "query",
+                    description:
+                      "Data de start a intervalului interogat. Este in format Unix Time exprimat in milisecunde [1646037374000 = 28.02.2022 10:36:14]",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 1646037374000,
+                  },
+                  {
+                    name: "endTime",
+                    in: "query",
+                    description:
+                      "Data de final a intervalului interogat. Este in format Unix Time exprimat in milisecunde [1646170574000 = 01.03.2022 23:36:14]",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 1646170574000,
+                  },
+                  {
+                    name: "cif",
+                    in: "query",
+                    description: "CIF",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 8000000000,
+                  },
+                  {
+                    name: "pagina",
+                    in: "query",
+                    description: "Pagina curenta ",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 1,
+                  },
+                  {
+                    name: "filtru",
+                    in: "query",
+                    description:
+                      "Folosit pentru filtrarea mesajelor. Parametrul poate sa lipseasca caz in care se intoarce toata lista de mesaje. Daca este prezent valoarile acceptate sunt E,P,T sau R",
+                    required: false,
+                    schema: { type: "string" },
+                    example: "E",
+                  },
+                ],
+                responses: {
+                  500: {
+                    description: "Internal Server Error",
+                    content: {
+                      "*/*": {
+                        schema: {
+                          $ref: "#/components/schemas/CustomErrorMessage",
+                        },
+                      },
+                    },
+                  },
+                  400: {
+                    description: "Response code 400",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          $ref: "#/components/schemas/CustomErrorMessage",
+                        },
+                        examples: {
+                          "lipsa startTime, endTime, cif sau pagina": {
+                            description:
+                              "Parametrii startTime, endTime, cif si pagina sunt obligatorii",
+                            value: {
+                              timestamp: "19-08-2021 11:59:29",
+                              status: 400,
+                              error: "Bad Request",
+                              message:
+                                "Parametrii startTime, endTime, cif si pagina sunt obligatorii",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  200: {
+                    description: "Response code 200",
+                    content: {
+                      "application/json": {
+                        schema: { $ref: "#/components/schemas/Mesaj" },
+                        examples: {
+                          "cif-ul returneaza mesaje": {
+                            description: "a fost intoarsa lista de mesaje",
+                            value: {
+                              mesaje: [
+                                {
+                                  data_creare: "202210311452",
+                                  cif: "8000000000",
+                                  id_solicitare: "5001120362",
+                                  detalii:
+                                    "Erori de validare identificate la factura primita cu id_incarcare=5001120362",
+                                  tip: "ERORI FACTURA",
+                                  id: "3001474425",
+                                },
+                                {
+                                  data_creare: "202210311452",
+                                  cif: "8000000000",
+                                  id_solicitare: "5001120366",
+                                  detalii:
+                                    "Erori de validare identificate la factura primita cu id_incarcare=5001120366",
+                                  tip: "ERORI FACTURA",
+                                  id: "3001474424",
+                                },
+                              ],
+                              numar_inregistrari_in_pagina: 2,
+                              numar_total_inregistrari_per_pagina: 500,
+                              numar_total_inregistrari: 14130,
+                              numar_total_pagini: 29,
+                              index_pagina_curenta: 29,
+                              serial: "1234AA456",
+                              cui: "8000000000",
+                              titlu:
+                                "Lista Mesaje disponibile din intervalul 06-09-2022 09:48:20 - 02-11-2022 11:49:24",
+                            },
+                          },
+                          "cif este non numeric": {
+                            description: "cif non-numeric",
+                            value: {
+                              eroare:
+                                "CIF introdus= aaa nu este un numar sau nu are o valoare acceptata de sistem",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "startTime nu este un numar sau nu are o valoare acceptata de sistem":
+                            {
+                              description: "startTime non-numeric",
+                              value: {
+                                eroare:
+                                  "startTime = aaa nu este un numar sau nu are o valoare acceptata de sistem",
+                                titlu: "Lista Mesaje",
+                              },
+                            },
+                          "endTime nu este un numar sau nu are o valoare acceptata de sistem":
+                            {
+                              description: "endTime non-numeric",
+                              value: {
+                                eroare:
+                                  "endTime = aaa nu este un numar sau nu are o valoare acceptata de sistem",
+                                titlu: "Lista Mesaje",
+                              },
+                            },
+                          "pagina nu este un numar sau nu are o valoare acceptata de sistem":
+                            {
+                              description: "pagina non-numeric",
+                              value: {
+                                eroare:
+                                  "pagina = aa nu este un numar sau nu are o valoare acceptata de sistem",
+                                titlu: "Lista Mesaje",
+                              },
+                            },
+                          "startTime mai vechi de 60 de zile": {
+                            description: "startTime mai vechi de 60 de zile",
+                            value: {
+                              eroare:
+                                "startTime = 09-07-2022 10:41:11 nu poate fi mai vechi de 60 de zile fata de momentul requestului",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "endTime inainte de startTime": {
+                            description:
+                              "endTime nu poate fi inainte de startTime",
+                            value: {
+                              eroare:
+                                "endTime = 09-08-2022 10:41:11 nu poate fi <= startTime = 06-09-2022 09:48:20",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "endTime in viitor": {
+                            description:
+                              "endTime nu poate fi o data din viitor",
+                            value: {
+                              eroare:
+                                "endTime = 02-12-2022 11:49:24 nu poate in viitor fata de momentul requestului",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "parametrul filtru invalid": {
+                            description:
+                              "parametrul filtru este completat dar este invalid",
+                            value: {
+                              eroare:
+                                "Valorile acceptate pentru parametrul filtru sunt E, T, P sau R",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "nu aveti drept pentru acest cif": {
+                            description: "cif fara drept",
+                            value: {
+                              eroare:
+                                "Nu aveti drept in SPV pentru CIF=8000000000",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "lipsa drepturi SPV": {
+                            description:
+                              "nu aveti drepturi in SPV pentru nici un cif",
+                            value: {
+                              eroare:
+                                "Nu exista niciun CIF pentru care sa aveti drept in SPV",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "paginia mai mare decat total pagini": {
+                            description:
+                              "pagina solicitata depaseste numarul total de pagini",
+                            value: {
+                              eroare:
+                                "Pagina solicitata 50 este mai mare decat numarul toatal de pagini 29",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "nu exista mesaje": {
+                            description:
+                              "nu exista mesaje in intervalul mentionat ",
+                            value: {
+                              eroare: "Nu exista mesaje in intervalul selectat",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "limita apeluri zilnice atinsa": {
+                            description:
+                              "a fost atinsa limita de apeluri zilnice",
+                            value: {
+                              eroare:
+                                "S-au facut deja 1000 interogari de lista mesaje de catre utilizator in cursul zilei",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "/listaMesajeFactura": {
+              get: {
+                tags: ["EFacturaListaMesaje"],
+                operationId: "getListaMesaje",
+                parameters: [
+                  {
+                    name: "zile",
+                    in: "query",
+                    description:
+                      "Numarul de zile pentru care se face interogarea. Valoarea este 1 si 60",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 50,
+                  },
+                  {
+                    name: "cif",
+                    in: "query",
+                    description: "CIF",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 8000000000,
+                  },
+                  {
+                    name: "filtru",
+                    in: "query",
+                    description:
+                      "Folosit pentru filtrarea mesajelor. Parametrul poate sa lipseasca caz in care se intoarce toata lista de mesaje. Daca este prezent valoarile acceptate sunt E,P,T sau R",
+                    required: false,
+                    schema: { type: "string" },
+                    example: "E",
+                  },
+                ],
+                responses: {
+                  500: {
+                    description: "Internal Server Error",
+                    content: {
+                      "*/*": {
+                        schema: {
+                          $ref: "#/components/schemas/CustomErrorMessage",
+                        },
+                      },
+                    },
+                  },
+                  400: {
+                    description: "Response code 400",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          $ref: "#/components/schemas/CustomErrorMessage",
+                        },
+                        examples: {
+                          "lipsa zile sau cif": {
+                            description:
+                              "Nu ati completat parametrii zile sau cif",
+                            value: {
+                              timestamp: "19-08-2021 11:59:29",
+                              status: 400,
+                              error: "Bad Request",
+                              message:
+                                "Parametrii zile si cif sunt obligatorii",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  200: {
+                    description: "Response code 200",
+                    content: {
+                      "application/json": {
+                        schema: { $ref: "#/components/schemas/Mesaj" },
+                        examples: {
+                          "cif-ul returneaza mesaje": {
+                            description: "a fost intoarsa lista de mesaje",
+                            value: {
+                              mesaje: [
+                                {
+                                  data_creare: "202211011415",
+                                  cif: "8000000000",
+                                  id_solicitare: "5001130147",
+                                  detalii:
+                                    "Erori de validare identificate la factura primita cu id_incarcare=5001130147",
+                                  tip: "ERORI FACTURA",
+                                  id: "3001293434",
+                                },
+                                {
+                                  data_creare: "202211011336",
+                                  cif: "8000000000",
+                                  id_solicitare: "5001131297",
+                                  detalii:
+                                    "Factura cu id_incarcare=5001131297 emisa de cif_emitent=8000000000 pentru cif_beneficiar=3",
+                                  tip: "FACTURA TRIMISA",
+                                  id: "3001503294",
+                                },
+                              ],
+                              serial: "1234AA456",
+                              cui: "8000000000",
+                              titlu:
+                                "Lista Mesaje disponibile din ultimele 1 zile",
+                            },
+                          },
+                          "cif este non numeric": {
+                            description: "cif non-numeric",
+                            value: {
+                              eroare: "CIF introdus= aaa nu este un numar",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "numar de zile este non numeric": {
+                            description: "numar de zile non-numeric",
+                            value: {
+                              eroare:
+                                "Numarul de zile introdus= aaa nu este un numar intreg",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "numar de zile incorect": {
+                            description:
+                              "parametrul zile nu este intre 1 si 60",
+                            value: {
+                              eroare:
+                                "Numarul de zile trebuie sa fie intre 1 si 60",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "parametrul filtru invalid": {
+                            description:
+                              "parametrul filtru este completat dar este invalid",
+                            value: {
+                              eroare:
+                                "Valorile acceptate pentru parametrul filtru sunt E, T, P sau R",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "nu aveti drept pentru acest cif": {
+                            description: "cif fara drept",
+                            value: {
+                              eroare:
+                                "Nu aveti drept in SPV pentru CIF=8000000000",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "lipsa drepturi SPV": {
+                            description:
+                              "nu aveti drepturi in SPV pentru nici un cif",
+                            value: {
+                              eroare:
+                                "Nu exista niciun CIF pentru care sa aveti drept in SPV",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "nu exista mesaje": {
+                            description:
+                              "nu exista mesaje in intervalul de zile mentionat",
+                            value: {
+                              eroare: "Nu exista mesaje in ultimele 15 zile",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "limita mesaje in pagina atinsa": {
+                            description:
+                              "a fost atinsa limita de mesaje in pagina",
+                            value: {
+                              eroare:
+                                "Lista de mesaje este mai mare decat numarul de 500 elemente permise in pagina. Folositi endpoint-ul cu paginatie.",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                          "limita apeluri zilnice atinsa": {
+                            description:
+                              "a fost atinsa limita de apeluri zilnice",
+                            value: {
+                              eroare:
+                                "S-au facut deja 1000 interogari de lista mesaje de catre utilizator in cursul zilei",
+                              titlu: "Lista Mesaje",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          components: {
+            schemas: {
+              CustomErrorMessage: {
+                type: "object",
+                properties: {
+                  timestamp: { type: "string", format: "date-time" },
+                  status: { type: "integer", format: "int32" },
+                  error: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+              Mesaj: {
+                type: "object",
+                properties: {
+                  data_creare: { type: "string" },
+                  cif: { type: "string" },
+                  id_solicitare: { type: "string" },
+                  detalii: { type: "string" },
+                  tip: { type: "string" },
+                  id: { type: "string" },
+                },
+              },
+            },
+          },
+        };
+        // Build a system
+        const ui = SwaggerUIBundle({
+          spec: spec,
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+          layout: "StandaloneLayout",
+          supportedSubmitMethods: [],
+        });
+        window.ui = ui;
+      };
+    </script>
+  </body>
+</html>

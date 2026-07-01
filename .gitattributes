@@ -1,0 +1,2 @@
+# Raw ANAF originals under _sources/ are preserved verbatim - no EOL normalization.
+docs/anaf-reference/_sources/** -text

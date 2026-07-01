@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Swagger UI</title>
+    <link
+      href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui.css"
+    />
+    <style>
+      html {
+        box-sizing: border-box;
+        overflow: -moz-scrollbars-vertical;
+        overflow-y: scroll;
+      }
+
+      *,
+      *:before,
+      *:after {
+        box-sizing: inherit;
+      }
+
+      body {
+        margin: 0;
+        background: #fafafa;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = function () {
+        var spec = {
+          openapi: "3.0.1",
+          info: { title: "OpenAPI definition", version: "v0" },
+          tags: [
+            { name: "ETransportInfo", description: "ETransport Info API" },
+          ],
+          paths: {
+            "/info": {
+              get: {
+                tags: ["ETransportInfo"],
+                summary: "Info",
+                description: "Informatii pentru transportatori",
+                operationId: "getInfo",
+                parameters: [
+                  {
+                    name: "cui_op",
+                    in: "query",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 8000000000,
+                  },
+                  {
+                    name: "cui_decl",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string" },
+                    example: 8000000000,
+                  },
+                  {
+                    name: "uit",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string" },
+                    example: "XXX",
+                  },
+                  {
+                    name: "ref_decl",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string" },
+                    example: "XXX",
+                  },
+                ],
+                responses: {
+                  400: {
+                    description: "Response code 400",
+                    content: {
+                      "application/json": {
+                        examples: {
+                          "apel incorect": {
+                            description: "Lipsa parametru obligatoriu",
+                            value: {
+                              timestamp: "25-06-2024 16:19:32",
+                              status: 400,
+                              error: "Bad Request",
+                              message: "Parametrul cui_op este obligatoriu",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  200: {
+                    description: "Response code 200",
+                    content: {
+                      "application/json": {
+                        examples: {
+                          "informatii transport": {
+                            description:
+                              "Au fost obtinute infromatiile transporturilor",
+                            value: [
+                              {
+                                id: 123,
+                                uit: "XXX",
+                                cod_decl: 8000000000,
+                                den_decl: "TEST SRL",
+                                data_transp: "2024-06-24T00:00:00",
+                                data_exp_uit: "2024-06-29T00:00:00",
+                                ref_decl: "XXX",
+                                tr_cod: "8000000000",
+                                tr_den: "TEST SRL",
+                                nr_veh: "B0000",
+                                loc_start: {
+                                  tip_loc: "ADR",
+                                  adresa_completa: "str. Test",
+                                  judet: "B",
+                                  localitate: "B",
+                                  strada: "asdsad",
+                                  numar: "00",
+                                  alte_info: "-",
+                                },
+                                loc_final: {
+                                  tip_loc: "ADR",
+                                  adresa_completa: "str. Test",
+                                  judet: "B",
+                                  localitate: "B",
+                                  strada: "asd",
+                                  numar: "asd",
+                                  alte_info: "-",
+                                },
+                                documente: "XXX",
+                              },
+                            ],
+                          },
+                          "lipsa informatii": {
+                            description:
+                              "Nu exista informatii pentru datele furnizate",
+                            value: {
+                              trace_id: "c26017b0-cef8-4cab-bc02-1de283bd86e3",
+                              dateResponse: "202406251616",
+                              error:
+                                "Nu exista informatii pentru aceasta solicitare",
+                            },
+                          },
+                          "lipsa drepturi": {
+                            description:
+                              "Credentialele folosite la autentificarea in sistemul RO-eTransport nu au cif-uri asignate",
+                            value: {
+                              trace_id: "8edae804-8f3f-44ad-90fa-c0e2c4d1c778",
+                              dateResponse: "202406251543",
+                              error:
+                                "Nu exista niciun CIF petru care sa aveti drept in SPV",
+                            },
+                          },
+                          "lipsa drepturi cif": {
+                            description:
+                              "Credentialele folosite la autentificarea in sistemul RO-eTransport nu au drepturi pe cif-ul furnizat",
+                            value: {
+                              trace_id: "29700871-2b72-4b9c-920e-39ef7edde043",
+                              dateResponse: "202406251545",
+                              error:
+                                "Nu aveti drept in SPV pentru CIF=8000000000",
+                            },
+                          },
+                          "cui_op invalid": {
+                            description: "cui_op furnizat nu este numeric",
+                            value: {
+                              trace_id: "dfa5d599-5f23-4585-ae45-5d648f27437c",
+                              dateResponse: "202406251614",
+                              error: "cui_op introdus= abc nu este un numar",
+                            },
+                          },
+                          "cui_decl invalid": {
+                            description: "cui_decl furnizat nu este numeric",
+                            value: {
+                              trace_id: "8684aeae-7aa5-4ccb-b075-d5619ce535ea",
+                              dateResponse: "202406251614",
+                              error: "cui_decl introdus= abc nu este un numar",
+                            },
+                          },
+                          "eroare tehnica": {
+                            description: "A aparut o eroare tehnica",
+                            value: {
+                              trace_id: "5bfb6c12-f8c7-4003-8dc6-bde884c824a1",
+                              dateResponse: "202406251312",
+                              error: "A aparut o eroare tehnica. Cod: XXX",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          components: { schemas: {} },
+        };
+        // Build a system
+        const ui = SwaggerUIBundle({
+          spec: spec,
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+          layout: "StandaloneLayout",
+          supportedSubmitMethods: [],
+        });
+        window.ui = ui;
+      };
+    </script>
+  </body>
+</html>

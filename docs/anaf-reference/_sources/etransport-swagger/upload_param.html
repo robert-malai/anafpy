@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Swagger UI</title>
+    <link
+      href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui.css"
+    />
+    <style>
+      html {
+        box-sizing: border-box;
+        overflow: -moz-scrollbars-vertical;
+        overflow-y: scroll;
+      }
+      *,
+      *:before,
+      *:after {
+        box-sizing: inherit;
+      }
+      body {
+        margin: 0;
+        background: #fafafa;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = function () {
+        var spec = {
+          openapi: "3.0.1",
+          info: { title: "ETransport" },
+          tags: [
+            { name: "ETransportUpload", description: "ETransport Upload API" },
+          ],
+          paths: {
+            "/upload/{standard}/{cif}": {
+              post: {
+                tags: ["ETransportUpload"],
+                summary: "upload",
+                description: "Operatia de incarcare a transporturilor",
+                operationId: "handleRequest",
+                parameters: [
+                  {
+                    name: "standard",
+                    in: "path",
+                    description:
+                      "Specifica tipul xml-ului ce trebuie transmis. Valoarea acceptata este ETRANSP",
+                    required: true,
+                    schema: { type: "string" },
+                    example: "ETRANSP",
+                  },
+                  {
+                    name: "cif",
+                    in: "path",
+                    description: "Cif-ul folosit la incarcare",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 8000000000,
+                  },
+                ],
+                requestBody: {
+                  description: "Trebuie atasat un fisier de tip xml",
+                  content: {
+                    "*/*": {
+                      schema: { type: "string" },
+                      examples: {
+                        "structura xml pentru ETRANSP": {
+                          description: "ETRANSP",
+                          value:
+                            '<?xml version="1.0" encoding="UTF-8"?>\r\n<eTransport xmlns="mfp:anaf:dgti:eTransport:declaratie:v1"\r\n xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\r\n xsi:schemaLocation="mfp:anaf:dgti:eTransport:declaratie:v1" cod_tip_operatiune="AI" cod_declarant="00000">\r\n    <confirmare UITConfirmat="UITConfirmat1" tipConfirmare="confirma"/>\r\n</eTransport>',
+                        },
+                      },
+                    },
+                  },
+                  required: true,
+                },
+                responses: {
+                  200: {
+                    description: "Operatie realizata cu succes",
+                    content: {
+                      "application/json": {
+                        schema: { type: "string" },
+                        examples: {
+                          "incarcare cu succes": {
+                            description:
+                              "Transportul a fost incarcat cu succes",
+                            value: {
+                              dateResponse: "202212231130",
+                              ExecutionStatus: 0,
+                              index_incarcare: 1,
+                              UIT: "A0001",
+                              trace_id: "ba47ad72-f4c1-4457-b3f2-389602e49f69",
+                              ref_declarant: "",
+                            },
+                          },
+                          "standard invalid": {
+                            description: "Standardul folosit nu este valid",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Valoarea acceptata pentru parametrul standard este ETRANSP",
+                                },
+                              ],
+                              dateResponse: "202203071412",
+                              ExecutionStatus: 1,
+                              trace_id: "5cbd59e2-a3f9-4bbb-82ec-b6de54acc2db",
+                            },
+                          },
+                          "cif invalid": {
+                            description: "Cif-ul furnizat nu este numeric",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "CIF introdus= 123a nu este un numar",
+                                },
+                              ],
+                              dateResponse: "202203071231",
+                              ExecutionStatus: 1,
+                              trace_id: "fb57975b-98c9-46ba-9c4e-f17831e1fad4",
+                            },
+                          },
+                          "lipsa drepturi": {
+                            description:
+                              "Credentialele folosite la autentificare nu au cif-uri asignate",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Nu exista niciun CIF petru care sa aveti drept in SPV",
+                                },
+                              ],
+                              dateResponse: "202203071238",
+                              ExecutionStatus: 1,
+                              trace_id: "d6bf0166-af55-4638-a018-5f17f7fa6993",
+                            },
+                          },
+                          "lipsa drepturi pentru cif": {
+                            description:
+                              "Credentialele folosite la autentificare nu au drepturi pentru cif-ul furnizat",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Nu aveti drept in SPV pentru CIF=21",
+                                },
+                              ],
+                              dateResponse: "202203071416",
+                              ExecutionStatus: 1,
+                              trace_id: "3d25de52-298e-4b9b-9606-00d2507d723d",
+                            },
+                          },
+                          "dimensiune fisier prea mare": {
+                            description:
+                              "Marimea fisierului transmis este prea mare",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Marime fisier transmis mai mare de 5 MB",
+                                },
+                              ],
+                              dateResponse: "202203071316",
+                              ExecutionStatus: 1,
+                              trace_id: "6e94d035-55ec-45b9-b8d7-5b658628a814",
+                            },
+                          },
+                          "fisier transmis invalid": {
+                            description:
+                              "Fisierul transmis nu respecta standardul",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Fisierul transmis nu este valid. org.xml.sax.SAXParseException; lineNumber: 2; columnNumber: 4; cvc-elt.1.a: Cannot find the declaration of element 'a'.",
+                                },
+                              ],
+                              dateResponse: "202203071420",
+                              ExecutionStatus: 1,
+                              trace_id: "ba912e9e-3b49-4eb3-8892-136b5c9c9973",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  404: {
+                    description: "Solicitare incorecta",
+                    content: {
+                      "application/json": {
+                        schema: { type: "string" },
+                        examples: {
+                          "cale incorecta": {
+                            description:
+                              "Calea nu a fost identificata. Standardul si CIF-ul trebuie sa faca parte din cale",
+                            value: {
+                              timestamp: "2022-03-07T12:21:09.512+00:00",
+                              status: 404,
+                              error: "Not Found",
+                              path: "/test/ETRANSPORT/ws/v1/upload/",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "/upload/{standard}/{cif}/{versiune}": {
+              post: {
+                tags: ["ETransportUpload"],
+                summary: "upload",
+                description: "Operatia de incarcare a transporturilor",
+                operationId: "handleRequest2",
+                parameters: [
+                  {
+                    name: "standard",
+                    in: "path",
+                    description:
+                      "Specifica tipul xml-ului ce trebuie transmis. Valoarea acceptata este ETRANSP",
+                    required: true,
+                    schema: { type: "string" },
+                    example: "ETRANSP",
+                  },
+                  {
+                    name: "cif",
+                    in: "path",
+                    description: "Cif-ul folosit la incarcare",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 8000000000,
+                  },
+                  {
+                    name: "versiune",
+                    in: "path",
+                    description: "Versiunea de XML, valorile sunt 1 sau 2",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 1,
+                  },
+                ],
+                requestBody: {
+                  description: "Trebuie atasat un fisier de tip xml",
+                  content: {
+                    "*/*": {
+                      schema: { type: "string" },
+                      examples: {
+                        "structura xml pentru ETRANSP v1": {
+                          description: "ETRANSP",
+                          value:
+                            '<?xml version="1.0" encoding="UTF-8"?>\r\n<eTransport xmlns="mfp:anaf:dgti:eTransport:declaratie:v1"\r\n xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\r\n xsi:schemaLocation="mfp:anaf:dgti:eTransport:declaratie:v1" cod_tip_operatiune="AI" cod_declarant="00000">\r\n    <confirmare UITConfirmat="UITConfirmat1" tipConfirmare="confirma"/>\r\n</eTransport>',
+                        },
+                        "structura xml pentru ETRANSP v2": {
+                          description: "ETRANSP",
+                          value:
+                            '<?xml version="1.0" encoding="UTF-8"?>\r\n<eTransport xmlns="mfp:anaf:dgti:eTransport:declaratie:v2"\r\n    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\r\n    codDeclarant="8000000000" declPostAvarie="D">\r\n    <notificare codTipOperatiune="30">\r\n        <bunuriTransportate codTarifar="0202" denumireMarfa="denumireMarfa1" codScopOperatiune="101" cantitate="50.5"\r\n            codUnitateMasura="10" greutateNeta="12" greutateBruta="50.5" valoareLeiFaraTva="50"/>\r\n        <bunuriTransportate codTarifar="02071410" denumireMarfa="denumireMarfa3" codScopOperatiune="101" cantitate="50.5"\r\n            codUnitateMasura="10"  greutateNeta="50.5" greutateBruta="50.5" valoareLeiFaraTva="50"/>\r\n        <partenerComercial codTara="RO" cod="PF" denumire="denumire1"/>\r\n        <dateTransport nrVehicul="Z01ZZZ" codTaraOrgTransport="RO" codOrgTransport="PF" denumireOrgTransport="SME TEST TRANSPORT" dataTransport="2022-07-19"/>\r\n        <locStartTraseuRutier >\r\n            <locatie codJudet="1" denumireLocalitate=\'LOCALITATEA1\' denumireStrada=\'STRADA1\'/>\r\n        </locStartTraseuRutier >\r\n        <locFinalTraseuRutier >\r\n            <locatie codJudet="2" denumireLocalitate=\'localitate2\' denumireStrada=\'strada2\'/>\r\n        </locFinalTraseuRutier>\r\n        <documenteTransport tipDocument="10" dataDocument="2006-05-04"/>\r\n        <documenteTransport tipDocument="20" dataDocument="2006-05-04"/>\r\n    </notificare>\r\n</eTransport>',
+                        },
+                      },
+                    },
+                  },
+                  required: true,
+                },
+                responses: {
+                  200: {
+                    description: "Operatie realizata cu succes",
+                    content: {
+                      "application/json": {
+                        schema: { type: "string" },
+                        examples: {
+                          "incarcare cu succes v1": {
+                            description:
+                              "Transportul a fost incarcat cu succes",
+                            value: {
+                              dateResponse: "202212231130",
+                              ExecutionStatus: 0,
+                              index_incarcare: 1,
+                              UIT: "A0001",
+                              trace_id: "ba47ad72-f4c1-4457-b3f2-389602e49f69",
+                              ref_declarant: "",
+                            },
+                          },
+                          "incarcare cu succes v2": {
+                            description:
+                              "Transportul a fost incarcat cu succes",
+                            value: {
+                              dateResponse: "202212231132",
+                              ExecutionStatus: 0,
+                              index_incarcare: 1,
+                              UIT: "A0002",
+                              trace_id: "96cd587e-298b-4245-ad7d-2607d973f9d4",
+                              ref_declarant: "",
+                              atentie:
+                                "Verificati starea XML-ului transmis. Codul UIT este valabil din momentul in care apare ca valid dupa apelul de stare",
+                            },
+                          },
+                          "standard invalid": {
+                            description: "Standardul folosit nu este valid",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Valoarea acceptata pentru parametrul standard este ETRANSP",
+                                },
+                              ],
+                              dateResponse: "202203071412",
+                              ExecutionStatus: 1,
+                              trace_id: "5cbd59e2-a3f9-4bbb-82ec-b6de54acc2db",
+                            },
+                          },
+                          "cif invalid": {
+                            description: "Cif-ul furnizat nu este numeric",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "CIF introdus= 123a nu este un numar",
+                                },
+                              ],
+                              dateResponse: "202203071231",
+                              ExecutionStatus: 1,
+                              trace_id: "fb57975b-98c9-46ba-9c4e-f17831e1fad4",
+                            },
+                          },
+                          "lipsa drepturi": {
+                            description:
+                              "Credentialele folosite la autentificare nu au cif-uri asignate",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Nu exista niciun CIF petru care sa aveti drept in SPV",
+                                },
+                              ],
+                              dateResponse: "202203071238",
+                              ExecutionStatus: 1,
+                              trace_id: "d6bf0166-af55-4638-a018-5f17f7fa6993",
+                            },
+                          },
+                          "lipsa drepturi pentru cif": {
+                            description:
+                              "Credentialele folosite la autentificare nu au drepturi pentru cif-ul furnizat",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Nu aveti drept in SPV pentru CIF=21",
+                                },
+                              ],
+                              dateResponse: "202203071416",
+                              ExecutionStatus: 1,
+                              trace_id: "3d25de52-298e-4b9b-9606-00d2507d723d",
+                            },
+                          },
+                          "dimensiune fisier prea mare": {
+                            description:
+                              "Marimea fisierului transmis este prea mare",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Marime fisier transmis mai mare de 5 MB",
+                                },
+                              ],
+                              dateResponse: "202203071316",
+                              ExecutionStatus: 1,
+                              trace_id: "6e94d035-55ec-45b9-b8d7-5b658628a814",
+                            },
+                          },
+                          "fisier transmis invalid": {
+                            description:
+                              "Fisierul transmis nu respecta standardul",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Fisierul transmis nu este valid. org.xml.sax.SAXParseException; lineNumber: 2; columnNumber: 4; cvc-elt.1.a: Cannot find the declaration of element 'a'.",
+                                },
+                              ],
+                              dateResponse: "202203071420",
+                              ExecutionStatus: 1,
+                              trace_id: "ba912e9e-3b49-4eb3-8892-136b5c9c9973",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  404: {
+                    description: "Solicitare incorecta",
+                    content: {
+                      "application/json": {
+                        schema: { type: "string" },
+                        examples: {
+                          "cale incorecta": {
+                            description:
+                              "Calea nu a fost identificata. Standardul si CIF-ul trebuie sa faca parte din cale",
+                            value: {
+                              timestamp: "2022-03-07T12:21:09.512+00:00",
+                              status: 404,
+                              error: "Not Found",
+                              path: "/test/ETRANSPORT/ws/v1/upload/",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          components: {},
+        };
+        // Build a system
+        const ui = SwaggerUIBundle({
+          spec: spec,
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+          layout: "StandaloneLayout",
+          supportedSubmitMethods: [],
+        });
+        window.ui = ui;
+      };
+    </script>
+  </body>
+</html>

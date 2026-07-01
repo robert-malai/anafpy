@@ -14,9 +14,18 @@ sources:
     url: https://mfinante.gov.ro/static/10/eFactura/ro16931-ubl-1.0.9.zip
     source_revision: "ro16931-ubl 1.0.9 (latest; 1.0.7/1.0.8 also published)"
     retrieved: 2026-06-28
+  - title: "Swagger presentations (per-endpoint OpenAPI specs, 7 pages)"
+    url: https://mfinante.gov.ro/static/10/eFactura/upload.html
+    source_revision: "upload actualizat 04.02.2025; validaresemnatura 03.09.2024; others undated"
+    retrieved: 2026-07-02
+    local_copy: ../_sources/efactura-swagger/
+  - title: "Limite Apeluri API (per-method rate limits)"
+    url: https://mfinante.gov.ro/static/10/eFactura/limiteApeluriAPI.txt
+    retrieved: 2026-07-02
+    local_copy: ../_sources/limiteApeluriAPI.txt
 compiled: 2026-06-28
 compiled_by: claude-opus-4-8
-last_verified: 2026-06-28
+last_verified: 2026-07-02
 status: draft
 ---
 
@@ -28,8 +37,11 @@ CIUS-RO) and **validation** (Schematron) are covered separately; this doc is the
 **transport/API surface**.
 
 > **Status:** draft, compiled from the official 5-page API PDF (current as linked from
-> the e-Factura *informații tehnice* page on 2026-06-28). Re-confirm endpoint behaviour
-> with a live test-environment call during implementation.
+> the e-Factura *informații tehnice* page on 2026-06-28) plus the official per-endpoint
+> **swagger presentations** (vendored 2026-07-02 under
+> [`_sources/efactura-swagger/`](../_sources/efactura-swagger/)) — the PDF covers
+> URLs/params, the swaggers are the authority on **response schemas**. Re-confirm
+> endpoint behaviour with a live test-environment call during implementation.
 
 ## Access modes & base URLs
 
@@ -42,7 +54,10 @@ Every endpoint has **two access modes**, differing only by host:
 | Public (no auth) — validate/PDF only | `https://webservicesp.anaf.ro/prod` | Optional, for `validare`/`transformare`. |
 
 All paths below are shown for the **OAuth2** mode, e.g.
-`https://api.anaf.ro/prod/FCTEL/rest/...`. Swap `prod`↔`test` for the environments.
+`https://api.anaf.ro/prod/FCTEL/rest/...`. Swap `prod`↔`test` for the environments —
+with one caveat: the PDF documents `validare`, `transformare`, and
+`validate/signature` for **producție only** (no test URLs shown); a `test` variant of
+those three is an inference, not sourced.
 
 > Provenance: PDF pp. 1–5 (each operation lists both `webserviceapl` cert mode and
 > `api.anaf.ro` oauth2 mode).
@@ -54,7 +69,7 @@ Submit an invoice/credit-note/message XML.
 ```
 POST https://api.anaf.ro/prod/FCTEL/rest/upload?standard={std}&cif={cif}
      [&extern=DA][&autofactura=DA][&executare=DA]
-Content-Type: text/plain        # XML in the body
+Content-Type: text/plain        # XML as the raw body (accepted: swagger declares */*)
 Authorization: Bearer <token>
 ```
 
@@ -66,11 +81,17 @@ Authorization: Bearer <token>
 | `autofactura` | — | `DA` only — self-billing (beneficiary issues on supplier's behalf). |
 | `executare` | — | `DA` only — filed by an enforcement body on the debtor's behalf. |
 
-Returns an **upload index** (`id_încărcare` / `index_incarcare`) used by `stareMesaj`.
+**Response (200, `application/xml`)** — a `<header>` element with attributes
+`dateResponse`, `ExecutionStatus` (0 = accepted, 1 = rejected), and on success
+`index_incarcare` (the **upload index** used by `stareMesaj`); on rejection a nested
+`Errors` list with `errorMessage` attributes. 400 returns a JSON `CustomErrorMessage`
+(`timestamp`/`status`/`error`/`message`).
 
-**B2C variant:** identical, at `POST /FCTEL/rest/uploadb2c?...`.
+**B2C variant:** identical, at `POST /FCTEL/rest/uploadb2c?...`. Live on test + prod
+since 01.01.2025; **mandatory for B2C filings since 31.03.2025** (informații-tehnice).
 
-> Provenance: PDF pp. 1–2.
+> Provenance: PDF pp. 1–2; response schema from the upload swagger
+> ([upload.html](../_sources/efactura-swagger/upload.html), actualizat 04.02.2025).
 
 ## 2. Message status — `GET /FCTEL/rest/stareMesaj`
 
@@ -108,14 +129,28 @@ GET .../listaMesajePaginatieFactura?startTime={ms}&endTime={ms}&cif={cif}&pagina
 `startTime`/`endTime` = **unix-timestamp milliseconds** (e.g. `1646037374000`).
 
 **`filtru`** (optional): `E`=ERORI FACTURA, `T`=FACTURA TRIMISĂ, `P`=FACTURA PRIMITĂ,
-`R`=MESAJ CUMPĂRĂTOR.
+`R`=MESAJ CUMPĂRĂTOR PRIMIT / MESAJ CUMPĂRĂTOR TRANSMIS (both directions).
 
 **Response fields (per message):** `data_creare`, `cif`, `id_solicitare` (the upload
 index), `detalii`, `cif_emitent` (seller), `cif_beneficiar` (buyer), `tip`
 (`FACTURA TRIMISA` | `FACTURA PRIMITA` | `ERORI FACTURA` | `MESAJ CUMPARATOR …`), and
 **`id`** (used by `descarcare`).
 
-> Provenance: PDF pp. 2–4.
+**Response envelope (paginated, 3b)** — alongside `mesaje[]`:
+`numar_inregistrari_in_pagina`, `numar_total_inregistrari_per_pagina` (500),
+`numar_total_inregistrari`, **`numar_total_pagini`**, `index_pagina_curenta`,
+`serial`, `cui`, `titlu`. The non-paginated list (3a) caps at **500 messages** and
+errors with "folositi endpoint-ul cu paginatie" beyond that.
+
+**200-with-`eroare`**: both list endpoints return errors *and* the no-results note in
+the same `eroare` field on HTTP 200. Known no-results wordings: `"Nu exista mesaje in
+intervalul selectat"` (3b) / `"Nu exista mesaje in ultimele {N} zile"` (3a). Everything
+else (`CIF … nu este un numar`, `Nu aveti drept in SPV pentru CIF=…`, invalid
+`startTime`/`endTime`/`pagina`/`filtru`, page > total pages, daily call limit reached)
+is a genuine error.
+
+> Provenance: PDF pp. 2–4; envelope + `eroare` catalog from the lista swagger
+> ([listamesaje.html](../_sources/efactura-swagger/listamesaje.html)).
 
 ## 4. Download — `GET /FCTEL/rest/descarcare`
 
@@ -142,10 +177,10 @@ Content-Type: text/plain        # XML in the body
 Available **without auth** on `webservicesp.anaf.ro`.
 
 Response (JSON): `{"stare": "ok"|"nok", "Messages": [{"message": "..."}], "trace_id":
-"..."}` — `Messages` present on `nok`. ⚠️ Response shape inferred from known behaviour,
-not yet confirmed against a live TEST call.
+"..."}` — `Messages` present on `nok`.
 
-> Provenance: PDF p. 4.
+> Provenance: PDF p. 4; response schema confirmed by the validare swagger
+> ([validare.html](../_sources/efactura-swagger/validare.html)).
 
 ## 6. XML → PDF — `POST /FCTEL/rest/transformare/{std}[/{novld}]`
 
@@ -172,6 +207,26 @@ Both files come from the `descarcare` ZIP.
 
 > Provenance: PDF p. 5.
 
+## 8. Rate limits (per method)
+
+Global (`api.anaf.ro`): **1000 requests/minute** (see the
+[OAuth doc](../oauth/authentication.md) §8). On top of that, per-method daily limits:
+
+| Method | Limit |
+|---|---|
+| `upload` | max **1000 RASP** (buyer-message) files/day/CUI; **no limit** for invoice files. |
+| `stareMesaj` | max **100 queries per message**/day; no limit on total queries/day/CUI. |
+| `listaMesajeFactura` (3a) | max **1500 queries**/day/CUI. |
+| `listaMesajePaginatieFactura` (3b) | max **100 000 queries**/day/CUI. |
+| `descarcare` | max **10 downloads per message**/day; no limit on total downloads/day/CUI. |
+
+Limits can change; repeated over-limit calls can get the user (and, in serious cases,
+the application) blocked. (An older lista swagger example mentions a 1000/day list
+limit — the limits file is newer and is the authority.)
+
+> Provenance: [limiteApeluriAPI.txt](../_sources/limiteApeluriAPI.txt)
+> (retrieved 2026-07-02).
+
 ## `anafpy` endpoint map
 
 | `anafpy` method | HTTP |
@@ -187,16 +242,18 @@ Both files come from the `descarcare` ZIP.
 
 **Implementation notes**
 
-- Upload/validate/transform bodies are **`Content-Type: text/plain`** with the XML as
-  the raw body (per the PDF), despite being XML — follow the spec, not intuition.
+- Bodies are sent as **`Content-Type: text/plain`** with the XML as the raw body. The
+  PDF mandates `text/plain` for `validare`/`transformare`; for `upload` it says nothing
+  and the swagger declares the request body `*/*`, so `text/plain` is a safe uniform
+  choice, not a requirement.
 - **Listing**: `list_messages` is a single async iterator that pages
   `listaMesajePaginatieFactura` under the hood (`days` is converted to a `[now-days, now]`
   millisecond window; the non-paginated `listaMesajeFactura` (3a) is not used). It stops
-  on the first empty page (and honours a total-pages field if present). ANAF returns the
-  same `eroare` field for both "no messages in interval" and genuine errors — the former
-  yields an **empty iterator**, the latter **raises `AnafResponseError`** (matched by
-  wording; see `is_empty_result_message`). ⚠️ The paginated response's total-page field
-  name is **inferred, not confirmed against live TEST**.
+  on the first empty page and honours the **`numar_total_pagini`** envelope field
+  (confirmed by the lista swagger). ANAF returns the same `eroare` field for both "no
+  messages in interval" and genuine errors — the former yields an **empty iterator**,
+  the latter **raises `AnafResponseError`** (matched by wording; see
+  `is_empty_result_message`; the official wordings are catalogued in §3).
 - `download` returns a **ZIP** (binary) — handle as bytes, unzip to the two XML members.
 - The public `webservicesp.anaf.ro` no-auth `validare`/`transformare` could power a
   zero-credential "lint my invoice" path; keep behind the same `Validator` seam.

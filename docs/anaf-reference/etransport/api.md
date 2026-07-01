@@ -19,9 +19,14 @@ sources:
     title: "e-Transport Schematron"
     source_revision: "v2.0.2, 12.08.2024"
     retrieved: 2026-06-28
+  - title: "Swagger presentations (per-endpoint OpenAPI specs, 4 pages)"
+    url: https://mfinante.gov.ro/static/10/eTransport/upload_param.html
+    source_revision: "upload_param/lista/stare 02.07.2024; info_transportatori 01.07.2024"
+    retrieved: 2026-07-02
+    local_copy: ../_sources/etransport-swagger/
 compiled: 2026-06-28
 compiled_by: claude-opus-4-8
-last_verified: 2026-06-28
+last_verified: 2026-07-02
 status: draft
 ---
 
@@ -33,7 +38,10 @@ Authentication is the shared [OAuth2 flow](../oauth/authentication.md). The decl
 with the modeling/validation work; this doc is the **transport/API surface**.
 
 > **Status:** draft, from the official **29.07.2024** API PDF — the current version,
-> which **supersedes** older 2023 specs. It corrected two earlier assumptions (see
+> which **supersedes** older 2023 specs — plus the official per-endpoint **swagger
+> presentations** (vendored 2026-07-02 under
+> [`_sources/etransport-swagger/`](../_sources/etransport-swagger/)), which supply the
+> response schemas the PDF omits. It corrected two earlier assumptions (see
 > "Corrections" below).
 
 ## Access modes & base URLs
@@ -67,14 +75,18 @@ POST https://api.anaf.ro/prod/ETRANSPORT/ws/v1/upload/{standard}/{cif}/{versiune
 | `cif` | ✔ | Numeric fiscal code, max 13 digits. |
 | `versiune` | ✔ (v2 form) | `1` or `2` (data-schema version). **`anafpy` uses `2`.** |
 
-Body = the transport declaration **XML**; `Content-Type: application/xml`. The response
-carries the **UIT** code and an **`index_incarcare`** (the upload index for
-`stareMesaj`).
+Body = the transport declaration **XML**; `Content-Type: application/xml`.
+
+**Response (200, JSON):** `dateResponse`, `ExecutionStatus` (0 = success), an
+**`index_incarcare`** (the upload index for `stareMesaj`), the **`UIT`** code,
+`trace_id`, and `ref_declarant`; on rejection an `Errors[]` list with `errorMessage`
+entries (e.g. *"Valoarea acceptata pentru parametrul standard este ETRANSP"*).
 
 > `anafpy`: use the **v2 form with `versiune=2`** (decided). `standard` is `ETRANSP`
 > (not the 2022 OAuth PDF's stale `ETRANSPORT`).
 >
-> Provenance: PDF p. 1.
+> Provenance: PDF p. 1; response schema from the upload swagger
+> ([upload_param.html](../_sources/etransport-swagger/upload_param.html), 02.07.2024).
 
 ## 2. Status — `GET /ETRANSPORT/ws/v1/stareMesaj/{id_incarcare}`
 
@@ -83,7 +95,12 @@ GET https://api.anaf.ro/prod/ETRANSPORT/ws/v1/stareMesaj/{id_incarcare}
 ```
 `id_incarcare` = the numeric `index_incarcare` from the Upload response.
 
-> Provenance: PDF pp. 2–3.
+**Response (200, JSON):** `stare` (`ok` | `nok`), `dateResponse`, `ExecutionStatus`,
+`trace_id`; on `nok` an `Errors[]` list with `errorMessage` entries (e.g. *"UIT-ul nu
+poate fi identificat."*).
+
+> Provenance: PDF pp. 2–3; response schema from the stare swagger
+> ([stare.html](../_sources/etransport-swagger/stare.html), 02.07.2024).
 
 ## 3. List — `GET /ETRANSPORT/ws/v1/lista/{zile}/{cif}`
 
@@ -103,8 +120,9 @@ sort locally by `data_creare`.
 `data_creare`, `data_modif`, **`tip_op`** (operation type — see code list), `data_transp`,
 partner `pc_tara`/`pc_cod`/`pc_den`, transporter `tr_tara`/`tr_cod`/`tr_den`, vehicle
 `nr_veh`/`nr_rem1`/`nr_rem2`, `modif_veh[]`, `nr_linii`, `gr_tot_neta`, `gr_tot_bruta`,
-`val_tot`, `confirmare{}`, and `mesaje[]` (`{tip: ERR|WARN|INFO, mesaj}` — for error
-records at least one `ERR`).
+`val_tot`, `confirmare{}` (`tip_conf`: `10`=confirmat, `20`=confirmat parțial,
+`30`=infirmat; plus `obs`, `post_avarie`, `sursa`, `data_decl`, `id_incarcare`), and
+`mesaje[]` (`{tip: ERR|WARN|INFO, mesaj}` — for error records at least one `ERR`).
 
 **`tip_op` codes:** `10`=AIC, `12`=LHI, `14`=SCI, `20`=LIC, `22`=LHE, `24`=SCE,
 `30`=TTN, `40`=IMP, `50`=EXP, `60`=DIN, `70`=DIE (see XSD for details).
@@ -129,8 +147,11 @@ Returns per record: `uit`, `cod_decl`, `den_decl`, `ref_decl`, `data_transp`,
 **`data_exp_uit`** (UIT expiry), transporter, vehicle, `modif_veh[]`,
 `loc_start`/`loc_final` (`tip_loc`: `PTF` border point / `BV` customs office / `ADR`
 national address; with `judet`, `localitate`, `strada`, `numar`, …), and `documente[]`.
+The swagger example additionally shows a numeric `id` per record (not in the PDF).
 
-> Provenance: PDF pp. 3–4.
+> Provenance: PDF pp. 3–4; example response in the info swagger
+> ([info_transportatori.html](../_sources/etransport-swagger/info_transportatori.html),
+> 01.07.2024).
 
 ## Corrections to earlier assumptions (surfaced by this doc)
 
@@ -138,10 +159,12 @@ national address; with `judet`, `localitate`, `strada`, `numar`, …), and `docu
    per-service difference is the **path** (`/ETRANSPORT/ws/v1/` vs `/FCTEL/rest/`).
    (`webserviceapl.anaf.ro` is only the *certificate-direct* host, which `anafpy`
    doesn't use.) → the shared `_transport` varies the **path prefix**, not the host.
-2. **No `descarcare`/ZIP endpoint** in the current e-Transport API. Unlike e-Factura,
-   e-Transport returns the **UIT + signed content at upload time** and exposes state via
-   `lista`/`stareMesaj` — there is no separate signed-ZIP download. So e-Transport does
-   **not** mirror e-Factura's `download`→`DownloadedMessage`; adjust the client design.
+2. **No `descarcare`/ZIP endpoint** in the current e-Transport API. The 2022 OAuth PDF
+   (p. 30) still listed one; the informații-tehnice page confirms *"Serviciul de
+   Descărcare a fost eliminat de pe mediul de test și de producție"*. e-Transport
+   returns the **UIT at upload time** and exposes state via `lista`/`stareMesaj` —
+   there is no separate signed-ZIP download. So e-Transport does **not** mirror
+   e-Factura's `download`→`DownloadedMessage`; adjust the client design.
 3. `standard` = **`ETRANSP`** (the 2022 OAuth PDF's `ETRANSPORT` was stale), and the
    `{versiune}` (data-schema, 1|2) is appended in the v2 upload form.
 

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Swagger UI</title>
+    <link
+      href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui.css"
+    />
+    <style>
+      html {
+        box-sizing: border-box;
+        overflow: -moz-scrollbars-vertical;
+        overflow-y: scroll;
+      }
+      *,
+      *:before,
+      *:after {
+        box-sizing: inherit;
+      }
+      body {
+        margin: 0;
+        background: #fafafa;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = function () {
+        var spec = {
+          openapi: "3.0.1",
+          info: { title: "ETransport" },
+          tags: [
+            { name: "ETransportStare", description: "ETransport Stare API" },
+          ],
+          paths: {
+            "/stareMesaj/{id_incarcare}": {
+              get: {
+                tags: ["ETransportStare"],
+                summary: "Stare",
+                description: "Operatia de afisare a starii mesajelor",
+                operationId: "stare",
+                parameters: [
+                  {
+                    name: "id_incarcare",
+                    in: "path",
+                    description:
+                      "Index de incarcare al declaratiei de transport",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 18,
+                  },
+                ],
+                responses: {
+                  404: {
+                    description: "Solicitare incorecta",
+                    content: {
+                      "application/json": {
+                        schema: { type: "string" },
+                        examples: {
+                          "cale incorecta": {
+                            description:
+                              "Calea nu a fost identificata. id_incarcare trebuie sa faca parte din cale",
+                            value: {
+                              timestamp: "2022-08-02T07:37:23.140+00:00",
+                              status: 404,
+                              error: "Not Found",
+                              path: "/test/ETRANSPORT/ws/v1/stareMesaj/",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  200: {
+                    description: "Operatie realizata cu succes",
+                    content: {
+                      "application/json": {
+                        schema: { type: "string" },
+                        examples: {
+                          "prelucrare cu succes": {
+                            description:
+                              "declaratia de transport a fost prelucrata cu succes",
+                            value: {
+                              stare: "ok",
+                              dateResponse: "202208021047",
+                              ExecutionStatus: 0,
+                              trace_id: "366efb31-57a0-42c2-9404-72bfcbba4693",
+                            },
+                          },
+                          "prelucrare esuata": {
+                            description:
+                              "declaratia de transport nu a fost prelucrata cu succes",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "UIT-ul nu poate fi identificat.",
+                                },
+                              ],
+                              stare: "nok",
+                              dateResponse: "202208021055",
+                              ExecutionStatus: 1,
+                              trace_id: "c78c23fa-a230-45d7-8fd6-e3bee8e13f41",
+                            },
+                          },
+                          "in prelucrare": {
+                            description:
+                              "declaratia de transport este in prelucrare",
+                            value: {
+                              stare: "in prelucrare",
+                              dateResponse: "202208021100",
+                              ExecutionStatus: 0,
+                              trace_id: "096c6b71-b7b8-42b1-b3f1-b4f5dafdce74",
+                            },
+                          },
+                          "XML eronat": {
+                            description:
+                              "declaratia de transport nu a fost preluata in sistem",
+                            value: {
+                              stare: "XML cu erori nepreluat de sistem",
+                              dateResponse: "202208021101",
+                              ExecutionStatus: 0,
+                              trace_id: "20616aad-53e4-4967-8532-94631ae109b3",
+                            },
+                          },
+                          "lipsa drepturi index": {
+                            description:
+                              "nu aveti dreptul de interogare pentru indexul solicitat",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Nu aveti dreptul de inteorgare pentru id_incarcare= 1",
+                                },
+                              ],
+                              dateResponse: "202208021111",
+                              ExecutionStatus: 1,
+                              trace_id: "70798a90-2f4b-42b6-80d2-ccdfb1d9d4dc",
+                            },
+                          },
+                          "lipsa drepturi": {
+                            description: "nu aveti dreptul de interogare",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Nu exista niciun CIF petru care sa aveti drept",
+                                },
+                              ],
+                              dateResponse: "202208021111",
+                              ExecutionStatus: 1,
+                              trace_id: "79e5bcd7-b4e6-4e5a-9fe2-7d578bf6973c",
+                            },
+                          },
+                          "index invalid": {
+                            description: "index de incarcare nu este valid",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Id_incarcare introdus= a nu este un numar intreg",
+                                },
+                              ],
+                              dateResponse: "202208021114",
+                              ExecutionStatus: 1,
+                              trace_id: "29d9c940-7cdc-4ed2-99a1-f223a2dcde95",
+                            },
+                          },
+                          "declaratie transport inexistenta": {
+                            description:
+                              "declaratia de transport nu a fost identificata in sistem",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Nu exista declaratia de transport cu id_incarcare= 1",
+                                },
+                              ],
+                              dateResponse: "202208021114",
+                              ExecutionStatus: 1,
+                              trace_id: "b6c61f51-8674-482c-a0b5-bcb0d104dbaf",
+                            },
+                          },
+                          "limita apeluri zilnice atinsa": {
+                            description:
+                              "a fost atinsa limita de apeluri zilnice",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "S-au facut deja 100 de verificari, pentru id-incarcare solicitat, in cursul zilei",
+                                },
+                              ],
+                              dateResponse: "202208021114",
+                              ExecutionStatus: 1,
+                              trace_id: "b6c61f51-8674-482c-a0b5-bcb0d104dbaf",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          components: {},
+        };
+        // Build a system
+        const ui = SwaggerUIBundle({
+          spec: spec,
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+          layout: "StandaloneLayout",
+          supportedSubmitMethods: [],
+        });
+        window.ui = ui;
+      };
+    </script>
+  </body>
+</html>

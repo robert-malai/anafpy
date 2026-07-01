@@ -57,7 +57,7 @@ In the *Profil Oauth* form you provide:
 | Field | Notes |
 |---|---|
 | **Denumire aplicație** | Application name. |
-| **Callback URL 1** | The redirect URI. **Must match exactly** at token time. Multiple callback URLs can be added (`+`). May be `https://localhost:PORT/callback` — it does **not** need a public server (only your browser hits it). |
+| **Callback URL 1** | The redirect URI. **Must match exactly** at token time. Multiple callback URLs can be added (`+`). May be `https://localhost:PORT/callback` — it does **not** need a public server (only your browser hits it). *(The localhost fact is this project's live verification, not the PDF — the PDF's example uses Postman's `oauth.pstmn.io` callback.)* |
 | **Serviciu** | One or more of: **E-Factura**, **E-Transport**. |
 
 Pressing **Generare Client ID** issues a **Client ID** and **Client Secret**. The
@@ -89,6 +89,10 @@ The OAuth host is the **same for test and production** (the test/prod split appl
 the API hosts, not to OAuth). The server presents a `*.anaf.ro` certificate
 (DigiCert/RapidSSL). **JWT signing:** `alg = RS512`, `kid` e.g. `anaf_2023_2024`,
 `iss = https://logincert.anaf.ro`.
+
+> ⚠️ `/revoke` on the `logincert` host appears only in the PDF's **legacy** `fiscnet`
+> screenshots (host-migrated by pattern); the live probe verified `/token` only.
+> Confirm `/revoke` before relying on it.
 
 > Provenance: official PDF pp. 23–28; live TLS/HTTP probe 2026-06-28.
 
@@ -232,9 +236,9 @@ a token is accepted.
       probe only confirmed cert-free transport + OAuth error handling, not a full
       refresh with valid credentials).
 
-> ⚠️ **Open discrepancy to resolve in the e-Transport doc:** this 2022 PDF lists the
-> e-Transport upload path as `…/ETRANSPORT/ws/v1/upload/{ETRANSPORT}/{CIF}` on
-> `api.anaf.ro/test`, **without** the `versiune` segment and using `ETRANSPORT` (not
-> `ETRANSP`). Newer e-Transport v2 specs add `/{versiune}` and use `ETRANSP`, and
-> production is reported on `webserviceapl.anaf.ro/prod`. Capture the current truth in
-> the e-Transport reference, not here.
+> ⚠️ **Stale e-Transport facts in this 2022 PDF** (p. 30) — resolved in the
+> [e-Transport doc](../etransport/api.md), which is the current truth: the upload path
+> is listed **without** the `versiune` segment and with `standard=ETRANSPORT` (now
+> `ETRANSP` + `/{versiune}`), and a `…/ETRANSPORT/ws/v1/descarcare/{id}` endpoint is
+> listed that has since been **removed** (informații-tehnice: *"Serviciul de Descărcare
+> a fost eliminat de pe mediul de test și de producție"*).

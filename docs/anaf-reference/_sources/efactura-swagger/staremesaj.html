@@ -1,0 +1,54 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Swagger UI</title>
+  <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700" rel="stylesheet">
+  <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.43.0/swagger-ui.css" >
+  <style>
+    html
+    {
+      box-sizing: border-box;
+      overflow: -moz-scrollbars-vertical;
+      overflow-y: scroll;
+    }
+    *,
+    *:before,
+    *:after
+    {
+      box-sizing: inherit;
+    }
+    body {
+      margin:0;
+      background: #fafafa;
+    }
+  </style>
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.43.0/swagger-ui-bundle.js"> </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.43.0/swagger-ui-standalone-preset.js"> </script>
+<script>
+window.onload = function() {
+  var spec = {"openapi": "3.0.1", "info": {"title": "eFactura", "description": "Serviciu de stare mesaj al facturii", "version": "1.0"}, "paths": {"/stareMesaj": {"get": {"tags": ["controller"], "operationId": "getStareMesaj", "parameters": [{"name": "id_incarcare", "in": "query", "description": "Index de incarcare al facturii", "required": true, "schema": {"type": "string"}, "example": 18}], "responses": {"400": {"description": "Solicitare incorecta", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CustomErrorMessage"}, "examples": {"nu ati completat parametrul id_incarcare": {"summary": "lipsa id_incarcare", "description": "nu ati completat parametrul id_incarcare", "value": {"timestamp": "19-08-2021 11:01:56", "status": 400, "error": "Bad Request", "message": "Parametrul id_incarcare este obligatoriu"}}}}}}, "200": {"description": "Operatie realizata cu succes", "content": {"application/xml": {"schema": {"$ref": "#/components/schemas/Header"}, "examples": {"factura a fost prelucrata cu succes": {"summary": "prelucrare cu succes", "description": "factura a fost prelucrata cu succes", "value": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<header xmlns=\"mfp:anaf:dgti:efactura:stareMesajFactura:v1\" stare=\"ok\" id_descarcare=\"1234\"/>"}, "factura nu a fost prelucrata cu succes": {"summary": "prelucrare esuata", "description": "factura nu a fost prelucrata cu succes", "value": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<header xmlns=\"mfp:anaf:dgti:efactura:stareMesajFactura:v1\" stare=\"nok\" id_descarcare=\"123\"/>"}, "factura in prelucrare": {"summary": "in prelucrare", "description": "factura in prelucrare", "value": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<header xmlns=\"mfp:anaf:dgti:efactura:stareMesajFactura:v1\" stare=\"in prelucrare\"/>"}, "factura nu a fost preluata de sistem": {"summary": "XML eronat", "description": "factura nu a fost preluata de sistem", "value": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n<header xmlns=\"mfp:anaf:dgti:efactura:stareMesajFactura:v1\" stare=\"XML cu erori nepreluat de sistem\"/>"}, "nu aveti dreptul de interogare pentru indexul solicitat": {"summary": "lipsa drepturi index", "description": "nu aveti dreptul de interogare pentru indexul solicitat", "value": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<header xmlns=\"mfp:anaf:dgti:efactura:stareMesajFactura:v1\">\n    <Errors errorMessage=\"Nu aveti dreptul de inteorgare pentru id_incarcare= 18\"/>\n</header>"}, "nu aveti dreptul de interogare": {"summary": "lipsa drepturi", "description": "nu aveti dreptul de interogare", "value": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n<header xmlns=\"mfp:anaf:dgti:efactura:stareMesajFactura:v1\">\r\n    <Errors errorMessage=\"Nu exista niciun CIF petru care sa aveti drept\"/>\r\n</header>"}, "index de incarcare nu este valid": {"summary": "index invalid", "description": "index de incarcare nu este valid", "value": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n<header xmlns=\"mfp:anaf:dgti:efactura:stareMesajFactura:v1\">\r\n    <Errors errorMessage=\"Id_incarcare introdus= aaa nu este un numar intreg\"/>\r\n</header>"}, "factura nu a fost identificata in sistem": {"summary": "factura inexistenta", "description": "factura nu a fost identificata in sistem", "value": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<header xmlns=\"mfp:anaf:dgti:efactura:stareMesajFactura:v1\">\n    <Errors errorMessage=\"Nu exista factura cu id_incarcare= 15000\"/>\n</header>"}, "a fost atinsa limita de apeluri zilnice": {"summary": "limita apeluri zilnice atinsa", "description": "a fost atinsa limita de apeluri zilnice", "value": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n<header xmlns=\"mfp:anaf:dgti:efactura:stareMesajFactura:v1\">\r\n    <Errors errorMessage=\"S-au facut deja 20 descarcari de mesaj in cursul zilei\"/>\r\n</header>"}}}}}}}}}, "components": {"schemas": {"CustomErrorMessage": {"type": "object", "properties": {"timestamp": {"type": "string", "format": "date-time"}, "status": {"type": "integer", "format": "int32"}, "error": {"type": "string"}, "message": {"type": "string"}}}, "ErrorsType": {"type": "object", "properties": {"errorMessage": {"type": "string", "xml": {"attribute": true}}}}, "Header": {"type": "object", "properties": {"errors": {"type": "array", "xml": {"name": "Errors"}, "items": {"$ref": "#/components/schemas/ErrorsType"}}, "stare": {"type": "string", "xml": {"attribute": true}}, "idDescarcare": {"type": "string", "xml": {"name": "id_descarcare", "attribute": true}}}, "xml": {"name": "header"}}}}};
+  // Build a system
+  const ui = SwaggerUIBundle({
+    spec: spec,
+    dom_id: '#swagger-ui',
+    deepLinking: true,
+    presets: [
+      SwaggerUIBundle.presets.apis,
+      SwaggerUIStandalonePreset
+    ],
+    plugins: [
+      SwaggerUIBundle.plugins.DownloadUrl
+    ],
+    layout: "StandaloneLayout",
+    supportedSubmitMethods: []
+  })
+  window.ui = ui
+}
+</script>
+</body>
+</html>

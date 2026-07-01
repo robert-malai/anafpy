@@ -1,0 +1,54 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Swagger UI</title>
+  <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700" rel="stylesheet">
+  <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.43.0/swagger-ui.css" >
+  <style>
+    html
+    {
+      box-sizing: border-box;
+      overflow: -moz-scrollbars-vertical;
+      overflow-y: scroll;
+    }
+    *,
+    *:before,
+    *:after
+    {
+      box-sizing: inherit;
+    }
+    body {
+      margin:0;
+      background: #fafafa;
+    }
+  </style>
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.43.0/swagger-ui-bundle.js"> </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.43.0/swagger-ui-standalone-preset.js"> </script>
+<script>
+window.onload = function() {
+  var spec = {"openapi": "3.0.1", "info": {"title": "eFactura", "description": "Serviciu de descarcare al facturii", "version": "1.0"}, "tags": [{"name": "eFacturaDownload", "description": "Descarcare factura API"}], "paths": {"/descarcare": {"get": {"tags": ["eFacturaDownload"], "operationId": "getDescarcare", "parameters": [{"name": "id", "in": "query", "description": "Specifica indexul de descarcare al facturii", "required": true, "schema": {"type": "string"}, "example": 1}], "responses": {"400": {"description": "Solicitare incorecta", "content": {"*/*": {"schema": {"$ref": "#/components/schemas/CustomErrorMessage"}, "examples": {"nu ati completat parametrul standard": {"summary": "lipsa parametru standard", "description": "nu ati completat parametrul standard", "value": {"timestamp": "05-08-2021 12:04:01", "status": 400, "error": "Bad Request", "message": "Parametrul id este obligatoriu"}}}}}}, "200": {"description": "Operatie realizata cu succes", "content": {"*/*": {"schema": {"type": "string"}, "examples": {"factura a fost descarcata cu succes": {"summary": "descarcare cu succes", "description": "factura a fost descarcata cu succes", "value": "fisier cu extensia zip. ex: 123.zip"}, "id-ul furnizat nu este valid": {"summary": "id invalid", "description": "id-ul furnizat nu este valid", "value": {"eroare": "Id descarcare introdus= 123a nu este un numar intreg", "titlu": "Descarcare mesaj"}}, "a fost atinsa limita de apeluri zilnice": {"summary": "limita apeluri zilnice atinsa", "description": "a fost atinsa limita de apeluri zilnice", "value": "{\"eroare\":\"S-au facut deja 10 descarcari de mesaj in cursul zilei\",\"titlu\":\"Descarcare mesaj\"}}"}, "nu aveti dreptul sa descarcati factura cu id-ul mentionat in request": {"summary": "certificat fara drepturi", "description": "nu aveti dreptul sa descarcati factura cu id-ul mentionat in request", "value": {"eroare": "Nu aveti dreptul sa descarcati acesta factura", "titlu": "Descarcare mesaj"}}, "nu exista nici o factura pentru id-ul solicitat": {"summary": "id fara factura", "description": "nu exista nici o factura pentru id-ul solicitat", "value": {"eroare": "Pentru id=21 nu exista inregistrata nici o factura", "titlu": "Descarcare mesaj"}}}}}}}}}}, "components": {"schemas": {"CustomErrorMessage": {"type": "object", "properties": {"timestamp": {"type": "string", "format": "date-time"}, "status": {"type": "integer", "format": "int32"}, "error": {"type": "string"}, "message": {"type": "string"}}}}}};
+  // Build a system
+  const ui = SwaggerUIBundle({
+    spec: spec,
+    dom_id: '#swagger-ui',
+    deepLinking: true,
+    presets: [
+      SwaggerUIBundle.presets.apis,
+      SwaggerUIStandalonePreset
+    ],
+    plugins: [
+      SwaggerUIBundle.plugins.DownloadUrl
+    ],
+    layout: "StandaloneLayout",
+    supportedSubmitMethods: []
+  })
+  window.ui = ui
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Swagger UI</title>
+    <link
+      href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui.css"
+    />
+    <style>
+      html {
+        box-sizing: border-box;
+        overflow: -moz-scrollbars-vertical;
+        overflow-y: scroll;
+      }
+      *,
+      *:before,
+      *:after {
+        box-sizing: inherit;
+      }
+      body {
+        margin: 0;
+        background: #fafafa;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.5.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = function () {
+        var spec = {
+          openapi: "3.0.1",
+          info: { title: "ETransport" },
+          tags: [
+            { name: "ETransportLista", description: "ETransport Lista API" },
+          ],
+          paths: {
+            "/lista/{zile}/{cif}": {
+              get: {
+                tags: ["ETransportLista"],
+                summary: "Lista",
+                description: "Operatia de listare a mesajelor",
+                operationId: "getListaMesaje",
+                parameters: [
+                  {
+                    name: "zile",
+                    in: "path",
+                    description:
+                      "Numarul de zile pentru care se solicita lista",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 60,
+                  },
+                  {
+                    name: "cif",
+                    in: "path",
+                    description: "Cif-ul pentru care se solicita lista",
+                    required: true,
+                    schema: { type: "string" },
+                    example: 8000000000,
+                  },
+                ],
+                responses: {
+                  404: {
+                    description: "Solicitare incorecta",
+                    content: {
+                      "application/json": {
+                        schema: { type: "string" },
+                        examples: {
+                          "cale incorecta": {
+                            description:
+                              "Calea nu a fost identificata. Numarul de zile si CIF-ul trebuie sa faca parte din cale",
+                            value: {
+                              timestamp: "2022-03-07T11:16:41.957+00:00",
+                              status: 404,
+                              error: "Not Found",
+                              path: "/test/ETRANSPORT/ws/v1/lista/",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  200: {
+                    description: "Operatie realizata cu succes",
+                    content: {
+                      "application/json": {
+                        schema: { $ref: "#/components/schemas/header" },
+                        examples: {
+                          "lista mesaje": {
+                            description: "A fost obtinuta lista de mesaje",
+                            value: {
+                              mesaje: [
+                                {
+                                  uit: "XAXAXAXAXAXAXAXA1",
+                                  cod_decl: "8000000000",
+                                  sursa: "A",
+                                  id_incarcare: "0000000001",
+                                  data_creare: "20221010144008",
+                                  tip_op: "30",
+                                  data_transp: "20221010000000",
+                                  pc_tara: "RO",
+                                  pc_cod: "8000000000",
+                                  pc_den: "SC TEST SRL",
+                                  tr_tara: "RO",
+                                  tr_cod: "8000000000",
+                                  tr_den: "SC TEST SRL",
+                                  nr_veh: "B00AAA",
+                                },
+                                {
+                                  uit: "YBYBYBYBYBYBYBYB2",
+                                  cod_decl: "8000000000",
+                                  sursa: "A",
+                                  id_incarcare: "0000000002",
+                                  data_creare: "20221010103707",
+                                  tip_op: "30",
+                                  data_transp: "20221010000000",
+                                  pc_tara: "RO",
+                                  pc_cod: "8000000000",
+                                  pc_den: "SC TEST SRL",
+                                  tr_tara: "RO",
+                                  tr_cod: "8000000000",
+                                  tr_den: "SC TEST SRL",
+                                  nr_veh: "B00AAA",
+                                },
+                                {
+                                  cod_decl: "8000000000",
+                                  sursa: "A",
+                                  id_incarcare: "0000000003",
+                                  data_creare: "20221011073136",
+                                  mesaje: [
+                                    {
+                                      tip: "ERR",
+                                      mesaj:
+                                        "Nu a fost identificat UIT-ul printre notificarile valide anterioare.",
+                                    },
+                                  ],
+                                },
+                                {
+                                  cod_decl: "8000000000",
+                                  sursa: "A",
+                                  id_incarcare: "0000000004",
+                                  data_creare: "20221010084154",
+                                  mesaje: [
+                                    {
+                                      tip: "ERR",
+                                      mesaj:
+                                        "Nu a fost identificat UIT-ul printre notificarile valide anterioare.",
+                                    },
+                                  ],
+                                },
+                              ],
+                              serial: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+                              cui: "8000000000",
+                              titlu:
+                                "Lista Mesaje disponibile din ultimele 1 zile",
+                              dateResponse: "202210111242",
+                              ExecutionStatus: 0,
+                              trace_id: "680bdefd-1159-48e6-a6c2-63dde31bd805",
+                            },
+                          },
+                          "numar zile invalid": {
+                            description:
+                              "Numarul de zile furnaizat nu este numeric",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Numarul de zile introdus= 60a nu este un numar intreg",
+                                },
+                              ],
+                              dateResponse: "202203071310",
+                              ExecutionStatus: 1,
+                              trace_id: "b03ce03d-762f-4245-95e8-e1538f0023ad",
+                            },
+                          },
+                          "numar de zile in afara intervalului": {
+                            description:
+                              "Numarul de zile furnizat este in afara intervalului permis",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Numarul de zile trebuie sa fie intre 1 si 60",
+                                },
+                              ],
+                              dateResponse: "202203071312",
+                              ExecutionStatus: 1,
+                              trace_id: "fa1625bd-a27c-4599-b174-fb4ced9bcfbb",
+                            },
+                          },
+                          "cif invalid": {
+                            description: "Cif-ul furnizat nu este numeric",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "CIF introdus= 123a nu este un numar",
+                                },
+                              ],
+                              dateResponse: "202203071231",
+                              ExecutionStatus: 1,
+                              trace_id: "fb57975b-98c9-46ba-9c4e-f17831e1fad4",
+                            },
+                          },
+                          "limita apeluri depasita": {
+                            description:
+                              "A fost atinsa limita de apeluri zilnice",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "S-au facut deja 1000 interogari de lista mesaje de catre utilizator in cursul zilei",
+                                },
+                              ],
+                              dateResponse: "202203071231",
+                              ExecutionStatus: 1,
+                              trace_id: "fb57975b-98c9-46ba-9c4e-f17831e1fad4",
+                            },
+                          },
+                          "lipsa drepturi": {
+                            description:
+                              "Credentialele folosite la autentificare nu au cif-uri asignate",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Nu exista niciun CIF petru care sa aveti drept in SPV",
+                                },
+                              ],
+                              dateResponse: "202203071238",
+                              ExecutionStatus: 1,
+                              trace_id: "d6bf0166-af55-4638-a018-5f17f7fa6993",
+                            },
+                          },
+                          "lipsa mesaje": {
+                            description: "Nu exista mesaje inregistrate",
+                            value: {
+                              Errors: [
+                                {
+                                  errorMessage:
+                                    "Nu exista mesaje in ultimele 60 zile",
+                                },
+                              ],
+                              dateResponse: "202203071316",
+                              ExecutionStatus: 1,
+                              trace_id: "6e94d035-55ec-45b9-b8d7-5b658628a814",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          components: {
+            schemas: {
+              ErrorsType: {
+                type: "object",
+                properties: { errorMessage: { type: "string" } },
+              },
+              Mesaj: {
+                type: "object",
+                properties: {
+                  uit: { type: "string" },
+                  cod_decl: { type: "string" },
+                  ref_decl: { type: "string" },
+                  sursa: { type: "string" },
+                  id_incarcare: { type: "string" },
+                  data_creare: { type: "string" },
+                  tip_op: { type: "string" },
+                  data_transp: { type: "string" },
+                  pc_tara: { type: "string" },
+                  pc_cod: { type: "string" },
+                  pc_den: { type: "string" },
+                  tr_tara: { type: "string" },
+                  tr_cod: { type: "string" },
+                  tr_den: { type: "string" },
+                  nr_veh: { type: "string" },
+                  nr_rem1: { type: "string" },
+                  nr_rem2: { type: "string" },
+                  mesaje: {
+                    type: "array",
+                    items: { $ref: "#/components/schemas/MesajEroare" },
+                  },
+                },
+              },
+              MesajEroare: {
+                type: "object",
+                properties: {
+                  tip: { type: "string" },
+                  mesaj: { type: "string" },
+                },
+              },
+              header: {
+                required: ["ExecutionStatus", "dateResponse", "trace_id"],
+                type: "object",
+                properties: {
+                  Errors: {
+                    type: "array",
+                    items: { $ref: "#/components/schemas/ErrorsType" },
+                  },
+                  mesaje: {
+                    type: "array",
+                    items: { $ref: "#/components/schemas/Mesaj" },
+                  },
+                  serial: { type: "string" },
+                  cui: { type: "string" },
+                  titlu: { type: "string" },
+                  dateResponse: { type: "string", format: "date-time" },
+                  ExecutionStatus: { type: "integer", format: "int32" },
+                  trace_id: { type: "string" },
+                },
+              },
+            },
+          },
+        };
+        // Build a system
+        const ui = SwaggerUIBundle({
+          spec: spec,
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+          layout: "StandaloneLayout",
+          supportedSubmitMethods: [],
+        });
+        window.ui = ui;
+      };
+    </script>
+  </body>
+</html>

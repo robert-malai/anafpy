@@ -166,10 +166,11 @@ Public UBL entry points: `from anafpy.efactura import Invoice, CreditNote`.
 
 ## ANAF response formats
 
-Some e-Factura/e-Transport response shapes were inferred from ANAF's documentation and
-known behaviour, not yet confirmed against a live TEST call (flagged in
-`docs/anaf-reference/*/api.md`). When touching parsing code, treat the doc as the source
-of truth and prefer being explicit over silently returning empty results.
+Response schemas come from ANAF's official per-endpoint **swagger presentations**
+(vendored 2026-07-02 under `docs/anaf-reference/_sources/{efactura,etransport}-swagger/`
+and folded into `docs/anaf-reference/*/api.md`) — the API PDFs cover URLs/params only.
+Still not confirmed against a live TEST call. When touching parsing code, treat the doc
+as the source of truth and prefer being explicit over silently returning empty results.
 
 ## Conventions for changes
 
