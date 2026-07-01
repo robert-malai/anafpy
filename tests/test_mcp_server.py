@@ -19,7 +19,7 @@ import httpx
 import pytest
 import respx
 
-from _wire import invoice_xml, transport_xml
+from _wire import credit_note_xml, invoice_xml, transport_xml
 from anafpy._transport.base import Environment
 from anafpy.auth import FileTokenStore, TokenSet
 from anafpy.mcp.config import ServerConfig
@@ -193,6 +193,27 @@ async def test_prepare_then_submit_files_invoice(tmp_path: Path) -> None:
     assert out["accepted"] is True
     assert out["upload_id"] == "777"
     assert route.called
+    assert route.calls.last.request.url.params["standard"] == "UBL"
+
+
+@respx.mock
+async def test_submit_credit_note_files_with_standard_cn(tmp_path: Path) -> None:
+    route = respx.post(f"{EFACTURA}/upload").mock(
+        return_value=httpx.Response(200, text='<header index_incarcare="778"/>')
+    )
+    server = create_server(_config(tmp_path))
+    doc = {"xml": credit_note_xml()}
+    prepared = await _call(server, "efactura_prepare_invoice", document=doc)
+    assert prepared["invoice_preview"]["document_type"] == "credit_note"
+    out = await _call(
+        server,
+        "efactura_submit_invoice",
+        document=doc,
+        confirmation_token=prepared["confirmation_token"],
+        confirm=True,
+    )
+    assert out["accepted"] is True
+    assert route.calls.last.request.url.params["standard"] == "CN"
 
 
 @respx.mock

@@ -165,6 +165,10 @@ def invoice_xml(*, number: str = "INV-1") -> str:
     return XmlSerializer().render(build_invoice(number=number))
 
 
+def credit_note_xml(*, number: str = "CN-1") -> str:
+    return XmlSerializer().render(build_credit_note(number=number))
+
+
 def build_transport() -> etr.ETransport:
     """A minimal road-transport declaration (gross weight 120 kg)."""
     return etr.ETransport(

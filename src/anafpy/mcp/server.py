@@ -24,7 +24,7 @@ from ..exceptions import AnafConfigError, AnafError
 from ..validation import ValidationFinding
 from .config import ServerConfig
 from .context import AppContext, AuthStatus
-from .documents import invoice_view, resolve_xml, transport_view
+from .documents import invoice_view, resolve_xml, transport_view, upload_standard
 from .models import (
     EtransportXmlInput,
     PreparedSubmission,
@@ -233,7 +233,9 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         except ConfirmationError as exc:
             return SubmitResult(accepted=False, message=str(exc))
         resolved = cfg.require_cif(cif)
-        result = await ctx.efactura().upload(xml, cif=resolved)
+        result = await ctx.efactura().upload(
+            xml, cif=resolved, standard=upload_standard(xml)
+        )
         return SubmitResult(
             accepted=result.accepted,
             upload_id=result.upload_id,

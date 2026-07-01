@@ -10,7 +10,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..efactura.models import FlatInvoice, parse_ubl_document, read_flat_invoice
+from ..efactura.models import (
+    FlatInvoice,
+    UploadStandard,
+    parse_ubl_document,
+    read_flat_invoice,
+)
+from ..efactura.ubl.maindoc import CreditNote
 from ..etransport.models import (
     FlatTransport,
     parse_etransport_document,
@@ -19,7 +25,7 @@ from ..etransport.models import (
 from ..exceptions import AnafConfigError
 from .models import EtransportXmlInput, UblXmlInput
 
-__all__ = ["invoice_view", "resolve_xml", "transport_view"]
+__all__ = ["invoice_view", "resolve_xml", "transport_view", "upload_standard"]
 
 
 def resolve_xml(document: UblXmlInput | EtransportXmlInput) -> bytes:
@@ -34,6 +40,13 @@ def resolve_xml(document: UblXmlInput | EtransportXmlInput) -> bytes:
     if document.path:
         return Path(document.path).expanduser().read_bytes()
     raise AnafConfigError("one of `xml` / `path` is required")
+
+
+def upload_standard(xml: bytes) -> UploadStandard:
+    """The ``standard`` upload param for e-Factura XML: ``CN`` for a credit note,
+    else ``UBL``. Unparseable bytes default to ``UBL`` (ANAF rejects them anyway)."""
+    doc = parse_ubl_document(xml)
+    return UploadStandard.CN if isinstance(doc, CreditNote) else UploadStandard.UBL
 
 
 def invoice_view(xml: bytes) -> FlatInvoice | None:
