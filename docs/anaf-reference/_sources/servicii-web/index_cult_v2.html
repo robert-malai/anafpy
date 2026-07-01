@@ -1,0 +1,124 @@
+<html>
+	<body>
+	    <div>Serviciu web  pentru verificarea contribuabililor care sunt inregistra&#539;i in Registrul entit&#259;&#539;ilor/unit&#259;&#539;ilor de cult</div>
+	    
+	    	<p class=Standard><span lang=DE>            Trimiteti request-ul continand
+datele de procesat la urmatoarea adresa:</span></p>
+	            
+		<div>Web Service URL (POST):	
+		<br/> https://webservicesp.anaf.ro/RegCult/api/v2/ws/cult
+        <!-- <p id="var_url"></p>
+
+            <script>
+               document.getElementById("var_url").innerHTML =
+                  window.location.protocol+"//" + window.location.hostname + ":"+window.location.port+"/PlatitorTvaRest/api/v3/ws/tva";
+            </script> -->
+           
+         </div>   
+		<br/><br/>
+		
+		<!--  <div>Web Service URL (SOAP):
+		 <br/>
+		 <p id="var_urlSoap"></p>
+		 <script>
+              document.getElementById("var_urlSoap").innerHTML =
+                 window.location.protocol+"//" + window.location.hostname + ":"+window.location.port+"/PlatitorTvaRest/TvaWsService";
+         </script>
+		</div> -->
+	<p class=Standard><span lang=DE>            Request-ul trebuie sa fie trimis
+prin POST iar formatul este similar cu exemplul de mai jos:</span></p>
+		<div style="margin-top: 50px;">
+		Post Body:
+			<pre>
+			[
+				{
+		    		"cui": _Numar_, "data":"_Data interogarii_"	    
+				},
+				{
+			    	"cui": _Numar_, "data":"_Data interogarii_"	    
+				}		
+			]
+			</pre>
+		</div>
+		exemplu:
+		<p class=Standard><span lang=DE>            Content-Type: application/json</span></p>
+
+<p class=Standard><span lang=DE>            [</span></p>
+
+<p class=Standard><span lang=DE>                {</span></p>
+
+<p class=Standard><span lang=DE>                    &quot;cui&quot;: 1234,</span></p>
+
+<p class=Standard><span lang=DE>                    &quot;data&quot;:
+&quot;2015-02-14&quot;</span></p>
+
+<p class=Standard><span lang=DE>                },</span></p>
+
+<p class=Standard><span lang=DE>                {</span></p>
+
+<p class=Standard><span lang=DE>                    &quot;cui&quot;: 5678,</span></p>
+
+<p class=Standard><span lang=DE>                    &quot;data&quot;:
+&quot;2015-02-14&quot;</span></p>
+
+<p class=Standard><span lang=DE>                }</span></p>
+
+<p class=Standard><span lang=DE>            ]</span></p>
+
+<p class=Standard><span lang=DE>&nbsp;</span></p>
+
+<p class=Standard><span lang=DE>            Datele din exemplu sunt fictive.</span></p>
+		
+		
+		<div style="margin-top: 50px;">
+			Raspunsul va avea urmatoarea structura:
+			
+			<pre>
+			{
+			"cod":200,
+			"message":"SUCCESS",
+			"found":[
+			  {
+			        "cui": "-- codul fiscal --",
+            		   	"data": "-- data pentru care se efectueaza cautarea --",
+              		 	"denumire": "-denumire-",
+             		  	"adresa": "---adresa---",
+             		  	"nrRegCom": "--- numar de inmatriculare la Registrul Comertului ---",
+            			"telefon": "-- Telefon --",
+            			"fax": "-- Fax --",
+            			"codPostal": "-- Codul Postal --",
+            			"act": "-- Act autorizare --",
+            			"stare_inregistrare": "-- Stare Societate --",
+            			"dataInceputRegCult": " ", -- data inscrierii in regsitru 
+            			"dataAnulareRegCult": " ", -- data radierii din registru
+            			"statusRegCult": true -daca data cautata se afla in intervalul dataInceputRegCult - dataAnulareRegCult
+            			               / false -daca data cautata nu se afla in intervalul dataInceputRegCult - dataAnulareRegCult
+            			               * daca data cautata este ulterioara datei curente, atunci informatiile de raspuns vor fi cele corespunzatoare datei curente
+
+				
+			  }
+			 
+			]
+		  }
+			</pre>
+		</div>
+		
+	<div style="margin-top: 50px;">
+	
+	</div>	
+			
+			<p class=Standard><span lang=DE>Folosirea serviciului este supusa urmatoarelor
+reguli:</span></p>
+<p class=Standard><span lang=DE>            a) Un request poate contine maxim 500
+de CUI-uri. Un client poate executa maxim 1 request pe secunda.</span></p>
+
+<p class=Standard><span lang=DE>&nbsp;</span></p>
+
+<p class=Standard><span lang=DE>            b) Orice tentativa de
+suprasolicitare a serverului va fi pedepsita conform reglementarilor in
+vigoare.</span></p>
+
+<p class=Standard><span lang=DE>&nbsp;</span></p>
+
+	</body>
+</html>

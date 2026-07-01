@@ -16,6 +16,7 @@ are the authority on any discrepancy.
 | OAuth (shared) | [oauth/authentication.md](oauth/authentication.md) | draft |
 | e-Factura | [efactura/api.md](efactura/api.md) | draft |
 | e-Transport | [etransport/api.md](etransport/api.md) | draft |
+| Public no-auth services (registries, bilanț) | [public/api.md](public/api.md) | draft |
 
 ## Conventions
 

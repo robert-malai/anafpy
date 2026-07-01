@@ -39,6 +39,30 @@ retrieved 2026-07-02; revision = the date shown next to the link on informații-
 > `curl --http2 -A "Mozilla/5.0 ... Chrome/126.0.0.0 Safari/537.36" <url>`.
 > `static.anaf.ro` does **not** mirror these files.
 
+## Public (no-auth) web services — `servicii-web/`
+
+Official instruction files for ANAF's **unauthenticated** lookup services on
+`webservicesp.anaf.ro` (fiscal registries + public financial statements). **No PDFs or
+swagger presentations exist for these** — the `.txt`/`.html` instruction files below are
+the only official documentation (checked 2026-07-02); the `servicii_*.html` index pages
+are vendored too because they carry the service URLs and publication dates. All
+retrieved 2026-07-02.
+
+| File | Source URL | Revision |
+|---|---|---|
+| `servicii-web/servicii_web.html` | https://static.anaf.ro/static/10/Anaf/Informatii_R/servicii_web.html | (index page, undated) |
+| `servicii-web/servicii_sincron.html` | https://static.anaf.ro/static/10/Anaf/Informatii_R/Servicii_web/servicii_sincron.html | (index; carries per-service dates) |
+| `servicii-web/servicii_asincron.html` | https://static.anaf.ro/static/10/Anaf/Informatii_R/Servicii_web/servicii_asincron.html | (index) |
+| `servicii-web/doc_WS_V9.txt` | https://static.anaf.ro/static/10/Anaf/Informatii_R/Servicii_web/doc_WS_V9.txt | publicat 04.02.2025 |
+| `servicii-web/docV1.txt` | https://static.anaf.ro/static/10/Anaf/Informatii_R/Servicii_web/docV1.txt | publicat 05.11.2024 |
+| `servicii-web/doc_WS_Bilant_V1.txt` | https://static.anaf.ro/static/10/Anaf/Informatii_R/doc_WS_Bilant_V1.txt | publicat 20.01.2021 |
+| `servicii-web/documentatie_SWRARG_v2.txt` | https://static.anaf.ro/static/10/Anaf/Informatii_R/documentatie_SWRARG_v2.txt | (undated; "actualizate") |
+| `servicii-web/index_cult_v2.html` | https://static.anaf.ro/static/10/Anaf/Informatii_R/index_cult_v2.html | (undated; "actualizate") |
+| `servicii-web/doc_WS_Async_V8.txt` | https://static.anaf.ro/static/10/Anaf/Informatii_R/Servicii_web/doc_WS_Async_V8.txt | actualizat 20.04.2023 |
+
+> Note: unlike `mfinante.gov.ro`, `static.anaf.ro` serves these to plain curl.
+> `index_cult_v2.html` has mojibake NBSP runs in the original — preserved verbatim.
+
 ## Related ANAF artifacts, deliberately not vendored here
 
 - **Validation artifacts** — `ro16931-ubl-1.0.9.zip` (Schematron + XSD, CIUS-RO) and

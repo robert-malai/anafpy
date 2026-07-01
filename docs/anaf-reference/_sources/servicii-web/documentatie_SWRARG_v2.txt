@@ -1,0 +1,83 @@
+Serviciu web pentru verificarea contribuabililor care sunt inregistrati in Registrul agricultorilor care aplica regimul special
+
+            Trimiteti request-ul continand datele de procesat la urmatoarea adresa:
+
+Web Service URL (POST): 
+ https://webservicesp.anaf.ro/RegAgric/api/v2/ws/agric  
+
+
+ 
+            Request-ul trebuie sa fie trimis prin POST iar formatul este similar cu exemplul de mai jos:
+
+Post Body: 			[
+				{
+		    		"cui": _Numar_, "data":"_Data interogarii_"	    
+				},
+				{
+			    	"cui": _Numar_, "data":"_Data interogarii_"	    
+				}		
+			]
+			
+exemplu: 
+            Content-Type: application/json
+
+            [
+
+                {
+
+                    "cui": 1234,
+
+                    "data": "2015-02-14"
+
+                },
+
+                {
+
+                    "cui": 5678,
+
+                    "data": "2015-02-14"
+
+                }
+
+            ]
+
+ 
+
+            Datele din exemplu sunt fictive.
+
+Raspunsul va avea urmatoarea structura: 			{
+			"cod":200,
+			"message":"SUCCESS",
+			"found":[
+			  {
+				"cui": "-- codul fiscal --",
+            		   	"data": "-- data pentru care se efectueaza cautarea --",
+            		   	"denumire": "-- denumire --",
+             		  	"adresa": "-- adresa --",
+             		  	"nrRegCom": "-- numar de inmatriculare la Registrul Comertului --",
+             		  	"telefon": "-- Telefon --",
+            			"fax": "-- Fax --",
+            			"codPostal": "-- Codul Postal --",
+            			"act": "-- Act autorizare --",
+            			"stare_inregistrare": "-- Stare Societate --",
+            			"dataInceputRegAgric": " ", -- data inscrierii in regsitru 
+            			"dataAnulareRegAgric": " ", -- data radierii din registru
+            			"statusRegAgric": true -daca data cautata se afla in intervalul dataInceputRegAgric - dataAnulareRegAgric
+            			               / false -daca data cautata nu se afla in intervalul dataInceputRegAgric - dataAnulareRegAgric
+			  }
+			 
+			]
+		  }
+			
+
+
+
+Folosirea serviciului este supusa urmatoarelor reguli:
+
+            a) Un request poate contine maxim 500 de CUI-uri. Un client poate executa maxim 1 request pe secunda.
+
+ 
+
+            b) Orice tentativa de suprasolicitare a serverului va fi pedepsita conform reglementarilor in vigoare.
+
+ 

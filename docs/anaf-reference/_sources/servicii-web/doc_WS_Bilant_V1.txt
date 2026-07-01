@@ -1,0 +1,196 @@
+﻿
+	Serviciu web pentru obtinerea  informatiilor publice din situatiile financiare/raportarile contabile anuale aferente agentilor economici.
+ 
+            Trimiteti request-ul continand datele de procesat la urmatoarea adresa:
+
+Web Service URL (GET): 
+
+https://webservicesp.anaf.ro/bilant?an=2018&cui=12345678
+
+Codul fiscal din exemplu este fictiv. Datele din exemplu sunt fictive si se refera la bilantul pentru anul 2018 pentru o societate de asigurari. 
+Indicatorii afisati difera in functie de tipul de bilant. Datele referitoare la bilant (indicatorii publicati pe web) sunt pentru perioada 2014-2019.
+Raspunsul va fi de forma unui JSON "bilant.json" si va avea urmatoarea structura: 
+			
+				{
+    "an": 2019,
+    "cui": 12345678,
+    "deni": "DENUMIRE",
+    "caen": XXXX,
+    "den_caen": "Alte activitati de asigurari (exceptand asigurarile de viata)",
+    "i": [
+        {
+            "indicator": "I1",
+            "val_indicator": XXXX,
+            "val_den_indicator": "Imobilizari necorporale"
+        },
+        {
+            "indicator": "I2",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Plasamente - Total"
+        },
+        {
+            "indicator": "I3",
+            "val_indicator": XXX,
+            "val_den_indicator": "Plasamente in imobilizari corporale si in curs"
+        },
+        {
+            "indicator": "I4",
+            "val_indicator": XXX,
+            "val_den_indicator": "Plasamentele detinute la societatile afiliate si sub forma de interese de participare si alte plasamente in imobilizari  financiare"
+        },
+        {
+            "indicator": "I5",
+            "val_indicator": XXXXXXX,
+            "val_den_indicator": "Alte plasamente financiare "
+        },
+        {
+            "indicator": "I6",
+            "val_indicator": XXX,
+            "val_den_indicator": "Depozite la societatile cedente"
+        },
+        {
+            "indicator": "I7",
+            "val_indicator": XXXX,
+            "val_den_indicator": "Plasamente aferente asigurărilor de viaţă pentru care expunerea la riscul de investiţii este transferată contractanţilor "
+        },
+        {
+            "indicator": "I8",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Partea din rezervele tehnice aferente contractelor cedate in reasigurare"
+        },
+        {
+            "indicator": "I9",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Creante"
+        },
+        {
+            "indicator": "I10",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Imobilizări corporale si stocuri"
+        },
+        {
+            "indicator": "I11",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Casa si conturi la banci"
+        },
+        {
+            "indicator": "I12",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Cheltuieli in avans"
+        },
+        {
+            "indicator": "I13",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Capital şi rezerve - Total"
+        },
+        {
+            "indicator": "I14",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Capital social"
+        },
+        {
+            "indicator": "I15",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Capital subscris varsat"
+        },
+        {
+            "indicator": "I16",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Rezerve din reevaluare"
+        },
+        {
+            "indicator": "I17",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Rezerve "
+        },
+        {
+            "indicator": "I18",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Rezerve tehnice"
+        },
+        {
+            "indicator": "I19",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Provizioane  "
+        },
+        {
+            "indicator": "I20",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Datorii  "
+        },
+        {
+            "indicator": "I21",
+            "val_indicator": XXXXXX,
+            "val_den_indicator": "Rezultatul tehnic al asigurarilor generale - Profit"
+        },
+        {
+            "indicator": "I22",
+            "val_indicator": XXXX,
+            "val_den_indicator": "Rezultatul tehnic al asigurarilor generale - Pierdere"
+        },
+        {
+            "indicator": "I23",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Rezultatul tehnic al asigurarilor de viata - Profit"
+        },
+        {
+            "indicator": "I24",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Rezultatul tehnic al asigurarilor de viata - Pierdere"
+        },
+        {
+            "indicator": "I25",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Venituri din plasamente"
+        },
+        {
+            "indicator": "I26",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Cheltuieli cu plasamente "
+        },
+        {
+            "indicator": "I27",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Venituri totale"
+        },
+        {
+            "indicator": "I28",
+            "val_indicator": XXXXXX,
+            "val_den_indicator": "Cheltuieli totale"
+        },
+        {
+            "indicator": "I29",
+            "val_indicator": XXXXXX,
+            "val_den_indicator": "Profit brut"
+        },
+        {
+            "indicator": "I30",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Pierdere bruta"
+        },
+        {
+            "indicator": "I31",
+            "val_indicator": XXXXXX,
+            "val_den_indicator": "Profit net"
+        },
+        {
+            "indicator": "I32",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Pierdere neta"
+        },
+        {
+            "indicator": "I33",
+            "val_indicator": XXXXX,
+            "val_den_indicator": "Numar mediu de salariati"
+        }
+    ]
+}
+	
+Folosirea serviciului este supusa urmatoarelor reguli:
+
+            a) Un client poate executa maxim 1 request pe secunda.
+
+ 
+            b) Orice tentativa de suprasolicitare a serverului va fi pedepsita conform reglementarilor in vigoare.
+
+ 

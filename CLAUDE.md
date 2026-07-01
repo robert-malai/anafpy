@@ -79,7 +79,7 @@ src/anafpy/
     __main__.py          # `python -m anafpy.mcp` (stdio)
 schemas/                 # vendored XSDs (git-tracked, NOT shipped in the wheel)
 scripts/                 # codegen scripts
-docs/anaf-reference/     # compiled ANAF API reference (oauth/efactura/etransport)
+docs/anaf-reference/     # compiled ANAF API reference (oauth/efactura/etransport/public)
 tests/                   # respx-mocked unit tests
 ```
 

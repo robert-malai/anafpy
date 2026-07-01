@@ -1,0 +1,63 @@
+Serviciu web care ofera informatii despre un cui din registru RO e-Factura
+
+POST https://webservicesp.anaf.ro/api/registruroefactura/v1/interogare
+
+Cu un body de forma :
+
+ Content-Type: application/json
+
+            [
+
+                {
+
+                    "cui": integer,
+
+                    "data": string date(yyyy-MM-dd)
+
+                },
+
+                {
+
+                    "cui": 5678,
+
+                    "data": "2015-02-14"
+
+                }
+
+            ]
+Model raspuns
+{
+    "found": [
+        {
+            "cui": --- cui-ul ,
+            "denumire": --- denumirea contribuabilului,
+            "adresa": --- adresa sociala  ,
+            "registru": --- registrul in care se afla inregistrat,
+            "categorie": --- categira de contribuabil,
+            "dataInscriere": --- data la care s-a facut inscrierea in registru,
+            "dataRenuntare": --- data la care s-a efectuat renuntarea,
+            "dataRadiere": --- data la care s-a efectuat radierea,
+            "dataOptiuneB2G": --- data la care si-a exprimat optiunea,
+            "stare": --- starea daca este sau nu inregistrat in registru la data din request
+        }
+    ],
+    "notFound": [] --- lista de cui-uri care nu au fost gasite date pentru ele
+}
+
+        
+Codurile de raspuns folosite de catre aplicatie sunt 
+    200 In cazul in care requestul sa efectuat corect si au fost returnate date
+    400 In cazul in care exista erori cu privire la datele transmise
+    400 In cazul in care sunt prea multe cui-uri in request
+    404 In cazul in care nu au fost gasite date pentru nici un cui din lista transmisa
+
+
+Folosirea serviciului este supusa urmatoarelor reguli:
+
+            a) Un request poate contine maxim 100 de CUI-uri. Un client poate executa maxim 1 request pe secunda.
+
+ 
+
+            b) Orice tentativa de suprasolicitare a serverului va fi pedepsita conform reglementarilor in vigoare.
+
+ 

@@ -63,6 +63,11 @@ those three is an inference, not sourced.
 > Provenance: PDF pp. 1–5 (each operation lists both `webserviceapl` cert mode and
 > `api.anaf.ro` oauth2 mode).
 
+`webservicesp.anaf.ro` also hosts ANAF's broader family of **public no-auth lookup
+services** (VAT/taxpayer registry with `statusRO_e_Factura`, the RO e-Factura register
+query, financial statements) — documented separately in
+[public/api.md](../public/api.md).
+
 ## 1. Upload — `POST /FCTEL/rest/upload`
 
 Submit an invoice/credit-note/message XML.
