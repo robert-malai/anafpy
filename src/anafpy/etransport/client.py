@@ -200,7 +200,13 @@ class ETransportClient:
                 status_code=200,
                 body=_as_text(body),
             )
-        state = MessageState.from_raw(raw_state)
+        try:
+            state = MessageState.from_raw(raw_state)
+        except ValueError as exc:
+            # A state string we don't know: be explicit, in the AnafError hierarchy.
+            raise AnafResponseError(
+                str(exc), status_code=200, body=_as_text(body)
+            ) from exc
         return MessageStatus(state=state, errors=errors, raw=body)
 
     def list_notifications(self, *, days: int, cif: str) -> AsyncIterator[Notification]:

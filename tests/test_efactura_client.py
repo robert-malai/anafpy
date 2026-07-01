@@ -172,6 +172,18 @@ async def test_get_status_processing_is_non_terminal() -> None:
     assert not status.is_terminal
 
 
+@respx.mock
+async def test_get_status_unknown_state_raises_anaf_error() -> None:
+    respx.get(f"{BASE}/stareMesaj").mock(
+        return_value=httpx.Response(200, text='<header stare="suspendat"/>')
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError) as ei:
+            await client.get_status("3828")
+    assert ei.value.status_code == 200
+    assert "suspendat" in str(ei.value)
+
+
 # --- download -------------------------------------------------------------------------
 
 
