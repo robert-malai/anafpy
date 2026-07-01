@@ -34,8 +34,9 @@ status: draft
 
 Operations for the RO e-Transport system (declaring road transport of goods).
 Authentication is the shared [OAuth2 flow](../oauth/authentication.md). The declaration
-**schema** (ANAF-proprietary XSD v2, not UBL) and **Schematron** (v2.0.2) are covered
-with the modeling/validation work; this doc is the **transport/API surface**.
+**schema** is ANAF-proprietary XSD v2 (not UBL; vendored under `/schemas/etransport/`
+for codegen). There is **no standalone validator** — ANAF validates on upload. This doc
+is the **transport/API surface**.
 
 > **Status:** draft, from the official **29.07.2024** API PDF — the current version,
 > which **supersedes** older 2023 specs — plus the official per-endpoint **swagger

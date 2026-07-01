@@ -39,8 +39,12 @@ retrieved 2026-07-02; revision = the date shown next to the link on informații-
 > `curl --http2 -A "Mozilla/5.0 ... Chrome/126.0.0.0 Safari/537.36" <url>`.
 > `static.anaf.ro` does **not** mirror these files.
 
-## Not yet vendored (large; for the package build, not the docs)
+## Related ANAF artifacts, deliberately not vendored here
 
-- e-Factura validation artifacts: `ro16931-ubl-1.0.9.zip` (Schematron + XSD, CIUS-RO).
-- e-Transport: `schema_ETR_v2_20230126.xsd`, `eTransport-validation_v.2.0.2_12082024.sch`.
-- UBL example invoices: `exemple_Invoice_CreditNote.zip` (test fixtures).
+- **Validation artifacts** — `ro16931-ubl-1.0.9.zip` (Schematron + XSD, CIUS-RO) and
+  `eTransport-validation_v.2.0.2_12082024.sch`: `anafpy` has **no local validator**
+  (validation is ANAF's server side; see `/DESIGN.md` §4), so these have no consumer
+  in this repo. Listed for completeness only.
+- `schema_ETR_v2_20230126.xsd` — already vendored at the repo top level under
+  `/schemas/etransport/` (codegen input), not duplicated here.
+- UBL example invoices: `exemple_Invoice_CreditNote.zip` (potential test fixtures).
