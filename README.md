@@ -115,8 +115,9 @@ It exposes **read-only** tools (`auth_status`; the e-Factura inbox via
 `efactura_list_messages` / `efactura_get_status` / `efactura_download`; `etransport_list`
 / `etransport_get_status` / `etransport_lookup`; and `*_validate`) plus **two-step gated
 filing**: `*_prepare*` validates the supplied XML locally and returns a preview + a
-confirmation token; `*_submit*` files only when given that token (for the same document)
-and `confirm=True`. Filing is **XML pass-through** — you hand it the complete UBL /
+confirmation token bound to the document and the CIF being filed for; `*_submit*` files
+only when given that token (same document, same CIF) and `confirm=True`, and each token
+is single-use — filing again requires a fresh prepare. Filing is **XML pass-through** — you hand it the complete UBL /
 e-Transport XML your invoicing software exported; the server does not compose invoices.
 Both the inbox and the `prepare` preview present invoices as a friendly **flat read view**
 (`FlatInvoice`) parsed from the XML — easy to read, lossy by design (the raw bytes stay

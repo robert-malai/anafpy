@@ -50,15 +50,18 @@ class PreparedSubmission(BaseModel):
     """Result of a ``prepare`` step: preview + local validation + confirmation token.
 
     ``confirmation_token`` is ``None`` when local validation failed — fix the findings
-    and prepare again. When present, pass it (with the *same* document) to the matching
-    ``submit`` tool to file. ``invoice_preview`` / ``transport_preview`` is the easy-to-
-    read projection of the supplied XML, for the human to confirm before filing.
+    and prepare again. When present, pass it (with the *same* document and ``cif``) to
+    the matching ``submit`` tool to file; the token is single-use and bound to both.
+    ``cif`` echoes the fiscal code the filing was prepared for. ``invoice_preview`` /
+    ``transport_preview`` is the easy-to-read projection of the supplied XML, for the
+    human to confirm before filing.
     """
 
     valid: bool
     findings: list[ValidationFinding] = []
     validation_available: bool = True
     confirmation_token: str | None = None
+    cif: str | None = None
     invoice_preview: FlatInvoice | None = None
     transport_preview: FlatTransport | None = None
     message: str = ""

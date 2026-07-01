@@ -126,7 +126,9 @@ tests/                   # respx-mocked unit tests
   `*_download`, `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
   freely callable. Filing is split `*_prepare*` → `*_submit*`: prepare validates locally,
   returns a preview + an HMAC **confirmation token** (`mcp/tokens.py`) bound to the exact
-  XML bytes; submit requires that token (same document) **and** `confirm=True`. Don't
+  XML bytes, the CIF, and (e-Factura) the upload standard; submit requires that token
+  (same document, same CIF) **and** `confirm=True`, and each token is **single-use**
+  (`TokenLedger`) so a non-idempotent upload is never repeated on one approval. Don't
   collapse this into a `dry_run` bool.
 - **Validation degrades gracefully**: if `anafpy[validation]` is absent the validator is
   `None`, prepare reports `validation_available=False` and still issues a token (ANAF is

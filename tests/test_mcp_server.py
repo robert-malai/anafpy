@@ -236,6 +236,46 @@ async def test_submit_rejects_token_for_different_document(tmp_path: Path) -> No
     assert "does not match" in out["message"]
 
 
+@respx.mock
+async def test_submit_rejects_token_for_different_cif(tmp_path: Path) -> None:
+    respx.post(f"{EFACTURA}/upload").mock(
+        return_value=httpx.Response(200, text='<header index_incarcare="1"/>')
+    )
+    server = create_server(_config(tmp_path))
+    prepared = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
+    assert prepared["cif"] == "123"  # the default the human approved
+    out = await _call(
+        server,
+        "efactura_submit_invoice",
+        document=_invoice_doc(),
+        confirmation_token=prepared["confirmation_token"],
+        confirm=True,
+        cif="999",  # not what was prepared
+    )
+    assert out["accepted"] is False
+    assert "does not match" in out["message"]
+
+
+@respx.mock
+async def test_submit_token_is_single_use(tmp_path: Path) -> None:
+    route = respx.post(f"{EFACTURA}/upload").mock(
+        return_value=httpx.Response(200, text='<header index_incarcare="777"/>')
+    )
+    server = create_server(_config(tmp_path))
+    prepared = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
+    args = {
+        "document": _invoice_doc(),
+        "confirmation_token": prepared["confirmation_token"],
+        "confirm": True,
+    }
+    first = await _call(server, "efactura_submit_invoice", **args)
+    second = await _call(server, "efactura_submit_invoice", **args)
+    assert first["accepted"] is True
+    assert second["accepted"] is False
+    assert "already used" in second["message"]
+    assert route.call_count == 1  # the non-idempotent POST went out exactly once
+
+
 # --- gated submit: e-Transport ------------------------------------------------------
 
 

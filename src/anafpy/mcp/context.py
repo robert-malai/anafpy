@@ -17,6 +17,7 @@ from ..auth import FileTokenStore, TokenProvider
 from ..efactura.client import EFacturaClient
 from ..etransport.client import ETransportClient
 from .config import ServerConfig
+from .tokens import TokenLedger
 
 __all__ = ["AppContext", "AuthStatus"]
 
@@ -47,6 +48,8 @@ class AppContext:
         self._efactura: EFacturaClient | None = None
         self._etransport: ETransportClient | None = None
         self._validators: dict[str, object] = {}
+        #: Redeemed confirmation tokens (single-use gate for the submit tools).
+        self.token_ledger = TokenLedger()
 
     @property
     def provider(self) -> TokenProvider:

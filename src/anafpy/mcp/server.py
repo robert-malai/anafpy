@@ -45,6 +45,9 @@ Filing an invoice or transport declaration is a two-step, human-gated flow:
   2. show the preview to the user, get explicit approval, then call the matching
      `*_submit_*` tool with that token and confirm=True.
 
+Confirmation tokens are single-use and bound to the exact document, the CIF, and the
+upload standard — to file again (or for another CIF), run the prepare step again.
+
 Local Schematron validation is a fast pre-filter only; ANAF is authoritative. If a
 tool reports "not authenticated", the user must run `anafpy auth login` host-side.
 """
@@ -56,6 +59,21 @@ _MUTATING = ToolAnnotations(
 
 _INVOICE_KIND = "efactura.invoice"
 _TRANSPORT_KIND = "etransport.declaration"
+
+_TOKEN_USED_MESSAGE = (
+    "confirmation token already used — filing is never repeated on the same "
+    "approval; run the prepare step again"
+)
+
+
+def _invoice_context(cif: str, standard: str) -> str:
+    """Submission parameters bound into an e-Factura confirmation token."""
+    return f"cif={cif};standard={standard}"
+
+
+def _transport_context(cif: str) -> str:
+    """Submission parameters bound into an e-Transport confirmation token."""
+    return f"cif={cif}"
 
 
 def _parse_window_dt(value: str | None, *, field: str) -> datetime | None:
@@ -197,12 +215,14 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
     @mcp.tool(
         annotations=_MUTATING,
         description="STEP 1 of filing an invoice: validate the supplied UBL XML "
-        "locally and return an easy-to-read preview + a confirmation token. Show the "
-        "preview to the user for approval; then call efactura_submit_invoice with the "
-        "token. Does NOT file.",
+        "locally and return an easy-to-read preview + a confirmation token bound to "
+        "this document and CIF. Show the preview to the user for approval; then call "
+        "efactura_submit_invoice with the token and the same cif. Does NOT file.",
     )
-    async def efactura_prepare_invoice(document: UblXmlInput) -> PreparedSubmission:
-        return _prepare_invoice(ctx, cfg, document, with_token=True)
+    async def efactura_prepare_invoice(
+        document: UblXmlInput, cif: str | None = None
+    ) -> PreparedSubmission:
+        return _prepare_invoice(ctx, cfg, document, cif=cif, with_token=True)
 
     @mcp.tool(
         annotations=_MUTATING,
@@ -224,18 +244,23 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
             )
         try:
             xml = resolve_xml(document)
+            resolved = cfg.require_cif(cif)
         except AnafError as exc:
             return SubmitResult(accepted=False, errors=[str(exc)])
+        standard = upload_standard(xml)
         try:
-            verify_token(
-                cfg.signing_key, confirmation_token, kind=_INVOICE_KIND, payload=xml
+            expires_at = verify_token(
+                cfg.signing_key,
+                confirmation_token,
+                kind=_INVOICE_KIND,
+                payload=xml,
+                context=_invoice_context(resolved, standard.value),
             )
         except ConfirmationError as exc:
             return SubmitResult(accepted=False, message=str(exc))
-        resolved = cfg.require_cif(cif)
-        result = await ctx.efactura().upload(
-            xml, cif=resolved, standard=upload_standard(xml)
-        )
+        if not ctx.token_ledger.consume(confirmation_token, expires_at):
+            return SubmitResult(accepted=False, message=_TOKEN_USED_MESSAGE)
+        result = await ctx.efactura().upload(xml, cif=resolved, standard=standard)
         return SubmitResult(
             accepted=result.accepted,
             upload_id=result.upload_id,
@@ -253,16 +278,23 @@ def _prepare_invoice(
     cfg: ServerConfig,
     document: UblXmlInput,
     *,
+    cif: str | None = None,
     with_token: bool,
 ) -> PreparedSubmission:
     try:
         xml = resolve_xml(document)
+        resolved = cfg.require_cif(cif) if with_token else None
     except AnafError as exc:
         return PreparedSubmission(valid=False, message=str(exc))
     valid, findings, available = _run_validation(ctx.efactura_validator(), xml)
     token = (
-        issue_token(cfg.signing_key, kind=_INVOICE_KIND, payload=xml)
-        if with_token and valid
+        issue_token(
+            cfg.signing_key,
+            kind=_INVOICE_KIND,
+            payload=xml,
+            context=_invoice_context(resolved, upload_standard(xml).value),
+        )
+        if with_token and valid and resolved is not None
         else None
     )
     return PreparedSubmission(
@@ -270,6 +302,7 @@ def _prepare_invoice(
         findings=findings,
         validation_available=available,
         confirmation_token=token,
+        cif=resolved,
         invoice_preview=invoice_view(xml),
         message=_prepare_message(valid, available, with_token),
     )
@@ -336,11 +369,13 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         annotations=_MUTATING,
         description="STEP 1 of filing an e-Transport declaration: validate the "
         "supplied XML locally and return an easy-to-read preview + a confirmation "
-        "token. Show the preview for approval; then call etransport_submit with the "
-        "token. Does NOT file.",
+        "token bound to this document and CIF. Show the preview for approval; then "
+        "call etransport_submit with the token and the same cif. Does NOT file.",
     )
-    async def etransport_prepare(document: EtransportXmlInput) -> PreparedSubmission:
-        return _prepare_transport(ctx, cfg, document, with_token=True)
+    async def etransport_prepare(
+        document: EtransportXmlInput, cif: str | None = None
+    ) -> PreparedSubmission:
+        return _prepare_transport(ctx, cfg, document, cif=cif, with_token=True)
 
     @mcp.tool(
         annotations=_MUTATING,
@@ -362,15 +397,21 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
             )
         try:
             xml = resolve_xml(document)
+            resolved = cfg.require_cif(cif)
         except AnafError as exc:
             return SubmitResult(accepted=False, errors=[str(exc)])
         try:
-            verify_token(
-                cfg.signing_key, confirmation_token, kind=_TRANSPORT_KIND, payload=xml
+            expires_at = verify_token(
+                cfg.signing_key,
+                confirmation_token,
+                kind=_TRANSPORT_KIND,
+                payload=xml,
+                context=_transport_context(resolved),
             )
         except ConfirmationError as exc:
             return SubmitResult(accepted=False, message=str(exc))
-        resolved = cfg.require_cif(cif)
+        if not ctx.token_ledger.consume(confirmation_token, expires_at):
+            return SubmitResult(accepted=False, message=_TOKEN_USED_MESSAGE)
         result = await ctx.etransport().upload(xml, cif=resolved)
         return SubmitResult(
             accepted=result.accepted,
@@ -390,16 +431,23 @@ def _prepare_transport(
     cfg: ServerConfig,
     document: EtransportXmlInput,
     *,
+    cif: str | None = None,
     with_token: bool,
 ) -> PreparedSubmission:
     try:
         xml = resolve_xml(document)
+        resolved = cfg.require_cif(cif) if with_token else None
     except AnafError as exc:
         return PreparedSubmission(valid=False, message=str(exc))
     valid, findings, available = _run_validation(ctx.etransport_validator(), xml)
     token = (
-        issue_token(cfg.signing_key, kind=_TRANSPORT_KIND, payload=xml)
-        if with_token and valid
+        issue_token(
+            cfg.signing_key,
+            kind=_TRANSPORT_KIND,
+            payload=xml,
+            context=_transport_context(resolved),
+        )
+        if with_token and valid and resolved is not None
         else None
     )
     return PreparedSubmission(
@@ -407,6 +455,7 @@ def _prepare_transport(
         findings=findings,
         validation_available=available,
         confirmation_token=token,
+        cif=resolved,
         transport_preview=transport_view(xml),
         message=_prepare_message(valid, available, with_token),
     )

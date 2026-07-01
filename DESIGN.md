@@ -237,8 +237,10 @@ and the e-Factura inbox, and the compiled reference as resources.)*
   `*_download`, `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
   freely callable. Filing is split `*_prepare*` → `*_submit*`: `prepare` parses the
   supplied XML into the **flat read view** to render a preview, runs local Schematron, and
-  returns an HMAC **confirmation token** bound to the exact XML bytes; `submit` requires
-  that token (same bytes) **and** `confirm=True`. Not a `dry_run` bool.
+  returns an HMAC **confirmation token** bound to the exact XML bytes plus the submission
+  context (CIF, upload standard); `submit` requires that token (same bytes, same CIF)
+  **and** `confirm=True`, and redeems it **single-use** so one approval files at most
+  once. Not a `dry_run` bool.
 - **Validation degrades gracefully**: without `anafpy[validation]` the validator is
   `None`, `prepare` reports `validation_available=False` and still issues a token (ANAF is
   authoritative; the human still confirms).
