@@ -28,6 +28,7 @@ from tenacity import (
 )
 
 from .._transport.base import (
+    OAUTH_HOST,
     Environment,
     Service,
     is_empty_result_message,
@@ -48,6 +49,7 @@ from .models import (
     MessageState,
     MessageStatus,
     RemoteValidationResult,
+    SignatureValidationResult,
     TransformStandard,
     UploadResult,
     UploadStandard,
@@ -62,9 +64,9 @@ _XML_BODY_HEADERS = {"Content-Type": "text/plain"}
 # Defensive upper bound on pages walked by ``list_messages`` — guards against a
 # misbehaving server that never returns an empty/terminal page.
 _MAX_LIST_PAGES = 10_000
-# Candidate field names for the paginated response's total-page count (inferred from
-# docs; honoured only when present — the empty-page stop is the real terminator).
-_PAGE_COUNT_KEYS = ("numar_total_pagini", "numarTotalPagini", "totalPagini")
+# The paginated response's total-page field (per the vendored lista swagger); honoured
+# only when present — the empty-page stop is the real terminator.
+_PAGE_COUNT_KEY = "numar_total_pagini"
 
 
 def _to_ms(moment: datetime) -> int:
@@ -243,13 +245,13 @@ class EFacturaClient:
         errors = _header_errors(root)
         raw_state = root.get("stare")
         if raw_state is None:
-            # No `stare` but errors present => rejected at upload time.
-            if errors:
-                return MessageStatus(
-                    state=MessageState.REJECTED, errors=errors, raw=body
-                )
+            # `Errors` without `stare` is a *query* failure (unknown/invalid index,
+            # missing SPV rights, daily limit — per the stareMesaj swagger), not a
+            # document outcome; upload-time rejection arrives as
+            # `stare="XML cu erori nepreluat de sistem"`.
+            detail = "; ".join(errors) or f"missing `stare`: {_as_text(body)[:200]}"
             raise AnafResponseError(
-                f"stareMesaj response missing `stare`: {_as_text(body)[:200]}",
+                f"stareMesaj error: {detail}",
                 status_code=200,
                 body=_as_text(body),
             )
@@ -356,13 +358,11 @@ class EFacturaClient:
             MessageListItem.model_validate(m) for m in (data.get("mesaje") or [])
         ]
         total_pages: int | None = None
-        for key in _PAGE_COUNT_KEYS:
-            if key in data:
-                try:
-                    total_pages = int(data[key])
-                except (TypeError, ValueError):
-                    total_pages = None
-                break
+        if _PAGE_COUNT_KEY in data:
+            try:
+                total_pages = int(data[_PAGE_COUNT_KEY])
+            except (TypeError, ValueError):
+                total_pages = None
         return messages, total_pages
 
     async def validate_remote(
@@ -409,6 +409,62 @@ class EFacturaClient:
             trace_id=str(trace_id) if trace_id is not None else None,
             raw=body,
         )
+
+    async def validate_signature(
+        self,
+        file: str | bytes,
+        signature: str | bytes,
+    ) -> SignatureValidationResult:
+        """Validate the MF detached signature over an invoice XML.
+
+        Both files come from the ``descarcare`` ZIP
+        (:attr:`DownloadedMessage.content_xml` / ``signature_xml``). The endpoint
+        lives at the **host root** (``/api/validate/signature``) — outside the
+        ``FCTEL/rest`` prefix and with no test/prod segment — so it ignores this
+        client's ``environment``. A failed validation is returned as
+        ``valid=False``, not raised.
+        """
+        files = {
+            "file": ("file.xml", file.encode() if isinstance(file, str) else file),
+            "signature": (
+                "signature.xml",
+                signature.encode() if isinstance(signature, str) else signature,
+            ),
+        }
+        url = f"{OAUTH_HOST}/api/validate/signature"
+        try:
+            response = await self._http.post(url, files=files)
+        except httpx.HTTPError as exc:
+            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        self._raise_for_status(response)
+        return self._parse_signature_validation(response.content)
+
+    @staticmethod
+    def _parse_signature_validation(body: bytes) -> SignatureValidationResult:
+        try:
+            data = json.loads(body)
+            message = str(data["msg"])
+        except (ValueError, TypeError, KeyError) as exc:
+            raise AnafResponseError(
+                f"unrecognised signature validation response: {_as_text(body)[:200]}",
+                status_code=200,
+                body=_as_text(body),
+            ) from exc
+        # Valid and invalid are both HTTP 200 `{msg}` payloads, distinguished only by
+        # wording (per the validaresemnatura swagger): "… NU au putut fi validate …"
+        # vs "… au fost validate cu succes …".
+        normalized = " ".join(message.casefold().split())
+        if "nu au putut fi validate" in normalized:
+            valid = False
+        elif "au fost validate cu succes" in normalized:
+            valid = True
+        else:
+            raise AnafResponseError(
+                f"unrecognised signature validation message: {message[:200]}",
+                status_code=200,
+                body=_as_text(body),
+            )
+        return SignatureValidationResult(valid=valid, message=message, raw=body)
 
     async def to_pdf(
         self,

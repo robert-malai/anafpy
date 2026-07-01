@@ -108,10 +108,18 @@ GET https://api.anaf.ro/prod/FCTEL/rest/stareMesaj?id_incarcare={index}
 | `XML cu erori nepreluat de sistem` | Rejected at upload; the error was already returned in the upload response. |
 | `in prelucrare` | Still processing — keep polling. |
 
+**Response (200, `application/xml`)** — a `<header>` element: `stare`, and on
+`ok`/`nok` an **`id_descarcare`** attribute (feeds `descarcare`). **Query failures**
+(unknown/invalid `id_incarcare`, missing SPV rights, daily limit reached) come back as
+`<Errors errorMessage="…"/>` **without** `stare` — they are errors about the query,
+not a state of the document.
+
 > `anafpy`: `ok`/`nok` are terminal; `in prelucrare` drives the `upload_and_wait` poll
-> loop. `nok` is a typed business outcome (not an exception).
+> loop. `nok` is a typed business outcome (not an exception); an `Errors`-only
+> response raises `AnafResponseError`.
 >
-> Provenance: PDF p. 2.
+> Provenance: PDF p. 2; response schema + error catalog from the stareMesaj swagger
+> ([staremesaj.html](../_sources/efactura-swagger/staremesaj.html)).
 
 ## 3. Message lists
 
@@ -203,9 +211,15 @@ multipart/form-data:
   file      = invoice XML
   signature = signature XML
 ```
-Both files come from the `descarcare` ZIP.
+Both files come from the `descarcare` ZIP. **Response (200, JSON):** `{"msg": "…"}` for
+**both** outcomes — valid and invalid are distinguished only by the wording (*"…au fost
+validate cu succes…"* vs *"…NU au putut fi validate cu succes…"*); a technical error is
+HTTP 400 with the same `{msg}` shape. Note the path sits at the **host root** — no
+`FCTEL/rest` prefix and no test/prod segment.
 
-> Provenance: PDF p. 5.
+> Provenance: PDF p. 5; response shape from the signature swagger
+> ([validaresemnatura.html](../_sources/efactura-swagger/validaresemnatura.html),
+> 03.09.2024).
 
 ## 8. Rate limits (per method)
 
@@ -232,7 +246,7 @@ limit — the limits file is newer and is the authority.)
 | `anafpy` method | HTTP |
 |---|---|
 | `upload(xml, standard, cif, *, extern, autofactura, executare)` | `POST /FCTEL/rest/upload` |
-| `upload_b2c(...)` | `POST /FCTEL/rest/uploadb2c` |
+| `upload(..., b2c=True)` | `POST /FCTEL/rest/uploadb2c` |
 | `get_status(index)` | `GET /FCTEL/rest/stareMesaj` |
 | `list_messages(cif, *, days \| start+end, filter=None)` → `AsyncIterator[MessageListItem]` | `GET /FCTEL/rest/listaMesajePaginatieFactura` (paged internally) |
 | `download(id)` → `DownloadedMessage` | `GET /FCTEL/rest/descarcare` |

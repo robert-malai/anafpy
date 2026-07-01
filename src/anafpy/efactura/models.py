@@ -31,6 +31,7 @@ __all__ = [
     "MessageState",
     "MessageStatus",
     "RemoteValidationResult",
+    "SignatureValidationResult",
     "TransformStandard",
     "UploadResult",
     "UploadStandard",
@@ -130,6 +131,19 @@ class RemoteValidationResult(BaseModel):
     valid: bool
     messages: list[str] = []
     trace_id: str | None = None
+    raw: bytes = b""
+
+
+class SignatureValidationResult(BaseModel):
+    """Outcome of ``POST /api/validate/signature`` (MF signature over an invoice).
+
+    Both outcomes are HTTP 200 with a prose ``msg``; ``valid`` reflects which of the
+    two documented wordings ANAF answered with. A failed validation is a *business*
+    outcome — never an exception.
+    """
+
+    valid: bool
+    message: str
     raw: bytes = b""
 
 

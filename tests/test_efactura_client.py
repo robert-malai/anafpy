@@ -185,6 +185,24 @@ async def test_get_status_unknown_state_raises_anaf_error() -> None:
     assert "suspendat" in str(ei.value)
 
 
+@respx.mock
+async def test_get_status_query_error_raises_not_rejected() -> None:
+    # Errors without `stare` = query failure (bad/unknown index, no SPV rights, daily
+    # limit — per the stareMesaj swagger), not a document rejection.
+    respx.get(f"{BASE}/stareMesaj").mock(
+        return_value=httpx.Response(
+            200,
+            text="<header><Errors errorMessage="
+            '"Nu exista factura cu id_incarcare= 15000"/></header>',
+        )
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError) as ei:
+            await client.get_status("15000")
+    assert ei.value.status_code == 200
+    assert "Nu exista factura" in str(ei.value)
+
+
 # --- download -------------------------------------------------------------------------
 
 
@@ -379,6 +397,67 @@ async def test_validate_remote_unknown_shape_raises() -> None:
     async with _client() as client:
         with pytest.raises(AnafResponseError, match="unrecognised validare"):
             await client.validate_remote(b"<Invoice/>")
+
+
+# --- validate_signature ---------------------------------------------------------------
+
+# Host-root endpoint: no test/prod segment, outside FCTEL/rest (per the swagger).
+SIGNATURE_URL = "https://api.anaf.ro/api/validate/signature"
+
+# The two documented outcomes are both 200 `{msg}` payloads (validaresemnatura
+# swagger), distinguished only by wording.
+_SIG_VALID_MSG = (
+    "Fișierele încărcate au fost validate cu succes, din perspectiva autenticității "
+    "semnăturii aplicate."
+)
+_SIG_INVALID_MSG = (
+    "Fișierele încărcate NU au putut fi validate cu succes, din perspectiva "
+    "autenticității semnăturii aplicate."
+)
+
+
+@respx.mock
+async def test_validate_signature_valid() -> None:
+    route = respx.post(SIGNATURE_URL).mock(
+        return_value=httpx.Response(200, json={"msg": _SIG_VALID_MSG})
+    )
+    async with _client() as client:
+        result = await client.validate_signature(b"<Invoice/>", b"<Signature/>")
+    assert result.valid
+    assert "validate cu succes" in result.message
+    body = route.calls.last.request.content
+    assert b'name="file"' in body and b'name="signature"' in body
+
+
+@respx.mock
+async def test_validate_signature_invalid_is_value_not_exception() -> None:
+    respx.post(SIGNATURE_URL).mock(
+        return_value=httpx.Response(200, json={"msg": _SIG_INVALID_MSG})
+    )
+    async with _client() as client:
+        result = await client.validate_signature("<Invoice/>", "<Signature/>")
+    assert not result.valid
+
+
+@respx.mock
+async def test_validate_signature_unknown_message_raises() -> None:
+    respx.post(SIGNATURE_URL).mock(
+        return_value=httpx.Response(200, json={"msg": "Mentenanță programată"})
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="unrecognised signature"):
+            await client.validate_signature(b"<x/>", b"<s/>")
+
+
+@respx.mock
+async def test_validate_signature_technical_error_raises() -> None:
+    respx.post(SIGNATURE_URL).mock(
+        return_value=httpx.Response(400, json={"msg": "Eroare tehnică"})
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError) as ei:
+            await client.validate_signature(b"<x/>", b"<s/>")
+    assert ei.value.status_code == 400
 
 
 # --- errors & auth --------------------------------------------------------------------
