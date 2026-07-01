@@ -7,8 +7,9 @@ import io
 import json
 import time
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from email.utils import format_datetime
 
 import httpx
 import pytest
@@ -322,6 +323,33 @@ async def test_rate_limit_raises_with_retry_after() -> None:
         with pytest.raises(AnafRateLimitError) as ei:
             await client.get_status("1")
     assert ei.value.retry_after == 12.0
+
+
+@respx.mock
+async def test_rate_limit_parses_http_date_retry_after() -> None:
+    # RFC 9110 allows an HTTP-date; it must not mask the rate-limit error.
+    when = datetime.now(UTC) + timedelta(seconds=90)
+    respx.get(f"{BASE}/stareMesaj").mock(
+        return_value=httpx.Response(
+            429, headers={"Retry-After": format_datetime(when, usegmt=True)}
+        )
+    )
+    async with _client() as client:
+        with pytest.raises(AnafRateLimitError) as ei:
+            await client.get_status("1")
+    assert ei.value.retry_after is not None
+    assert 80 <= ei.value.retry_after <= 91
+
+
+@respx.mock
+async def test_rate_limit_tolerates_unparseable_retry_after() -> None:
+    respx.get(f"{BASE}/stareMesaj").mock(
+        return_value=httpx.Response(429, headers={"Retry-After": "soon"})
+    )
+    async with _client() as client:
+        with pytest.raises(AnafRateLimitError) as ei:
+            await client.get_status("1")
+    assert ei.value.retry_after is None
 
 
 @respx.mock

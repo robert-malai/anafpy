@@ -30,6 +30,7 @@ from .._transport.base import (
     Environment,
     Service,
     is_empty_result_message,
+    retry_after_seconds,
     service_base_url,
 )
 from ..auth.provider import AnafAuth, TokenProvider
@@ -136,9 +137,9 @@ class ETransportClient:
             return
         body = _as_text(response.content)
         if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
-            retry_after = response.headers.get("Retry-After")
             raise AnafRateLimitError(
-                retry_after=float(retry_after) if retry_after else None, body=body
+                retry_after=retry_after_seconds(response.headers.get("Retry-After")),
+                body=body,
             )
         raise AnafResponseError(
             f"ANAF returned HTTP {response.status_code}",

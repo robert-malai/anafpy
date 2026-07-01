@@ -7,7 +7,9 @@ only by **path prefix** (``/FCTEL/rest`` vs ``/ETRANSPORT/ws/v1``). See
 
 from __future__ import annotations
 
+import time
 import unicodedata
+from email.utils import parsedate_to_datetime
 from enum import StrEnum
 
 __all__ = [
@@ -15,6 +17,7 @@ __all__ = [
     "Environment",
     "Service",
     "is_empty_result_message",
+    "retry_after_seconds",
     "service_base_url",
 ]
 
@@ -40,6 +43,25 @@ class Service(StrEnum):
 def service_base_url(service: Service, environment: Environment) -> str:
     """Return e.g. ``https://api.anaf.ro/test/FCTEL/rest``."""
     return f"{OAUTH_HOST}/{environment.value}/{service.value}"
+
+
+def retry_after_seconds(value: str | None) -> float | None:
+    """Parse a ``Retry-After`` header into seconds.
+
+    RFC 9110 allows either a delay in seconds or an HTTP-date; an unparseable
+    value yields ``None`` rather than masking the rate-limit error it decorates.
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    try:
+        delay = parsedate_to_datetime(value).timestamp() - time.time()
+    except ValueError:
+        return None
+    return max(delay, 0.0)
 
 
 #: Substrings (accent-stripped, casefolded) that mark an ANAF list ``eroare`` as a
