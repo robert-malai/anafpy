@@ -30,6 +30,7 @@ __all__ = [
     "MessageListItem",
     "MessageState",
     "MessageStatus",
+    "RemoteValidationResult",
     "TransformStandard",
     "UploadResult",
     "UploadStandard",
@@ -117,6 +118,19 @@ class MessageStatus(BaseModel):
     @property
     def is_terminal(self) -> bool:
         return self.state in (MessageState.OK, MessageState.NOK)
+
+
+class RemoteValidationResult(BaseModel):
+    """Outcome of ANAF's server-side ``validare`` endpoint.
+
+    An invalid document is a *business* outcome: ``valid`` is ``False`` and
+    ``messages`` carries ANAF's findings — never an exception.
+    """
+
+    valid: bool
+    messages: list[str] = []
+    trace_id: str | None = None
+    raw: bytes = b""
 
 
 class MessageListItem(BaseModel):

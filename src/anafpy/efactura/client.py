@@ -47,6 +47,7 @@ from .models import (
     MessageListItem,
     MessageState,
     MessageStatus,
+    RemoteValidationResult,
     TransformStandard,
     UploadResult,
     UploadStandard,
@@ -363,6 +364,51 @@ class EFacturaClient:
                     total_pages = None
                 break
         return messages, total_pages
+
+    async def validate_remote(
+        self,
+        xml: str | bytes,
+        *,
+        standard: TransformStandard = TransformStandard.INVOICE,
+    ) -> RemoteValidationResult:
+        """Validate invoice XML server-side (``validare/{std}``) without filing it.
+
+        ANAF's own validator — authoritative, unlike any local pre-check. An invalid
+        document is returned as a :class:`RemoteValidationResult` with ``valid=False``
+        and the findings in ``messages``, not raised.
+        """
+        body = xml.encode("utf-8") if isinstance(xml, str) else xml
+        response = await self._request(
+            "POST",
+            f"validare/{standard.value}",
+            content=body,
+            headers=_XML_BODY_HEADERS,
+        )
+        return self._parse_validate(response.content)
+
+    @staticmethod
+    def _parse_validate(body: bytes) -> RemoteValidationResult:
+        try:
+            data = json.loads(body)
+            stare = data["stare"]
+        except (ValueError, TypeError, KeyError) as exc:
+            # Be explicit rather than inventing an outcome for an unknown shape.
+            raise AnafResponseError(
+                f"unrecognised validare response: {_as_text(body)[:200]}",
+                status_code=200,
+                body=_as_text(body),
+            ) from exc
+        messages = [
+            str(m.get("message", m)) if isinstance(m, dict) else str(m)
+            for m in data.get("Messages") or []
+        ]
+        trace_id = data.get("trace_id")
+        return RemoteValidationResult(
+            valid=str(stare).strip().lower() == "ok",
+            messages=messages,
+            trace_id=str(trace_id) if trace_id is not None else None,
+            raw=body,
+        )
 
     async def to_pdf(
         self,

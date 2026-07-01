@@ -25,7 +25,8 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
 - **OAuth2 auth layer** — Authorization-Code bootstrap (browser + qualified
   certificate), local token store, and headless refresh, exposed via the `anafpy` CLI
   and an `httpx.Auth` integration for the clients.
-- **`EFacturaClient`** (async) — `upload`, `get_status`, `download`, `to_pdf`, the
+- **`EFacturaClient`** (async) — `upload`, `get_status`, `download`, `to_pdf`,
+  `validate_remote` (ANAF's authoritative server-side validation, no filing), the
   `upload_and_wait` poll-until-terminal helper, and `list_messages` — a single async
   iterator that pages the message list under the hood (window by `days` or `start`/`end`;
   empty window → empty iterator, real ANAF errors → raise). `download` exposes three read

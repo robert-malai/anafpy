@@ -25,6 +25,7 @@ from anafpy.efactura import (
     Filter,
     Invoice,
     MessageState,
+    TransformStandard,
     UploadStandard,
 )
 from anafpy.efactura.ubl.common.ubl_common_aggregate_components_2_1 import (
@@ -332,6 +333,52 @@ def test_list_messages_window_args_are_validated() -> None:
         client.list_messages(cif="1")
     with pytest.raises(AnafConfigError):  # out-of-range days
         client.list_messages(cif="1", days=61)
+
+
+# --- validate_remote ------------------------------------------------------------------
+
+
+@respx.mock
+async def test_validate_remote_ok() -> None:
+    route = respx.post(f"{BASE}/validare/FACT1").mock(
+        return_value=httpx.Response(200, json={"stare": "ok", "trace_id": "abc-123"})
+    )
+    async with _client() as client:
+        result = await client.validate_remote(b"<Invoice/>")
+    assert result.valid
+    assert result.messages == []
+    assert result.trace_id == "abc-123"
+    assert route.calls.last.request.headers["content-type"] == "text/plain"
+
+
+@respx.mock
+async def test_validate_remote_nok_returns_findings_not_exception() -> None:
+    respx.post(f"{BASE}/validare/FCN").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "stare": "nok",
+                "Messages": [{"message": "BR-RO-030 error"}],
+                "trace_id": "t",
+            },
+        )
+    )
+    async with _client() as client:
+        result = await client.validate_remote(
+            b"<CreditNote/>", standard=TransformStandard.CREDIT_NOTE
+        )
+    assert not result.valid
+    assert result.messages == ["BR-RO-030 error"]
+
+
+@respx.mock
+async def test_validate_remote_unknown_shape_raises() -> None:
+    respx.post(f"{BASE}/validare/FACT1").mock(
+        return_value=httpx.Response(200, text="<html>maintenance</html>")
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="unrecognised validare"):
+            await client.validate_remote(b"<Invoice/>")
 
 
 # --- errors & auth --------------------------------------------------------------------

@@ -138,9 +138,12 @@ POST https://api.anaf.ro/prod/FCTEL/rest/validare/{FACT1|FCN}      # oauth2
 POST https://webservicesp.anaf.ro/prod/FCTEL/rest/validare/{FACT1|FCN}   # no auth
 Content-Type: text/plain        # XML in the body
 ```
-`std` (✔): `FACT1` (invoice) or `FCN` (credit note). **Server-side** validation —
-distinct from `anafpy`'s optional local Schematron pre-check. Available **without auth**
-on `webservicesp.anaf.ro`.
+`std` (✔): `FACT1` (invoice) or `FCN` (credit note). **Server-side** validation.
+Available **without auth** on `webservicesp.anaf.ro`.
+
+Response (JSON): `{"stare": "ok"|"nok", "Messages": [{"message": "..."}], "trace_id":
+"..."}` — `Messages` present on `nok`. ⚠️ Response shape inferred from known behaviour,
+not yet confirmed against a live TEST call.
 
 > Provenance: PDF p. 4.
 
