@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 from collections.abc import AsyncIterator
 from datetime import datetime
 from types import TracebackType
@@ -258,9 +259,22 @@ class EFacturaClient:
         )
 
     async def download(self, message_id: str) -> DownloadedMessage:
-        """Download the ZIP (signed invoice/errors + MF signature) for a message id."""
+        """Download the ZIP (signed invoice/errors + MF signature) for a message id.
+
+        Raises:
+            AnafResponseError: ANAF answered 200 with a non-ZIP body (it reports
+                e.g. an unknown id as an error payload, not an HTTP error).
+        """
         response = await self._request("GET", "descarcare", params={"id": message_id})
-        return DownloadedMessage.from_zip(response.content)
+        try:
+            return DownloadedMessage.from_zip(response.content)
+        except zipfile.BadZipFile as exc:
+            raise AnafResponseError(
+                f"descarcare returned a non-ZIP body for id {message_id!r}: "
+                f"{_as_text(response.content)[:200]}",
+                status_code=response.status_code,
+                body=_as_text(response.content),
+            ) from exc
 
     def list_messages(
         self,

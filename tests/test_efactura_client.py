@@ -195,6 +195,19 @@ async def test_download_preserves_raw_and_parses_invoice() -> None:
     assert msg.document.id is not None and msg.document.id.value == "INV-1"
 
 
+@respx.mock
+async def test_download_non_zip_body_raises_response_error_with_body() -> None:
+    # ANAF reports e.g. an unknown id as a 200 error payload, not an HTTP error.
+    respx.get(f"{BASE}/descarcare").mock(
+        return_value=httpx.Response(200, json={"eroare": "id invalid"})
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError) as ei:
+            await client.download("bogus")
+    assert ei.value.status_code == 200
+    assert "id invalid" in (ei.value.body or "")
+
+
 # --- lists ----------------------------------------------------------------------------
 
 
