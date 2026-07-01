@@ -2,9 +2,6 @@
 
 Holds the long-lived :class:`TokenProvider` and the two clients, built from a
 :class:`ServerConfig`. Clients are created lazily on first use and closed on shutdown.
-Validators come from the ``anafpy[validation]`` extra and degrade gracefully when it is
-not installed — the ``validate``/``prepare`` tools then report that local pre-validation
-is unavailable rather than failing.
 """
 
 from __future__ import annotations
@@ -47,7 +44,6 @@ class AppContext:
         )
         self._efactura: EFacturaClient | None = None
         self._etransport: ETransportClient | None = None
-        self._validators: dict[str, object] = {}
         #: Redeemed confirmation tokens (single-use gate for the submit tools).
         self.token_ledger = TokenLedger()
 
@@ -107,26 +103,6 @@ class AppContext:
             needs_login=refresh_dead,
             message=message,
         )
-
-    def efactura_validator(self) -> object | None:
-        return self._validator("efactura")
-
-    def etransport_validator(self) -> object | None:
-        return self._validator("etransport")
-
-    def _validator(self, service: str) -> object | None:
-        if service in self._validators:
-            return self._validators[service]
-        try:
-            if service == "efactura":
-                from ..efactura.validator import create_validator
-            else:
-                from ..etransport.validator import create_validator
-            validator: object | None = create_validator()
-        except (ImportError, ValueError):
-            validator = None
-        self._validators[service] = validator
-        return validator
 
     async def aclose(self) -> None:
         if self._efactura is not None:

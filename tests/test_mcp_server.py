@@ -1,9 +1,4 @@
-"""MCP server tool behaviour (respx-mocked, credential-free).
-
-Local Schematron validation is forced *unavailable* here so the prepare → submit gate
-is exercised deterministically regardless of BR-RO findings; the validator itself is
-covered by ``test_validation.py``.
-"""
+"""MCP server tool behaviour (respx-mocked, credential-free)."""
 
 from __future__ import annotations
 
@@ -27,17 +22,6 @@ from anafpy.mcp.server import create_server
 
 EFACTURA = "https://api.anaf.ro/test/FCTEL/rest"
 ETRANSPORT = "https://api.anaf.ro/test/ETRANSPORT/ws/v1"
-
-
-@pytest.fixture(autouse=True)
-def _no_local_validation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make both Schematron validators report as unavailable."""
-
-    def unavailable(*_args: object, **_kwargs: object) -> object:
-        raise ImportError("validation extra not installed (test)")
-
-    monkeypatch.setattr("anafpy.efactura.validator.create_validator", unavailable)
-    monkeypatch.setattr("anafpy.etransport.validator.create_validator", unavailable)
 
 
 def _jwt(exp: float) -> str:
@@ -130,6 +114,36 @@ async def test_efactura_get_status(tmp_path: Path) -> None:
     assert out["download_id"] == "55"
 
 
+@respx.mock
+async def test_efactura_validate_calls_anaf_validator(tmp_path: Path) -> None:
+    route = respx.post(f"{EFACTURA}/validare/FACT1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "stare": "nok",
+                "Messages": [{"message": "BR-RO-020 error"}],
+                "trace_id": "t1",
+            },
+        )
+    )
+    server = create_server(_config(tmp_path))
+    out = await _call(server, "efactura_validate", document={"xml": invoice_xml()})
+    assert out["valid"] is False
+    assert out["messages"] == ["BR-RO-020 error"]
+    assert route.called
+
+
+@respx.mock
+async def test_efactura_validate_routes_credit_notes_to_fcn(tmp_path: Path) -> None:
+    route = respx.post(f"{EFACTURA}/validare/FCN").mock(
+        return_value=httpx.Response(200, json={"stare": "ok"})
+    )
+    server = create_server(_config(tmp_path))
+    out = await _call(server, "efactura_validate", document={"xml": credit_note_xml()})
+    assert out["valid"] is True
+    assert route.called
+
+
 # --- gated submit: e-Factura --------------------------------------------------------
 
 
@@ -141,7 +155,6 @@ async def test_prepare_invoice_returns_token_and_preview(tmp_path: Path) -> None
     server = create_server(_config(tmp_path))
     out = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
     assert out["valid"] is True
-    assert out["validation_available"] is False
     assert out["confirmation_token"]
     # Preview is the read view parsed back out of the supplied XML.
     assert out["invoice_preview"]["number"] == "INV-1"

@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field
 
 from ..efactura.models import FlatInvoice
 from ..etransport.models import FlatTransport
-from ..validation import ValidationFinding
 
 __all__ = [
     "EtransportXmlInput",
@@ -47,19 +46,19 @@ class EtransportXmlInput(BaseModel):
 
 
 class PreparedSubmission(BaseModel):
-    """Result of a ``prepare`` step: preview + local validation + confirmation token.
+    """Result of a ``prepare`` step: preview + confirmation token.
 
-    ``confirmation_token`` is ``None`` when local validation failed — fix the findings
-    and prepare again. When present, pass it (with the *same* document and ``cif``) to
-    the matching ``submit`` tool to file; the token is single-use and bound to both.
-    ``cif`` echoes the fiscal code the filing was prepared for. ``invoice_preview`` /
-    ``transport_preview`` is the easy-to-read projection of the supplied XML, for the
-    human to confirm before filing.
+    ``valid`` is ``False`` (and ``confirmation_token`` ``None``) only when the input
+    could not be resolved (bad ``xml``/``path``, no CIF). Otherwise pass the token
+    (with the *same* document and ``cif``) to the matching ``submit`` tool to file;
+    the token is single-use and bound to both. ``cif`` echoes the fiscal code the
+    filing was prepared for. ``invoice_preview`` / ``transport_preview`` is the
+    easy-to-read projection of the supplied XML, for the human to confirm before
+    filing — nothing here is validated against ANAF's rules (use
+    ``efactura_validate`` for that; ANAF is authoritative).
     """
 
     valid: bool
-    findings: list[ValidationFinding] = []
-    validation_available: bool = True
     confirmation_token: str | None = None
     cif: str | None = None
     invoice_preview: FlatInvoice | None = None

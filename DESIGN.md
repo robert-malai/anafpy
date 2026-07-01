@@ -16,9 +16,9 @@ e-Factura is a *filing endpoint*, not an invoicing app. anafpy moves documents t
 ANAF; it does not compose them.
 
 - **Outbound = XML pass-through.** The caller (or Claude) supplies a **complete UBL /
-  e-Transport XML**, exported by their invoicing software. anafpy validates it locally
-  (Schematron), uploads, polls, and downloads. It never builds invoice XML from
-  structured input.
+  e-Transport XML**, exported by their invoicing software. anafpy validates it against
+  ANAF's server-side `validare` (e-Factura), uploads, polls, and downloads. It never
+  builds invoice XML from structured input.
 - **Read-only inbound (e-Factura only).** List the message inbox (id, type, date,
   counterparty CIF), download the original zip/XML/PDF **as-is**, and parse received UBL
   into a friendly **flat read view** (`FlatInvoice`) for display/triage. e-Transport stays
@@ -51,10 +51,10 @@ service; SPV; e-TVA; CII syntax; e-Transport API v1.
   The MCP server (async) drives the async core; batch/script users get sync.
 - **Single distribution** `anafpy` with optional extras (not a multi-package repo):
   - runtime: `httpx`, `pydantic`, `xsdata-pydantic`, `tenacity`
-  - `anafpy[validation]` → `saxonche` (local Schematron)
   - `anafpy[mcp]` → MCP SDK
-  - `anafpy[cli]`
-- **`src/` layout** (ships generated code + vendored XSD/Schematron as package data).
+  *(an `anafpy[validation]` → `saxonche` extra existed and was removed — see §4
+  Validation)*
+- **`src/` layout** (ships generated code as package source).
 
 ```
 src/anafpy/
@@ -64,12 +64,10 @@ src/anafpy/
     ubl/           # generated UBL models (Invoice + CreditNote closure)
     client.py
     models.py      # value types + FlatInvoice read view + UBL→flat reader
-    schematron/    # vendored CIUS-RO .sch/.xsl (versioned)
   etransport/
     schema/        # generated models from ANAF e-Transport XSD (v2)
     client.py
     models.py      # value types + FlatTransport read view + reader
-    schematron/    # vendored e-Transport .sch (versioned)
   cli/             # `anafpy auth login`, etc.
   mcp/             # MCP server (extra: anafpy[mcp])
     models.py      # XML pass-through inputs + prepared-submission gate (no authoring)
@@ -175,14 +173,23 @@ Design (layered):
 
 ### Validation
 
-- **Local Schematron pre-validation from the start**, as opt-in `anafpy[validation]`.
-- A `Validator` protocol in core; a `SchematronValidator` in the extra.
-- **Vendor** ANAF's CIUS-RO artifacts (current **v1.0.9**, 2024-06-05) — EN 16931 +
-  code lists + BR-RO — and bump per ANAF release.
-- Runtime: EN 16931 Schematron is **XSLT 2.0**, so `lxml` won't do → **`saxonche`**.
-  Apply XSLT → SVRL → structured findings (BR-RO id + message).
-- **Local pass is never authoritative** — ANAF decides (drift risk). It's a fast
-  pre-filter, especially valuable for the conversational MCP UX.
+**REVISED 2026-07-02: local Schematron dropped; validation is ANAF's server-side
+`validare` endpoint** (`EFacturaClient.validate_remote`, `POST /validare/{FACT1|FCN}`).
+
+- The original design shipped an opt-in `anafpy[validation]` extra: vendored CIUS-RO
+  Schematron compiled to XSLT 2.0, run via `saxonche`. It was removed because the
+  costs outweighed the pre-filter value for a thin transport client:
+  - `saxonche` is a heavy native dependency; vendored rule sets drift as ANAF
+    revises CIUS-RO (~yearly), and a stale ruleset produces false failures;
+  - the MCP `prepare` gate withheld the confirmation token on a local failure —
+    inverting "local pass is never authoritative" — while silently skipping the
+    check when the extra wasn't installed (gate strictness depended on an extra);
+  - ANAF exposes its own validator over HTTP, authoritative by definition.
+- e-Factura: `validate_remote` returns an invalid document as a **typed value**
+  (`RemoteValidationResult`, findings in `messages`), never an exception.
+- e-Transport has no standalone remote validator: the pre-filing check is
+  parse + human-reviewed preview; ANAF validates on upload (findings as values).
+- Do **not** reintroduce a local rule engine; `prepare` must not block on validation.
 
 ## 5. e-Transport
 
@@ -191,7 +198,8 @@ doc — see `docs/anaf-reference/etransport/api.md`):
 
 - Same OAuth2; operations: `upload` (→ UIT + `index_incarcare`), `stareMesaj`,
   `lista` (days 1–60 + CIF), `info` (transporter lookup). Same discrete-methods +
-  `upload_and_wait` + hybrid errors. Its own Schematron (currently **v2.0.2**).
+  `upload_and_wait` + hybrid errors. No standalone validator (ANAF validates on
+  upload).
 - **Same OAuth host as e-Factura — `api.anaf.ro/{prod,test}`** (NOT a different host;
   `webserviceapl.anaf.ro` is only the cert-direct mode we don't use). The per-service
   difference is the **path prefix** (`/ETRANSPORT/ws/v1/` vs `/FCTEL/rest/`) → shared
@@ -236,14 +244,14 @@ and the e-Factura inbox, and the compiled reference as resources.)*
 - **Safety: read-first, two-step gated filing.** Read-only tools (`*_list*`, `*_status`,
   `*_download`, `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
   freely callable. Filing is split `*_prepare*` → `*_submit*`: `prepare` parses the
-  supplied XML into the **flat read view** to render a preview, runs local Schematron, and
+  supplied XML into the **flat read view** to render a preview and
   returns an HMAC **confirmation token** bound to the exact XML bytes plus the submission
   context (CIF, upload standard); `submit` requires that token (same bytes, same CIF)
   **and** `confirm=True`, and redeems it **single-use** so one approval files at most
   once. Not a `dry_run` bool.
-- **Validation degrades gracefully**: without `anafpy[validation]` the validator is
-  `None`, `prepare` reports `validation_available=False` and still issues a token (ANAF is
-  authoritative; the human still confirms).
+- **Validation is ANAF's own**: `efactura_validate` calls the server-side `validare`
+  endpoint (authoritative); `prepare` never blocks on validation — the human review
+  and ANAF's verdict are the gates (see §4 Validation for the Schematron reversal).
 - **Read-only e-Factura inbox**: `efactura_list_messages` (id, type, date, counterparty
   CIF) → `efactura_download` (raw zip/XML/PDF) → the `FlatInvoice` **read view** for
   display/triage, from the same client-layer reader. e-Transport stays outbound +
@@ -262,10 +270,9 @@ and the e-Factura inbox, and the compiled reference as resources.)*
 - **License: Apache-2.0** (explicit patent grant; ship `NOTICE`).
 - **CI: GitHub Actions** (lint + type + test matrix; later publish-to-PyPI).
 - **Testing (layered)**: respx mock suite as the credential-free CI gate + an opt-in
-  `@pytest.mark.integration` live suite against ANAF's TEST env. Three tiers:
+  `@pytest.mark.integration` live suite against ANAF's TEST env. Two tiers:
   1. golden round-trip on generated UBL models (catch regen/serialization regressions);
-  2. Schematron validator corpus (known valid/invalid → expected BR-RO);
-  3. client behavior via respx (upload→poll→download, `nok`, 401-refresh, 429).
+  2. client behavior via respx (upload→poll→download, `nok`, 401-refresh, 429).
 
 ## 9. Open / deferred items
 

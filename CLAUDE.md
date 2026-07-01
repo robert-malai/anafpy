@@ -71,7 +71,7 @@ src/anafpy/
     models.py            # value types + FlatTransport read view + reader
   mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2
     config.py            # ServerConfig.from_env (creds, store path, env, default CIF)
-    context.py           # AppContext: TokenProvider + lazy clients + validators; auth_status
+    context.py           # AppContext: TokenProvider + lazy clients + token ledger; auth_status
     models.py            # XML pass-through inputs (no authoring); reuses the client flat read view
     documents.py         # resolve XML input -> bytes; parse bytes -> client flat read view
     tokens.py            # HMAC confirmation tokens for two-step gated mutations
@@ -123,16 +123,19 @@ tests/                   # respx-mocked unit tests
   carries `complete` / `dropped_fields` when it can't represent something. There is no
   flat→UBL path; do not add one.
 - **Read-first, two-step gated mutations.** Read-only tools (`*_list*`, `*_status`,
-  `*_download`, `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
-  freely callable. Filing is split `*_prepare*` → `*_submit*`: prepare validates locally,
-  returns a preview + an HMAC **confirmation token** (`mcp/tokens.py`) bound to the exact
-  XML bytes, the CIF, and (e-Factura) the upload standard; submit requires that token
-  (same document, same CIF) **and** `confirm=True`, and each token is **single-use**
-  (`TokenLedger`) so a non-idempotent upload is never repeated on one approval. Don't
-  collapse this into a `dry_run` bool.
-- **Validation degrades gracefully**: if `anafpy[validation]` is absent the validator is
-  `None`, prepare reports `validation_available=False` and still issues a token (ANAF is
-  authoritative; the human still confirms). Local pass is never authoritative.
+  `*_download`, `*_lookup`, `efactura_validate`, `auth_status`) are annotated
+  `readOnlyHint` and freely callable. Filing is split `*_prepare*` → `*_submit*`: prepare
+  parses the XML for a preview and returns an HMAC **confirmation token**
+  (`mcp/tokens.py`) bound to the exact XML bytes, the CIF, and (e-Factura) the upload
+  standard; submit requires that token (same document, same CIF) **and** `confirm=True`,
+  and each token is **single-use** (`TokenLedger`) so a non-idempotent upload is never
+  repeated on one approval. Don't collapse this into a `dry_run` bool.
+- **Validation is ANAF's, not local.** `efactura_validate` calls the server-side
+  `validare` endpoint via `EFacturaClient.validate_remote` (authoritative by
+  definition); e-Transport has no standalone validator — ANAF validates on upload.
+  There is deliberately **no local rule engine** (a Schematron/saxonche extra existed
+  and was removed 2026-07-02); prepare never blocks on validation — the human review +
+  ANAF's verdict are the gates. Don't reintroduce local validation.
 
 ## Error model (important)
 

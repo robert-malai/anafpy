@@ -2,10 +2,12 @@
 
 Built on the phase-1 async clients (``DESIGN.md`` §7). Read-only skills (status, list,
 download, lookup, validate) are freely callable. Mutating skills are **two-step**: a
-``prepare`` tool validates locally, returns a preview + a confirmation token, and the
-matching ``submit`` tool will only file when handed that token back with the *same*
-document and an explicit ``confirm=True``. The compiled ANAF reference is surfaced as
-read-only MCP resources so the model can ground BR-RO explanations and code lists.
+``prepare`` tool renders a preview and returns a confirmation token, and the matching
+``submit`` tool will only file when handed that token back with the *same* document and
+an explicit ``confirm=True``. Validation is ANAF's own: ``efactura_validate`` calls the
+server-side ``validare`` endpoint (authoritative); there is no local rule engine. The
+compiled ANAF reference is surfaced as read-only MCP resources so the model can ground
+BR-RO explanations and code lists.
 """
 
 from __future__ import annotations
@@ -19,9 +21,8 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from ..efactura.models import Filter
+from ..efactura.models import Filter, TransformStandard, UploadStandard
 from ..exceptions import AnafConfigError, AnafError
-from ..validation import ValidationFinding
 from .config import ServerConfig
 from .context import AppContext, AuthStatus
 from .documents import invoice_view, resolve_xml, transport_view, upload_standard
@@ -39,17 +40,18 @@ _INSTRUCTIONS = """\
 Typed access to Romania's ANAF e-Factura (e-invoicing) and e-Transport services.
 
 Filing an invoice or transport declaration is a two-step, human-gated flow:
-  1. call `efactura_prepare_invoice` / `etransport_prepare` — this validates the
-     document locally, returns a preview and totals, and (if valid) a confirmation
-     token;
+  1. call `efactura_prepare_invoice` / `etransport_prepare` — this parses the
+     document, returns a preview and totals, and a confirmation token;
   2. show the preview to the user, get explicit approval, then call the matching
      `*_submit_*` tool with that token and confirm=True.
 
 Confirmation tokens are single-use and bound to the exact document, the CIF, and the
 upload standard — to file again (or for another CIF), run the prepare step again.
 
-Local Schematron validation is a fast pre-filter only; ANAF is authoritative. If a
-tool reports "not authenticated", the user must run `anafpy auth login` host-side.
+To pre-check an invoice, `efactura_validate` runs ANAF's own server-side validator
+without filing (authoritative). e-Transport has no standalone validator — ANAF
+validates on upload. If a tool reports "not authenticated", the user must run
+`anafpy auth login` host-side.
 """
 
 _READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
@@ -88,22 +90,11 @@ def _parse_window_dt(value: str | None, *, field: str) -> datetime | None:
         ) from exc
 
 
-def _run_validation(
-    validator: object | None, xml: bytes
-) -> tuple[bool, list[ValidationFinding], bool]:
-    """Return ``(valid, findings, available)`` for *xml* against *validator*.
-
-    When the validator is absent (``anafpy[validation]`` not installed), reports
-    ``available=False`` and treats the document as provisionally valid — ANAF remains
-    the authority and the human still confirms.
-    """
-    if validator is None:
-        return True, [], False
-    from ..validation import SchematronValidator
-
-    assert isinstance(validator, SchematronValidator)
-    result = validator.validate(xml)
-    return result.is_valid, result.findings, True
+def _transform_standard(xml: bytes) -> TransformStandard:
+    """The ``validare``/``transformare`` path segment matching the document kind."""
+    if upload_standard(xml) is UploadStandard.CN:
+        return TransformStandard.CREDIT_NOTE
+    return TransformStandard.INVOICE
 
 
 def create_server(config: ServerConfig | None = None) -> FastMCP:
@@ -206,23 +197,33 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
 
     @mcp.tool(
         annotations=_READ_ONLY,
-        description="Locally Schematron-validate a complete UBL invoice (XML) against "
-        "EN 16931 + CIUS-RO without filing. A fast pre-filter; ANAF is authoritative.",
+        description="Validate a complete UBL invoice / credit note (XML) with ANAF's "
+        "own server-side validator, without filing. Authoritative — the same rules "
+        "the upload is checked against.",
     )
-    async def efactura_validate(document: UblXmlInput) -> PreparedSubmission:
-        return _prepare_invoice(ctx, cfg, document, with_token=False)
+    async def efactura_validate(document: UblXmlInput) -> dict[str, object]:
+        xml = resolve_xml(document)
+        result = await ctx.efactura().validate_remote(
+            xml, standard=_transform_standard(xml)
+        )
+        return {
+            "valid": result.valid,
+            "messages": result.messages,
+            "trace_id": result.trace_id,
+        }
 
     @mcp.tool(
         annotations=_MUTATING,
-        description="STEP 1 of filing an invoice: validate the supplied UBL XML "
-        "locally and return an easy-to-read preview + a confirmation token bound to "
-        "this document and CIF. Show the preview to the user for approval; then call "
-        "efactura_submit_invoice with the token and the same cif. Does NOT file.",
+        description="STEP 1 of filing an invoice: parse the supplied UBL XML and "
+        "return an easy-to-read preview + a confirmation token bound to this document "
+        "and CIF. Show the preview to the user for approval; then call "
+        "efactura_submit_invoice with the token and the same cif. Does NOT file. "
+        "Use efactura_validate first for ANAF's server-side pre-check.",
     )
     async def efactura_prepare_invoice(
         document: UblXmlInput, cif: str | None = None
     ) -> PreparedSubmission:
-        return _prepare_invoice(ctx, cfg, document, cif=cif, with_token=True)
+        return _prepare_invoice(ctx, cfg, document, cif=cif)
 
     @mcp.tool(
         annotations=_MUTATING,
@@ -279,32 +280,25 @@ def _prepare_invoice(
     document: UblXmlInput,
     *,
     cif: str | None = None,
-    with_token: bool,
 ) -> PreparedSubmission:
     try:
         xml = resolve_xml(document)
-        resolved = cfg.require_cif(cif) if with_token else None
+        resolved = cfg.require_cif(cif)
     except AnafError as exc:
         return PreparedSubmission(valid=False, message=str(exc))
-    valid, findings, available = _run_validation(ctx.efactura_validator(), xml)
-    token = (
-        issue_token(
-            cfg.signing_key,
-            kind=_INVOICE_KIND,
-            payload=xml,
-            context=_invoice_context(resolved, upload_standard(xml).value),
-        )
-        if with_token and valid and resolved is not None
-        else None
+    preview = invoice_view(xml)
+    token = issue_token(
+        cfg.signing_key,
+        kind=_INVOICE_KIND,
+        payload=xml,
+        context=_invoice_context(resolved, upload_standard(xml).value),
     )
     return PreparedSubmission(
-        valid=valid,
-        findings=findings,
-        validation_available=available,
+        valid=True,
         confirmation_token=token,
         cif=resolved,
-        invoice_preview=invoice_view(xml),
-        message=_prepare_message(valid, available, with_token),
+        invoice_preview=preview,
+        message=_prepare_message(parsed=preview is not None),
     )
 
 
@@ -358,24 +352,17 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         }
 
     @mcp.tool(
-        annotations=_READ_ONLY,
-        description="Locally Schematron-validate a complete e-Transport declaration "
-        "(XML) without filing. A fast pre-filter; ANAF is authoritative.",
-    )
-    async def etransport_validate(document: EtransportXmlInput) -> PreparedSubmission:
-        return _prepare_transport(ctx, cfg, document, with_token=False)
-
-    @mcp.tool(
         annotations=_MUTATING,
-        description="STEP 1 of filing an e-Transport declaration: validate the "
-        "supplied XML locally and return an easy-to-read preview + a confirmation "
-        "token bound to this document and CIF. Show the preview for approval; then "
-        "call etransport_submit with the token and the same cif. Does NOT file.",
+        description="STEP 1 of filing an e-Transport declaration: parse the supplied "
+        "XML and return an easy-to-read preview + a confirmation token bound to this "
+        "document and CIF. Show the preview for approval; then call etransport_submit "
+        "with the token and the same cif. Does NOT file. (There is no standalone "
+        "validator — ANAF validates the declaration on upload.)",
     )
     async def etransport_prepare(
         document: EtransportXmlInput, cif: str | None = None
     ) -> PreparedSubmission:
-        return _prepare_transport(ctx, cfg, document, cif=cif, with_token=True)
+        return _prepare_transport(ctx, cfg, document, cif=cif)
 
     @mcp.tool(
         annotations=_MUTATING,
@@ -432,47 +419,38 @@ def _prepare_transport(
     document: EtransportXmlInput,
     *,
     cif: str | None = None,
-    with_token: bool,
 ) -> PreparedSubmission:
     try:
         xml = resolve_xml(document)
-        resolved = cfg.require_cif(cif) if with_token else None
+        resolved = cfg.require_cif(cif)
     except AnafError as exc:
         return PreparedSubmission(valid=False, message=str(exc))
-    valid, findings, available = _run_validation(ctx.etransport_validator(), xml)
-    token = (
-        issue_token(
-            cfg.signing_key,
-            kind=_TRANSPORT_KIND,
-            payload=xml,
-            context=_transport_context(resolved),
-        )
-        if with_token and valid and resolved is not None
-        else None
+    preview = transport_view(xml)
+    token = issue_token(
+        cfg.signing_key,
+        kind=_TRANSPORT_KIND,
+        payload=xml,
+        context=_transport_context(resolved),
     )
     return PreparedSubmission(
-        valid=valid,
-        findings=findings,
-        validation_available=available,
+        valid=True,
         confirmation_token=token,
         cif=resolved,
-        transport_preview=transport_view(xml),
-        message=_prepare_message(valid, available, with_token),
+        transport_preview=preview,
+        message=_prepare_message(parsed=preview is not None),
     )
 
 
-def _prepare_message(valid: bool, available: bool, with_token: bool) -> str:
-    if not valid:
-        return "local validation failed — fix the findings and prepare again"
-    note = (
-        "passes local CIUS-RO / e-Transport validation"
-        if available
-        else "local validation unavailable (install anafpy[validation]); not "
-        "pre-checked"
+def _prepare_message(*, parsed: bool) -> str:
+    if not parsed:
+        return (
+            "the document did not parse — no preview; ANAF will likely reject it. "
+            "Review carefully before submitting with the confirmation token."
+        )
+    return (
+        "not pre-validated (ANAF is authoritative). Review the preview with the "
+        "user, then submit with the confirmation token."
     )
-    if with_token:
-        return f"{note}. Review the preview, then submit with the confirmation token."
-    return note
 
 
 def _docs_dir() -> Path | None:
