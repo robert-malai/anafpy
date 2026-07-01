@@ -54,15 +54,31 @@ class TokenProvider:
                 tokens = await self._refresh_locked(tokens)
             return tokens.access_token
 
-    async def force_refresh(self) -> str:
-        """Refresh unconditionally (used after a 401); return the new access token."""
+    async def force_refresh(self, *, stale: str | None = None) -> str:
+        """Refresh unconditionally (used after a 401); return the new access token.
+
+        Pass the access token the failing request carried as ``stale``: when it has
+        already been replaced (a concurrent request refreshed first), the current
+        token is returned without burning another refresh rotation.
+        """
         async with self._lock:
             if self._tokens is None:
                 raise AnafAuthError("not authenticated — run `anafpy auth login`")
+            if stale is not None and self._tokens.access_token != stale:
+                return self._tokens.access_token
             tokens = await self._refresh_locked(self._tokens)
             return tokens.access_token
 
     async def _refresh_locked(self, tokens: TokenSet) -> TokenSet:
+        # ANAF rotates the refresh token on every refresh. Another process sharing
+        # the store (CLI, a second server) may have rotated already — adopt the
+        # stored set instead of refreshing with our now-invalidated refresh token.
+        stored = self._store.load()
+        if stored is not None and stored.refresh_token != tokens.refresh_token:
+            self._tokens = stored
+            if not stored.access_expired():
+                return stored
+            tokens = stored
         if tokens.refresh_expired():
             raise AnafAuthError("refresh token expired — run `anafpy auth login`")
         new = await refresh_tokens(
@@ -105,6 +121,6 @@ class AnafAuth(httpx.Auth):
         request.headers["Authorization"] = f"Bearer {token}"
         response = yield request
         if response.status_code == httpx.codes.UNAUTHORIZED:
-            token = await self._provider.force_refresh()
+            token = await self._provider.force_refresh(stale=token)
             request.headers["Authorization"] = f"Bearer {token}"
             yield request

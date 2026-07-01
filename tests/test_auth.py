@@ -142,6 +142,61 @@ async def test_provider_refreshes_expired_access_token_and_persists() -> None:
     assert saved is not None and saved.refresh_token == "r2"
 
 
+@respx.mock
+async def test_provider_adopts_tokens_rotated_by_another_process() -> None:
+    # The CLI (or a second server) refreshed and saved a new set to the shared
+    # store; the provider must adopt it, not refresh with its stale refresh token.
+    expired = TokenSet.from_token_response(
+        _token_response(time.time() - 10, refresh="r1")
+    )
+    store = MemoryTokenStore(expired)
+    provider = TokenProvider(client_id="CID", client_secret="SECRET", store=store)
+    rotated = TokenSet.from_token_response(
+        _token_response(time.time() + 90 * 86400, refresh="r2")
+    )
+    store.save(rotated)
+
+    token = await provider.access_token()
+    assert token == rotated.access_token
+    assert not respx.calls  # no refresh round-trip
+
+
+@respx.mock
+async def test_provider_refreshes_with_the_rotated_refresh_token() -> None:
+    # Both the adopted set and ours are expired: refresh must use the store's
+    # (newest) refresh token, not the invalidated in-memory one.
+    expired = TokenSet.from_token_response(
+        _token_response(time.time() - 10, refresh="r1")
+    )
+    store = MemoryTokenStore(expired)
+    provider = TokenProvider(client_id="CID", client_secret="SECRET", store=store)
+    store.save(
+        TokenSet.from_token_response(_token_response(time.time() - 5, refresh="r2"))
+    )
+    route = respx.post(TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json=_token_response(time.time() + 90 * 86400, refresh="r3")
+        )
+    )
+
+    await provider.access_token()
+    assert "refresh_token=r2" in route.calls.last.request.content.decode()
+
+
+@respx.mock
+async def test_force_refresh_skips_when_stale_token_was_already_replaced() -> None:
+    current = TokenSet.from_token_response(
+        _token_response(time.time() + 90 * 86400, refresh="r1")
+    )
+    provider = TokenProvider(
+        client_id="CID", client_secret="SECRET", store=MemoryTokenStore(current)
+    )
+
+    token = await provider.force_refresh(stale="an-older-access-token")
+    assert token == current.access_token
+    assert not respx.calls  # no second rotation burnt
+
+
 async def test_provider_without_tokens_raises() -> None:
     provider = TokenProvider(
         client_id="CID", client_secret="SECRET", store=MemoryTokenStore(None)
