@@ -1,23 +1,26 @@
 """Async client for the RO e-Transport web services (``ETRANSPORT/ws/v1``).
 
-Design mirrors ``anafpy.efactura.client`` with three key differences:
+Design mirrors ``anafpy.efactura.client`` with four key differences:
 1. Upload path embeds ``standard``, ``cif``, and ``versiune`` as path segments
-   (``POST /upload/ETRANSP/{cif}/{versiune}``), not query params; body is
-   ``application/xml`` (e-Factura uses ``text/plain``).
-2. Status uses a **path param** (``GET stareMesaj/{id_incarcare}``), not a query param.
-3. **No download step** — the UIT code is returned in the upload response; state is
+   (``POST /upload/ETRANSP/{cif}/{versiune}``), not query params; the body must be the
+   declaration **XML** (``application/xml`` — there is no JSON request format).
+2. **Responses are JSON**, not e-Factura's XML ``<header>`` (per the vendored swagger
+   specs); errors ride an ``Errors[{errorMessage}]`` array, including ``lista``'s
+   no-results note.
+3. Status uses a **path param** (``GET stareMesaj/{id_incarcare}``), not a query param.
+4. **No download step** — the UIT code is returned in the upload response; state is
    tracked via ``lista`` / ``stareMesaj``.
 """
 
 from __future__ import annotations
 
 import json
-import xml.etree.ElementTree as ET
 from collections.abc import AsyncIterator
 from types import TracebackType
 from typing import Self
 
 import httpx
+from pydantic import ValidationError
 from tenacity import (
     AsyncRetrying,
     RetryError,
@@ -47,6 +50,10 @@ from .models import (
     MessageStatus,
     Notification,
     UploadResult,
+    _JsonEnvelope,
+    _ListaEnvelope,
+    _StatusEnvelope,
+    _UploadEnvelope,
 )
 
 __all__ = ["ETransportClient"]
@@ -55,24 +62,26 @@ _STANDARD = "ETRANSP"
 _XML_BODY_HEADERS = {"Content-Type": "application/xml"}
 
 
-def _local(tag: str) -> str:
-    """Strip any ``{namespace}`` prefix from an ElementTree tag."""
-    return tag.rsplit("}", 1)[-1]
-
-
-def _header_errors(root: ET.Element) -> list[str]:
-    """Collect ``errorMessage`` values from ``<Errors>`` children of an ANAF header."""
-    errors: list[str] = []
-    for child in root.iter():
-        if _local(child.tag) == "Errors":
-            message = child.get("errorMessage")
-            if message:
-                errors.append(message)
-    return errors
-
-
 def _as_text(body: bytes) -> str:
     return body.decode("utf-8", errors="replace")
+
+
+def _load_envelope[EnvelopeT: _JsonEnvelope](
+    body: bytes, model: type[EnvelopeT], operation: str
+) -> EnvelopeT:
+    """Validate a JSON response body against its envelope model.
+
+    A body that is not the documented JSON shape raises :class:`AnafResponseError` —
+    explicit, rather than inventing an outcome.
+    """
+    try:
+        return model.model_validate(json.loads(body))
+    except (ValueError, ValidationError) as exc:
+        raise AnafResponseError(
+            f"unrecognised {operation} response: {_as_text(body)[:200]}",
+            status_code=200,
+            body=_as_text(body),
+        ) from exc
 
 
 class ETransportClient:
@@ -172,13 +181,17 @@ class ETransportClient:
 
     @staticmethod
     def _parse_upload(body: bytes) -> UploadResult:
-        root = ET.fromstring(body)
-        upload_id = root.get("index_incarcare")
-        uit = root.get("uit")
-        errors = _header_errors(root)
-        if upload_id is None and not errors:
+        envelope = _load_envelope(body, _UploadEnvelope, "upload")
+        errors = envelope.error_messages
+        if envelope.index_incarcare is None and not errors:
+            # Be explicit rather than silently returning an empty result.
             errors = [f"unrecognised upload response: {_as_text(body)[:200]}"]
-        return UploadResult(upload_id=upload_id, uit=uit, errors=errors, raw=body)
+        return UploadResult(
+            upload_id=envelope.index_incarcare,
+            uit=envelope.uit,
+            errors=errors,
+            raw=body,
+        )
 
     async def get_status(self, upload_id: str) -> MessageStatus:
         """Poll the processing state for an ``upload_id`` (``index_incarcare``)."""
@@ -187,21 +200,18 @@ class ETransportClient:
 
     @staticmethod
     def _parse_status(body: bytes) -> MessageStatus:
-        root = ET.fromstring(body)
-        errors = _header_errors(root)
-        raw_state = root.get("stare")
-        if raw_state is None:
-            if errors:
-                return MessageStatus(
-                    state=MessageState.REJECTED, errors=errors, raw=body
-                )
+        envelope = _load_envelope(body, _StatusEnvelope, "stareMesaj")
+        errors = envelope.error_messages
+        if envelope.stare is None:
+            # `Errors` without `stare` is a *query* failure (unknown/invalid index,
+            # missing SPV rights, daily limit — per the stare swagger), not a document
+            # outcome — so it raises rather than masquerading as a rejection.
+            detail = "; ".join(errors) or f"missing `stare`: {_as_text(body)[:200]}"
             raise AnafResponseError(
-                f"stareMesaj response missing `stare`: {_as_text(body)[:200]}",
-                status_code=200,
-                body=_as_text(body),
+                f"stareMesaj error: {detail}", status_code=200, body=_as_text(body)
             )
         try:
-            state = MessageState.from_raw(raw_state)
+            state = MessageState.from_raw(envelope.stare)
         except ValueError as exc:
             # A state string we don't know: be explicit, in the AnafError hierarchy.
             raise AnafResponseError(
@@ -232,31 +242,23 @@ class ETransportClient:
 
     @staticmethod
     def _parse_notifications(body: bytes) -> list[Notification]:
-        """Parse a ``lista`` response to notifications.
+        """Parse a ``lista`` response (``mesaje[]`` envelope) to notifications.
 
-        Raises :class:`AnafResponseError` when ANAF's ``eroare`` is a real error; a
-        benign "no notifications" note returns an empty list.
+        Raises :class:`AnafResponseError` when ANAF's ``Errors[]`` carry a real error
+        (bad ``zile``, missing SPV rights, daily limit); the benign "no notifications"
+        note — which rides the same ``Errors[]`` array — returns an empty list.
         """
-        data = json.loads(body)
-        if isinstance(data, list):
-            raw_items = data
-        else:
-            raw_items = (
-                data.get("found")
-                or data.get("notificari")
-                or data.get("declaratii")
-                or []
+        envelope = _load_envelope(body, _ListaEnvelope, "lista")
+        errors = envelope.error_messages
+        if errors and not envelope.mesaje:
+            if all(is_empty_result_message(message) for message in errors):
+                return []
+            raise AnafResponseError(
+                f"ANAF e-Transport list error: {'; '.join(errors)}",
+                status_code=200,
+                body=_as_text(body),
             )
-            error = data.get("eroare") or data.get("error")
-            if not raw_items and error is not None:
-                if is_empty_result_message(str(error)):
-                    return []
-                raise AnafResponseError(
-                    f"ANAF e-Transport list error: {error}",
-                    status_code=200,
-                    body=_as_text(body),
-                )
-        return [Notification.model_validate(item) for item in raw_items]
+        return envelope.mesaje
 
     async def info(
         self,
@@ -279,21 +281,28 @@ class ETransportClient:
 
     @staticmethod
     def _parse_info(body: bytes) -> InfoList:
-        data = json.loads(body)
-        if isinstance(data, list):
-            raw_items = data
-            error = None
-        else:
-            raw_items = (
-                data.get("found") or data.get("items") or data.get("notificari") or []
+        """Parse an ``info`` response: a bare JSON array of records (per the info
+        swagger); a JSON object with ``Errors[]`` is surfaced via ``InfoList.error``."""
+        try:
+            data = json.loads(body)
+            if isinstance(data, list):
+                items = [InfoItem.model_validate(item) for item in data]
+                return InfoList(items=items, raw=body)
+            envelope = _JsonEnvelope.model_validate(data)
+        except (ValueError, ValidationError) as exc:
+            raise AnafResponseError(
+                f"unrecognised info response: {_as_text(body)[:200]}",
+                status_code=200,
+                body=_as_text(body),
+            ) from exc
+        errors = envelope.error_messages
+        if not errors:
+            raise AnafResponseError(
+                f"unrecognised info response: {_as_text(body)[:200]}",
+                status_code=200,
+                body=_as_text(body),
             )
-            error = data.get("eroare") or data.get("error")
-        items = [InfoItem.model_validate(item) for item in raw_items]
-        return InfoList(
-            items=items,
-            error=str(error) if error is not None else None,
-            raw=body,
-        )
+        return InfoList(items=[], error="; ".join(errors), raw=body)
 
     async def upload_and_wait(
         self,

@@ -1,10 +1,12 @@
 """Value types returned by :class:`anafpy.etransport.client.ETransportClient`.
 
 Key differences from e-Factura:
+- **Responses are JSON**, not e-Factura's XML ``<header>`` (per the vendored swagger
+  specs); the private ``_*Envelope`` models validate the wire shapes.
 - ``UploadResult`` carries both ``upload_id`` (``index_incarcare``) **and** ``uit``
   (the transport declaration code returned at upload time — no separate download step).
 - ``MessageStatus`` has no ``download_id``; the UIT is already in ``UploadResult``.
-- ``NotificationList`` mirrors the richer JSON returned by ``lista/{zile}/{cif}``.
+- ``Notification`` mirrors the richer JSON returned by ``lista/{zile}/{cif}``.
 - ``InfoList`` / ``InfoItem`` cover the transporter-lookup endpoint.
 """
 
@@ -14,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Annotated, Any
 
-from pydantic import BaseModel, BeforeValidator
+from pydantic import BaseModel, BeforeValidator, Field
 
 from .schema.schema_etr_v2_20230126 import ETransport
 
@@ -136,6 +138,7 @@ class Location(BaseModel):
     """A ``loc_start`` or ``loc_final`` from an ``info`` record."""
 
     tip_loc: _StrNone = None  # PTF = border / BV = customs / ADR = national address
+    adresa_completa: _StrNone = None
     judet: _StrNone = None
     localitate: _StrNone = None
     strada: _StrNone = None
@@ -145,6 +148,7 @@ class Location(BaseModel):
 class InfoItem(BaseModel):
     """One record from ``GET info?cui_op=...``."""
 
+    id: _StrNone = None
     uit: _StrNone = None
     cod_decl: _StrNone = None
     den_decl: _StrNone = None
@@ -167,6 +171,49 @@ class InfoList(BaseModel):
     items: list[InfoItem] = []
     error: str | None = None
     raw: bytes = b""
+
+
+# --- wire envelopes: JSON response shapes per the vendored swagger specs -------------
+#
+# e-Transport answers JSON (unlike e-Factura's XML ``<header>``): ``upload`` and
+# ``stareMesaj`` return a flat object with an ``Errors[{errorMessage}]`` array, and
+# ``lista`` wraps notifications in ``mesaje[]`` (plus ``serial``/``cui``/``titlu``,
+# ignored). Validation-only shapes — not part of the public surface.
+
+
+class _WireError(BaseModel):
+    """One ``Errors[]`` entry."""
+
+    error_message: _StrNone = Field(default=None, alias="errorMessage")
+
+
+class _JsonEnvelope(BaseModel):
+    """Base for e-Transport JSON responses: the shared ``Errors[]`` array."""
+
+    errors: list[_WireError] = Field(default_factory=list, alias="Errors")
+
+    @property
+    def error_messages(self) -> list[str]:
+        return [e.error_message for e in self.errors if e.error_message]
+
+
+class _UploadEnvelope(_JsonEnvelope):
+    """``upload`` response: ``index_incarcare`` + ``UIT`` on acceptance."""
+
+    index_incarcare: _StrNone = None
+    uit: _StrNone = Field(default=None, alias="UIT")
+
+
+class _StatusEnvelope(_JsonEnvelope):
+    """``stareMesaj`` response: ``stare`` (ok|nok) plus any ``Errors[]``."""
+
+    stare: _StrNone = None
+
+
+class _ListaEnvelope(_JsonEnvelope):
+    """``lista`` response: notifications under ``mesaje[]``."""
+
+    mesaje: list[Notification] = []
 
 
 # --- flat read view: e-Transport XSD -> easy-to-read projection ---------------------

@@ -53,8 +53,11 @@ with the modeling/validation work; this doc is the **transport/API surface**.
 
 Path prefix: **`/ETRANSPORT/ws/v1/`** (the `ws/v1` is the web-service version and is
 constant; the *data-schema* version is a separate `{versiune}` path segment — see
-Upload v2). Bodies are **`Content-Type: application/xml`** (note: e-Factura uses
-`text/plain`; e-Transport uses `application/xml`).
+Upload v2). Request bodies are **`Content-Type: application/xml`** (note: e-Factura
+uses `text/plain`; e-Transport uses `application/xml`); there is **no JSON request
+format** — the declaration is defined by the XSD, and the upload swagger's request
+body is XML-only. **Responses are JSON** on every endpoint (unlike e-Factura's XML
+`<header>` responses), with errors in an `Errors: [{errorMessage}]` array.
 
 > Provenance: PDF pp. 1–3.
 
@@ -127,7 +130,15 @@ partner `pc_tara`/`pc_cod`/`pc_den`, transporter `tr_tara`/`tr_cod`/`tr_den`, ve
 **`tip_op` codes:** `10`=AIC, `12`=LHI, `14`=SCI, `20`=LIC, `22`=LHE, `24`=SCE,
 `30`=TTN, `40`=IMP, `50`=EXP, `60`=DIN, `70`=DIE (see XSD for details).
 
-> Provenance: PDF pp. 1–2.
+**Response envelope (200, JSON):** notifications under **`mesaje[]`**, alongside
+`serial`, `cui`, `titlu`. Errors *and* the no-results note come as
+**`Errors: [{errorMessage}]`** (not e-Factura's `eroare` field): e.g.
+`"Nu exista mesaje in ultimele 60 zile"` (benign no-results) vs `"Numarul de zile
+introdus= 60a nu este un numar intreg"`, `"Nu exista niciun CIF petru care sa aveti
+drept in SPV"`, or the daily-limit note (genuine errors).
+
+> Provenance: PDF pp. 1–2; envelope + error catalog from the lista swagger
+> ([lista.html](../_sources/etransport-swagger/lista.html), 02.07.2024).
 
 ## 4. Info for transporters — `GET /ETRANSPORT/ws/v1/info`
 

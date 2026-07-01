@@ -300,7 +300,8 @@ def _transport_doc() -> dict[str, Any]:
 async def test_prepare_then_submit_files_transport(tmp_path: Path) -> None:
     route = respx.post(f"{ETRANSPORT}/upload/ETRANSP/123/2").mock(
         return_value=httpx.Response(
-            200, text='<header index_incarcare="9" uit="3RO123"/>'
+            200,
+            json={"ExecutionStatus": 0, "index_incarcare": 9, "UIT": "3RO123"},
         )
     )
     server = create_server(_config(tmp_path))
