@@ -1,10 +1,14 @@
-"""Tests for the OAuth2 auth module (mocked with respx — no real network)."""
+"""Tests for the OAuth2 auth module (respx-mocked; code capture uses loopback only)."""
 
 from __future__ import annotations
 
 import base64
 import json
+import socket
+import ssl
+import threading
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -15,7 +19,9 @@ from anafpy.auth import (
     TokenProvider,
     TokenSet,
     build_authorize_url,
+    capture_authorization_code,
     exchange_code,
+    parse_redirect_url,
     refresh_tokens,
 )
 from anafpy.auth.oauth import TOKEN_URL
@@ -227,3 +233,92 @@ async def test_provider_adopts_login_made_after_construction() -> None:
     store.save(fresh)
     assert await provider.access_token() == fresh.access_token
     assert provider.tokens is not None  # visible to auth_status as well
+
+
+# --- authorization-code capture (paste mode + listener) -------------------------------
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def test_parse_redirect_url_full_url() -> None:
+    code = parse_redirect_url("https://localhost:9002/callback?code=NAponuz9la&state=")
+    assert code == "NAponuz9la"
+
+
+def test_parse_redirect_url_query_string_and_bare_code() -> None:
+    assert parse_redirect_url("?code=abc123") == "abc123"
+    assert parse_redirect_url("code=abc123&foo=1") == "abc123"
+    assert parse_redirect_url("  abc123\n") == "abc123"
+    assert parse_redirect_url('"abc123"') == "abc123"  # quoted paste
+
+
+def test_parse_redirect_url_error_redirect_raises() -> None:
+    with pytest.raises(AnafAuthError, match="access_denied"):
+        parse_redirect_url("https://localhost:9002/callback?error=access_denied")
+
+
+def test_parse_redirect_url_rejects_garbage() -> None:
+    with pytest.raises(AnafAuthError, match="empty input"):
+        parse_redirect_url("   ")
+    with pytest.raises(AnafAuthError, match="no `code`"):
+        parse_redirect_url("https://localhost:9002/callback")
+    with pytest.raises(AnafAuthError, match="no `code`"):
+        parse_redirect_url("not a code")
+
+
+def _hit_callback(url: str, *, verify: ssl.SSLContext | bool = True) -> None:
+    """GET the callback URL from a thread once the listener is up (with retries)."""
+    for _ in range(50):
+        try:
+            httpx.get(url, verify=verify)
+            return
+        except httpx.TransportError:  # listener not up yet
+            time.sleep(0.05)
+
+
+def test_capture_code_plain_http() -> None:
+    port = _free_port()
+    uri = f"http://127.0.0.1:{port}/callback"
+    hitter = threading.Thread(
+        target=_hit_callback, args=(f"{uri}?code=plain-ok",), daemon=True
+    )
+    hitter.start()
+    assert capture_authorization_code(uri, timeout=10.0) == "plain-ok"
+
+
+def test_capture_code_error_redirect_raises() -> None:
+    port = _free_port()
+    uri = f"http://127.0.0.1:{port}/callback"
+    hitter = threading.Thread(
+        target=_hit_callback, args=(f"{uri}?error=access_denied",), daemon=True
+    )
+    hitter.start()
+    with pytest.raises(AnafAuthError, match="access_denied"):
+        capture_authorization_code(uri, timeout=10.0)
+
+
+def test_capture_code_tls_listener() -> None:
+    fixtures = Path(__file__).parent / "fixtures"
+    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_ctx.load_cert_chain(
+        fixtures / "tls_test_cert.pem", fixtures / "tls_test_key.pem"
+    )
+    client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    client_ctx.check_hostname = False
+    client_ctx.verify_mode = ssl.CERT_NONE  # self-signed test fixture
+
+    port = _free_port()
+    uri = f"https://127.0.0.1:{port}/callback"
+    hitter = threading.Thread(
+        target=_hit_callback,
+        args=(f"{uri}?code=tls-ok",),
+        kwargs={"verify": client_ctx},
+        daemon=True,
+    )
+    hitter.start()
+    code = capture_authorization_code(uri, timeout=10.0, ssl_context=server_ctx)
+    assert code == "tls-ok"

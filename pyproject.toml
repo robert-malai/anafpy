@@ -87,5 +87,5 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
-    "live: exercises the real ANAF public endpoints (network; opt in with ANAFPY_LIVE=1)",
+    "live: exercises real ANAF endpoints — public (no-auth) and authenticated TEST (needs .env + `anafpy auth login`); opt in with ANAFPY_LIVE=1",
 ]

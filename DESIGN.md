@@ -93,19 +93,28 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
   (`invalid_client`), i.e. no mutual-TLS there. Consequence: an unattended runtime
   (incl. the Docker container) can refresh for the full ~365-day refresh window
   without the cert; re-bootstrap is needed only ~once a year (or on revocation).
-- **Callback URL does not need a public server** — only the user's browser hits it.
-  Register `http://localhost:PORT/callback`: the `auth login` listener speaks plain
-  HTTP, so an `https://localhost` registration would need a TLS terminator in front.
-  (An `https://localhost:PORT/callback` was live-verified as registrable 2026-06-28;
-  the `http://` scheme is assumed to register the same way.)
+- **Callback URL does not need a public server** — only the user's browser hits it —
+  **but it must be `https://`**: the developer portal rejects `http://` callbacks with
+  an HTTP 400 at registration (live-verified 2026-07-02; the F5 APM backend enforces
+  the scheme). Register `https://localhost:PORT/callback` (live-verified registrable
+  2026-06-28) and capture the code one of three ways: **paste mode** (`--paste`, no
+  listener — the user copies the redirect URL off the browser's error page; the
+  security baseline, zero external dependencies), a **TLS listener** with a
+  user-supplied certificate (`--tls-cert`/`--tls-key`, e.g. self-signed), or the plain
+  HTTP listener behind an external TLS terminator. The CLI falls back to paste mode
+  when the listener can't start. (Evaluated and rejected: third-party redirect
+  bounces — dangling-domain/custody risks; `localhost.direct`-style public-CA
+  loopback certs — the distributed cert was found expired since 2025-02, the
+  revocation cat-and-mouse makes it structurally unreliable.)
 
 Design (layered):
 
 - Core depends on an abstract **`TokenProvider`**.
 - Ship a batteries-included bootstrap: authorize-URL builder, **localhost callback
-  listener**, code→token exchange, file-backed **`TokenStore`**, **transparent
-  refresh** (incl. refresh-on-401 — this stays in the client; it's credential
-  management, not network retry).
+  listener** (plain HTTP or TLS via `ssl_context`) plus a **paste-mode parser**
+  (`parse_redirect_url`), code→token exchange, file-backed **`TokenStore`**,
+  **transparent refresh** (incl. refresh-on-401 — this stays in the client; it's
+  credential management, not network retry).
 - **`anafpy auth login`** runs host-side (browser + cert). The MCP server consumes
   the token store and auto-refreshes.
 
@@ -319,7 +328,9 @@ and the e-Factura inbox, and the compiled reference as resources.)*
   1. golden round-trip on generated UBL models (catch regen/serialization regressions);
   2. client behavior via respx (upload→poll→download, `nok`, 401-refresh, 429).
   The live tier exists today as the `live` marker (`ANAFPY_LIVE=1`) smoke-testing the
-  public services (§6); an OAuth TEST-env variant remains future work.
+  public services (§6) and, since 2026-07-02, the authenticated TEST endpoints
+  (`tests/test_oauth_live.py` — read-only list/echo calls; credentials from the
+  gitignored repo-root `.env`, token store from `anafpy auth login`).
 
 ## 10. Open / deferred items
 
@@ -344,3 +355,23 @@ and the e-Factura inbox, and the compiled reference as resources.)*
    single `read_flat_invoice` / `read_flat_transport` (+ `complete` / `dropped_fields`),
    exposed as `download` tier 3 (`DownloadedMessage.view`), the MCP prepare preview, and
    the e-Factura inbox. All three gates green.
+
+## 11. Distribution
+
+> Decided 2026-07-02. anafpy is distributed **free and as-is**, for anyone to use.
+
+The package is provided **as-is** under Apache-2.0 — no warranty, no service
+obligations. The thin-transport scope of §1 is also the legal posture: anafpy
+moves documents, it does not give tax advice, and filing outcomes are the user's
+responsibility. The **MCP server is best-effort**: installing it, configuring the
+environment, provisioning the OAuth application on ANAF's portal, and holding the
+qualified certificate are the user's responsibility.
+
+The MCP server is and stays a **local stdio server**: tool calls run on the
+user's machine against the user's own tokens — the zero-custody design of §3
+Deployment. Hosted-service code (token custody, multi-tenancy, an OAuth-provider
+surface toward Claude) is out of scope.
+
+**Audience bound that no packaging removes:** every user needs a qualified
+certificate and their own ANAF OAuth app registration, capping the audience at
+people who already deal with ANAF professionally.

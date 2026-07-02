@@ -43,6 +43,10 @@ deliberately has no local rule engine (see `/DESIGN.md` §4). This doc is the
 > [`_sources/efactura-swagger/`](../_sources/efactura-swagger/)) — the PDF covers
 > URLs/params, the swaggers are the authority on **response schemas**. Re-confirm
 > endpoint behaviour with a live test-environment call during implementation.
+> **First live TEST confirmation 2026-07-02**: `listaMesajePaginatieFactura` returned
+> HTTP 200 `{"eroare":"Nu exista mesaje in intervalul selectat","titlu":"Lista Mesaje"}`
+> for an empty window — exactly the documented no-results shape below. Other endpoints
+> (upload, stare, descarcare, lists with results) remain live-unconfirmed.
 
 ## Access modes & base URLs
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import ssl
 import sys
 import time
 import webbrowser
@@ -22,26 +23,61 @@ from ..auth import (
     build_authorize_url,
     capture_authorization_code,
     exchange_code,
+    parse_redirect_url,
 )
-from ..exceptions import AnafError
+from ..exceptions import AnafConfigError, AnafError
 
 DEFAULT_STORE = Path(os.environ.get("ANAFPY_TOKEN_STORE", "~/.anafpy/tokens.json"))
+
+_PASTE_HINT = (
+    "After authorizing, your browser will show a connection error — that is\n"
+    "expected. Copy the FULL URL from the address bar and paste it below\n"
+    "(promptly: ANAF's code expires in ~60 seconds)."
+)
 
 
 def _env(name: str) -> str | None:
     return os.environ.get(name)
 
 
+def _load_ssl_context(cert: str, key: str | None) -> ssl.SSLContext:
+    """A TLS server context for the callback listener from user-supplied PEM files."""
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    try:
+        context.load_cert_chain(cert, key)
+    except (OSError, ssl.SSLError) as exc:
+        raise AnafConfigError(f"cannot load TLS certificate {cert!r}: {exc}") from exc
+    return context
+
+
+def _paste_code() -> str:
+    print(f"\n{_PASTE_HINT}")
+    return parse_redirect_url(input("Redirect URL (or code): "))
+
+
 async def _do_login(
-    client_id: str, client_secret: str, redirect_uri: str, store_path: Path
+    client_id: str,
+    client_secret: str,
+    redirect_uri: str,
+    store_path: Path,
+    *,
+    paste: bool = False,
+    ssl_context: ssl.SSLContext | None = None,
 ) -> int:
     url = build_authorize_url(client_id, redirect_uri)
     print("Opening your browser for ANAF authorization (select your certificate)...")
     print(f"  If it doesn't open, visit:\n  {url}\n")
     webbrowser.open(url)
 
-    print(f"Waiting for the callback on {redirect_uri} ...")
-    code = capture_authorization_code(redirect_uri)
+    if paste:
+        code = _paste_code()
+    else:
+        print(f"Waiting for the callback on {redirect_uri} ...")
+        try:
+            code = capture_authorization_code(redirect_uri, ssl_context=ssl_context)
+        except AnafConfigError as exc:
+            print(f"Callback listener unavailable: {exc}", file=sys.stderr)
+            code = _paste_code()
 
     async with httpx.AsyncClient(timeout=30.0) as http:
         tokens = await exchange_code(
@@ -70,9 +106,23 @@ def _cmd_login(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.paste and args.tls_cert:
+        print("error: --paste and --tls-cert are mutually exclusive", file=sys.stderr)
+        return 2
+    if args.tls_key and not args.tls_cert:
+        print("error: --tls-key requires --tls-cert", file=sys.stderr)
+        return 2
+    ssl_context = (
+        _load_ssl_context(args.tls_cert, args.tls_key) if args.tls_cert else None
+    )
     return asyncio.run(
         _do_login(
-            client_id, client_secret, args.redirect_uri, Path(args.store).expanduser()
+            client_id,
+            client_secret,
+            args.redirect_uri,
+            Path(args.store).expanduser(),
+            paste=args.paste,
+            ssl_context=ssl_context,
         )
     )
 
@@ -113,7 +163,22 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument("--client-id")
     login.add_argument("--client-secret")
     login.add_argument(
-        "--redirect-uri", required=True, help="must match the registered Callback URL"
+        "--redirect-uri",
+        required=True,
+        help="must match the registered Callback URL (ANAF requires https://)",
+    )
+    login.add_argument(
+        "--paste",
+        action="store_true",
+        help="run no listener; paste the redirect URL from the browser instead",
+    )
+    login.add_argument(
+        "--tls-cert",
+        help="PEM certificate: serve the callback listener over TLS directly",
+    )
+    login.add_argument(
+        "--tls-key",
+        help="PEM private key for --tls-cert (omit if the key is in the cert file)",
     )
     login.add_argument("--store", default=str(DEFAULT_STORE))
     login.set_defaults(func=_cmd_login)

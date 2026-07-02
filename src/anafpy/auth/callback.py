@@ -1,23 +1,28 @@
-"""Localhost OAuth callback listener for the one-time ``auth login`` bootstrap.
+"""Authorization-code capture for the one-time ``auth login`` bootstrap.
 
 ANAF redirects the browser (after the certificate step) to the registered callback URL
-with ``?code=...``. This spins up a tiny local HTTP server on that URL's host/port,
-captures the code, and shuts down.
+with ``?code=...``. The ANAF developer portal **rejects ``http://`` callback URLs**
+(HTTP 400 at registration — verified 2026-07-02), so the registered URL is ``https://``
+and there are two ways to capture the code:
 
-This server speaks plain HTTP, so register the callback URL with the ``http://``
-scheme (only the user's own browser ever hits it). If you registered an
-``https://localhost`` callback instead, terminate TLS in front of this listener.
+- **Listener** (``capture_authorization_code``): a tiny local server on the callback
+  URL's host/port. Plain HTTP by default (put a TLS terminator in front), or pass an
+  ``ssl.SSLContext`` to serve TLS directly with a certificate you supply.
+- **Paste mode** (``parse_redirect_url``): run no listener at all. The browser lands on
+  a connection error, but the address bar still holds the full redirect URL; the user
+  pastes it (or just the code) into the CLI. Works everywhere, needs no certificate.
 """
 
 from __future__ import annotations
 
+import ssl
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ..exceptions import AnafAuthError, AnafConfigError
 
-__all__ = ["capture_authorization_code"]
+__all__ = ["capture_authorization_code", "parse_redirect_url"]
 
 _PAGE = (
     b"<!doctype html><meta charset=utf-8><title>anafpy</title>"
@@ -26,8 +31,46 @@ _PAGE = (
 )
 
 
-def capture_authorization_code(redirect_uri: str, *, timeout: float = 180.0) -> str:
+def parse_redirect_url(pasted: str) -> str:
+    """Extract the authorization code from a pasted redirect URL (paste mode).
+
+    Accepts the full redirect URL from the browser address bar, a bare
+    ``code=...&...`` query string, or the code value alone.
+
+    Raises ``AnafAuthError`` on an OAuth error redirect or unrecognizable input.
+    """
+    text = pasted.strip().strip("'\"")
+    if not text:
+        raise AnafAuthError("empty input: paste the full redirect URL from the browser")
+
+    query = urllib.parse.urlparse(text).query
+    if not query and "=" in text:
+        query = text.lstrip("?")
+    if query:
+        params = urllib.parse.parse_qs(query)
+        if "code" in params:
+            return params["code"][0]
+        if "error" in params:
+            raise AnafAuthError(f"authorization failed: {params['error'][0]}")
+        raise AnafAuthError("no `code` parameter in the pasted URL")
+
+    if "/" in text or " " in text:
+        raise AnafAuthError("no `code` parameter in the pasted URL")
+    return text  # the bare code value
+
+
+def capture_authorization_code(
+    redirect_uri: str,
+    *,
+    timeout: float = 180.0,
+    ssl_context: ssl.SSLContext | None = None,
+) -> str:
     """Block until ANAF redirects to ``redirect_uri`` with a code; return that code.
+
+    The listener binds the URI's host/port. It speaks plain HTTP unless
+    ``ssl_context`` is given, in which case it serves TLS with that context (use
+    this when the browser must reach the callback over ``https://`` and no
+    external TLS terminator is in front).
 
     Raises ``AnafAuthError`` on an OAuth error redirect or on timeout.
     """
@@ -64,6 +107,8 @@ def capture_authorization_code(redirect_uri: str, *, timeout: float = 180.0) -> 
 
     try:
         server = ThreadingHTTPServer((host, port), Handler)
+        if ssl_context is not None:
+            server.socket = ssl_context.wrap_socket(server.socket, server_side=True)
     except OSError as exc:
         raise AnafConfigError(
             f"cannot bind callback listener on {host}:{port}: {exc}"

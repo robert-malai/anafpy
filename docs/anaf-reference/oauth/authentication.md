@@ -57,7 +57,7 @@ In the *Profil Oauth* form you provide:
 | Field | Notes |
 |---|---|
 | **Denumire aplicație** | Application name. |
-| **Callback URL 1** | The redirect URI. **Must match exactly** at token time. Multiple callback URLs can be added (`+`). May be a localhost URL — it does **not** need a public server (only your browser hits it). anafpy expects `http://localhost:PORT/callback` (its `auth login` listener speaks plain HTTP). *(The localhost fact is this project's live verification — done with the `https://` form; `http://` acceptance is assumed, not yet live-verified. The PDF's example uses Postman's `oauth.pstmn.io` callback.)* |
+| **Callback URL 1** | The redirect URI. **Must match exactly** at token time. Multiple callback URLs can be added (`+`). May be a localhost URL — it does **not** need a public server (only your browser hits it) — **but the scheme must be `https://`**: registering an `http://` callback fails with an HTTP 400 from the portal's F5 APM backend (`/mgmt/tm/apm/oauth/oauth-client-app`). Register `https://localhost:PORT/callback`; capture the code via anafpy's `auth login --paste` (no listener) or its TLS listener (`--tls-cert`). *(Both facts are this project's live verifications: `https://` registrable 2026-06-28; `http://` rejected 2026-07-02. The full authorize→exchange flow against an `https://localhost` callback was live-completed 2026-07-02 — observed token lifetimes match §5's 90d/365d. The PDF's example uses Postman's `oauth.pstmn.io` callback.)* |
 | **Serviciu** | One or more of: **E-Factura**, **E-Transport**. |
 
 Pressing **Generare Client ID** issues a **Client ID** and **Client Secret**. The

@@ -44,6 +44,12 @@ is the **transport/API surface**.
 > [`_sources/etransport-swagger/`](../_sources/etransport-swagger/)), which supply the
 > response schemas the PDF omits. It corrected two earlier assumptions (see
 > "Corrections" below).
+> **First live TEST confirmation 2026-07-02**: `lista/60/{cif}` on an empty window
+> returned HTTP 200 `{"Errors":[{"errorMessage":"Nu exista mesaje in ultimele 60
+> zile"}],"dateResponse":"…","ExecutionStatus":1,"trace_id":"…"}` — the documented
+> no-results shape (note `ExecutionStatus: 1`, same as genuine errors; the message
+> text is the discriminator). Upload/status/info and lists with results remain
+> live-unconfirmed.
 
 ## Access modes & base URLs
 

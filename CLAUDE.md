@@ -17,7 +17,10 @@ friendly **flat read view** (`FlatInvoice`, UBL→flat only) reused for the e-Fa
 and the outbound `prepare` preview. Phase 1 is the typed async clients; phase 2 is the
 **MCP server** (`anafpy.mcp`, extra `anafpy[mcp]`) exposing the operations as Claude Cowork
 skills. The client methods map 1:1 onto MCP tools — discrete operations,
-serializable typed inputs/outputs, good docstrings.
+serializable typed inputs/outputs, good docstrings. Distribution is **free and
+as-is**: the library is for anyone to use; the MCP server is **best-effort**, and
+configuring it — including provisioning the OAuth application on ANAF's portal —
+is the user's responsibility (DESIGN.md §11).
 
 Python **3.12+** (test 3.12 and 3.13). Built on **httpx** and **Pydantic v2**.
 
@@ -29,7 +32,7 @@ uv run pytest -q                     # tests (respx-mocked, credential-free)
 uv run pytest tests/test_auth.py     # one file
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                          # strict
-ANAFPY_LIVE=1 uv run pytest -m live  # opt-in live smoke of the public services (network)
+ANAFPY_LIVE=1 uv run pytest -m live  # opt-in live smoke: public services + authenticated TEST (needs .env + auth login)
 ```
 
 Run the MCP server (host-side, where the `anafpy auth login` token store lives):
@@ -86,7 +89,7 @@ src/anafpy/
 schemas/                 # vendored XSDs (git-tracked, NOT shipped in the wheel)
 scripts/                 # codegen scripts
 docs/anaf-reference/     # compiled ANAF API reference (oauth/efactura/etransport/public)
-tests/                   # respx-mocked unit tests (+ opt-in live smoke: test_public_live.py)
+tests/                   # respx-mocked unit tests (+ opt-in live smoke: test_public_live.py, test_oauth_live.py)
 ```
 
 ## Architecture & conventions
@@ -106,6 +109,10 @@ tests/                   # respx-mocked unit tests (+ opt-in live smoke: test_pu
   the `AnafAuth` (`httpx.Auth`) class, which handles transparent token refresh. The
   qualified-certificate step happens only in the interactive `anafpy auth login` browser
   flow; code-exchange and refresh are headless. Don't add cert/mTLS handling to clients.
+  ANAF's portal only registers `https://` callback URLs (an `http://` one 400s —
+  verified 2026-07-02); the login captures the code via `--paste` (no listener, the
+  baseline), a TLS listener (`--tls-cert/--tls-key`), or plain HTTP behind an external
+  TLS terminator — falling back to paste if the listener can't start.
 - **Clients are async**, own their `httpx.AsyncClient` (unless one is injected), and are
   async context managers (`async with EFacturaClient(...) as c:`).
 - **Discrete methods do NO transport retry** — one call, one result-or-raise — so the
@@ -186,7 +193,12 @@ Public UBL entry points: `from anafpy.efactura import Invoice, CreditNote`.
 Response schemas come from ANAF's official per-endpoint **swagger presentations**
 (vendored 2026-07-02 under `docs/anaf-reference/_sources/{efactura,etransport}-swagger/`
 and folded into `docs/anaf-reference/*/api.md`) — the API PDFs cover URLs/params only.
-Still not confirmed against a live TEST call. The **public services** have no swagger —
+First live TEST confirmations 2026-07-02: the e-Factura paginated list's no-results
+shape (200 + `eroare` note) and the e-Transport `lista` no-results shape
+(`Errors[].errorMessage`, `ExecutionStatus: 1`) both matched the docs exactly;
+upload/status/download shapes remain live-unconfirmed. The
+`live`-marked `tests/test_oauth_live.py` re-confirms the authenticated TEST shapes on
+demand (needs `.env` credentials + `anafpy auth login`). The **public services** have no swagger —
 their reference (`docs/anaf-reference/public/api.md`) is compiled from ANAF's
 instruction files and **was live-confirmed in production** (2026-07-02); the `live`
 test marker re-confirms those shapes on demand. When touching parsing code, treat the
@@ -198,9 +210,12 @@ results.
 - Keep `pytest`, `ruff`, and `mypy --strict` green; add/extend respx tests for client
   behavior changes (upload→poll→download, `nok` path, 401-refresh, 429 surfacing).
   The respx suite is the gate; the `live`-marked smoke tests
-  ([tests/test_public_live.py](tests/test_public_live.py)) exist only to re-confirm the
-  public-service wire shapes on demand (`ANAFPY_LIVE=1`) and are skipped by default —
-  don't move behavioural assertions there.
+  ([tests/test_public_live.py](tests/test_public_live.py) — public services;
+  [tests/test_oauth_live.py](tests/test_oauth_live.py) — authenticated TEST, read-only,
+  credentials from the gitignored repo-root `.env` loaded by `tests/conftest.py`) exist
+  only to re-confirm wire shapes on demand (`ANAFPY_LIVE=1`) and are skipped by
+  default — don't move behavioural assertions there, and never add filing/upload
+  calls to them.
 - **Keep the docs in sync with the change.** When a change alters the public surface,
   status, layout, or conventions, update the affected docs in the same change:
   [README.md](README.md) (what works / usage / install), this `CLAUDE.md` (layout,
