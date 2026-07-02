@@ -9,10 +9,10 @@ After xsdata runs, the nomenclature enums are renamed from the opaque ``VALUE_<c
 members to descriptive names taken from the XSD's own documentation annotations, so
 the enums are self-describing: customs offices (``BVI_ALBA_IULIA``), counties
 (``CLUJ``), border crossing points (``NADLAC_2_A1``), countries (``ROMANIA``),
-operation types (``TRANSPORT_PE_TERITORIUL_NATIONAL``), operation purposes
+operation types (their ANAF sigla: ``TTN``, ``AIC``, ...), operation purposes
 (``COMERCIALIZARE``), confirmation types (``CONFIRMAT``) and document types (``CMR``).
-Operation-type members additionally keep ANAF's original label (sigla + description)
-as a trailing comment; elsewhere the member name already says it all.
+Operation-type members keep ANAF's full label (sigla + description) as a trailing
+comment; elsewhere the member name already says it all.
 
 Usage:
     uv run python scripts/generate_etransport.py
@@ -45,8 +45,8 @@ XS = "{http://www.w3.org/2001/XMLSchema}"
 _LABEL_PAIRS = re.compile(r'"(\d+)"\s+(.+?)(?=\s+"\d+"|\s+-\s+pentru\b|\s*$)')
 _ALPHA_LABEL_PAIRS = re.compile(r'"([A-Z]{2})"\s+(.+?)(?=\s+"[A-Z]{2}"|\s*$)')
 # codTipOperatiune labels are ``<SIGLA> - <description>`` (AIC, TTN, ...); members
-# are named after the description, the sigla survives in the trailing comment.
-_SIGLA_PREFIX = re.compile(r"^[A-Z]{2,4}\s+-\s+")
+# are named after the sigla, the full label survives in the trailing comment.
+_SIGLA_PREFIX = re.compile(r"^([A-Z]{2,4})\s+-\s+")
 
 
 class _EnumRename(NamedTuple):
@@ -58,6 +58,7 @@ class _EnumRename(NamedTuple):
     # name instead of erroring — only sound for string enums whose codes are
     # already valid identifiers
     comment: bool = False  # keep the original label as a trailing comment
+    sigla: bool = False  # name the member after the label's sigla prefix
 
 
 RENAMED_ENUMS: dict[str, _EnumRename] = {
@@ -68,7 +69,7 @@ RENAMED_ENUMS: dict[str, _EnumRename] = {
         "Valori posibile pentru ţări", _ALPHA_LABEL_PAIRS, keep_code=True
     ),
     "CodTipOperatiuneType": _EnumRename(
-        "câmpul codTipOperatiune:", _LABEL_PAIRS, comment=True
+        "câmpul codTipOperatiune:", _LABEL_PAIRS, comment=True, sigla=True
     ),
     "CodScopOperatiuneType": _EnumRename("codScopOperatiune ia valori", _LABEL_PAIRS),
     "TipConfirmareType": _EnumRename("câmpul tipConfirmare", _LABEL_PAIRS),
@@ -76,9 +77,11 @@ RENAMED_ENUMS: dict[str, _EnumRename] = {
 }
 
 
-def _member_name(label: str) -> str:
+def _member_name(label: str, sigla: bool = False) -> str:
     """``BVF Zona Liberă Curtici (ROTM2300)`` -> ``BVF_ZONA_LIBERA_CURTICI``."""
-    label = _SIGLA_PREFIX.sub("", label)  # "TTN - Transport pe ..." -> description
+    if sigla and (m := _SIGLA_PREFIX.match(label)):
+        return m.group(1)  # "TTN - Transport pe ..." -> TTN
+    label = _SIGLA_PREFIX.sub("", label)
     label = re.sub(r"\s*\([^)]*\)$", "", label)
     label = label.replace(".", "")  # abbreviations: "S.U.A" -> SUA, not S_U_A
     ascii_ = (
@@ -126,7 +129,7 @@ def rename_enum_members(module: Path) -> None:
         codes = [value.strip('"') for value in members]
         labels = _labels_from_doc(matching[0], spec.pairs, set(codes))
         names = {
-            code: _member_name(found[0])
+            code: _member_name(found[0], sigla=spec.sigla)
             for code, found in labels.items()
             if len(found) == 1
         }

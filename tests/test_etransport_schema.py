@@ -74,7 +74,7 @@ def _minimal_declaration() -> ETransport:
                     data_document=XmlDate(2026, 6, 28),
                 )
             ],
-            cod_tip_operatiune=CodTipOperatiuneType.ACHIZITIE_INTRACOMUNITARA,
+            cod_tip_operatiune=CodTipOperatiuneType.AIC,
         ),
     )
 
@@ -99,7 +99,7 @@ def test_etransport_roundtrips_to_equal_model() -> None:
     assert n.partener_comercial.denumire == "Partener SRL"
     assert n.date_transport.nr_vehicul == "B01ABC"
     assert n.date_transport.data_transport == XmlDate(2026, 6, 30)
-    assert n.cod_tip_operatiune is CodTipOperatiuneType.ACHIZITIE_INTRACOMUNITARA
+    assert n.cod_tip_operatiune is CodTipOperatiuneType.AIC
     assert len(n.documente_transport) == 1
     assert n.documente_transport[0].tip_document is TipDocumentType.CMR
 

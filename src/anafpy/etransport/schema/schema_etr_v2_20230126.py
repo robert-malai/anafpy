@@ -463,25 +463,17 @@ class CodTaraType(Enum):
 
 
 class CodTipOperatiuneType(Enum):
-    ACHIZITIE_INTRACOMUNITARA = 10  # AIC - Achiziţie intracomunitară
-    OPERATIUNI_IN_SISTEM_LOHN_UE_INTRARE = (
-        12  # LHI - Operațiuni în sistem lohn (UE) - intrare
-    )
-    STOCURI_LA_DISPOZITIA_CLIENTULUI_CALL_OFF_STOCK_INTRARE = (
-        14  # SCI - Stocuri la dispoziția clientului (Call-off stock) - intrare
-    )
-    LIVRARE_INTRACOMUNITARA = 20  # LIC - Livrare intracomunitară
-    OPERATIUNI_IN_SISTEM_LOHN_UE_IESIRE = (
-        22  # LHE - Operațiuni în sistem lohn (UE) - ieșire
-    )
-    STOCURI_LA_DISPOZITIA_CLIENTULUI_CALL_OFF_STOCK_IESIRE = (
-        24  # SCE - Stocuri la dispoziția clientului (Call-off stock) - ieșire
-    )
-    TRANSPORT_PE_TERITORIUL_NATIONAL = 30  # TTN - Transport pe teritoriul naţional
-    IMPORT = 40  # IMP - Import
-    EXPORT = 50  # EXP - Export
-    TRANZACTIE_INTRACOMUNITARA_INTRARE_PENTRU_DEPOZITARE_FORMARE_NOU_TRANSPORT = 60  # DIN - Tranzacţie intracomunitară - Intrare pentru depozitare/formare nou transport
-    TRANZACTIE_INTRACOMUNITARA_IESIRE_DUPA_DEPOZITARE_FORMARE_NOU_TRANSPORT = 70  # DIE - Tranzacţie intracomunitară - Ieşire după depozitare/formare nou transport
+    AIC = 10  # AIC - Achiziţie intracomunitară
+    LHI = 12  # LHI - Operațiuni în sistem lohn (UE) - intrare
+    SCI = 14  # SCI - Stocuri la dispoziția clientului (Call-off stock) - intrare
+    LIC = 20  # LIC - Livrare intracomunitară
+    LHE = 22  # LHE - Operațiuni în sistem lohn (UE) - ieșire
+    SCE = 24  # SCE - Stocuri la dispoziția clientului (Call-off stock) - ieșire
+    TTN = 30  # TTN - Transport pe teritoriul naţional
+    IMP = 40  # IMP - Import
+    EXP = 50  # EXP - Export
+    DIN = 60  # DIN - Tranzacţie intracomunitară - Intrare pentru depozitare/formare nou transport
+    DIE = 70  # DIE - Tranzacţie intracomunitară - Ieşire după depozitare/formare nou transport
 
 
 class CorectieType(BaseModel):

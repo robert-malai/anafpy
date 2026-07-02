@@ -193,9 +193,9 @@ re-vendor the XSD and regenerate; never edit the output by hand. Note: `xsdata[c
 is pinned `<25` — the `xsdata-pydantic` plugin targets the 24.x line and newer core
 emits invalid fields. The e-Transport script post-processes the output: nomenclature
 enum members get descriptive names derived from the XSD's own `xs:documentation`
-annotations (`CodJudetType.CLUJ`, `CodTaraType.ROMANIA`,
-`CodTipOperatiuneType.TRANSPORT_PE_TERITORIUL_NATIONAL`, ...) instead of
-`VALUE_<code>`.
+annotations (`CodJudetType.CLUJ`, `CodTaraType.ROMANIA`; operation types use ANAF's
+sigla with the full label as a trailing comment: `CodTipOperatiuneType.TTN`, ...)
+instead of `VALUE_<code>`.
 
 Public UBL entry points: `from anafpy.efactura import Invoice, CreditNote`.
 

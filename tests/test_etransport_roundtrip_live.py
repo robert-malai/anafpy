@@ -91,7 +91,7 @@ def _domestic_declaration(cif: str, transport_date: dt.date) -> ETransport:
         cod_declarant=cif,
         ref_declarant="anafpy-live-roundtrip",
         notificare=NotificareType(
-            cod_tip_operatiune=CodTipOperatiuneType.TRANSPORT_PE_TERITORIUL_NATIONAL,
+            cod_tip_operatiune=CodTipOperatiuneType.TTN,
             bunuri_transportate=[
                 BunuriTransportateType(
                     cod_scop_operatiune=CodScopOperatiuneType.COMERCIALIZARE,
