@@ -10,11 +10,13 @@ import httpx
 import pytest
 import respx
 
+from _wire import build_flat_transport
 from anafpy._transport.base import Environment
 from anafpy.auth import MemoryTokenStore, TokenProvider, TokenSet
 from anafpy.auth.oauth import TOKEN_URL
 from anafpy.etransport import (
     ETransportClient,
+    FlatDeletion,
     MessageState,
 )
 from anafpy.exceptions import (
@@ -152,6 +154,44 @@ async def test_upload_string_xml_encoded_to_utf8() -> None:
         result = await client.upload("<?xml version='1.0'?><decl/>", cif="1")
     assert result.accepted
     assert route.calls.last.request.content == b"<?xml version='1.0'?><decl/>"
+
+
+# --- upload_document (flat models -> composed XML) ------------------------------------
+
+
+@respx.mock
+async def test_upload_document_composes_declaration_xml() -> None:
+    route = respx.post(f"{BASE}/upload/ETRANSP/123/2").mock(
+        return_value=httpx.Response(200, json=_UPLOAD_OK)
+    )
+    async with _client() as client:
+        result = await client.upload_document(build_flat_transport(), cif="123")
+    assert result.accepted
+    req = route.calls.last.request
+    assert req.headers["content-type"] == "application/xml"
+    # The declarant code comes from the upload cif; the body is real declaration XML.
+    assert b'codDeclarant="123"' in req.content
+    assert b'codTipOperatiune="30"' in req.content
+    assert b'nrVehicul="B100XYZ"' in req.content
+
+
+@respx.mock
+async def test_upload_document_files_a_deletion() -> None:
+    route = respx.post(f"{BASE}/upload/ETRANSP/123/2").mock(
+        return_value=httpx.Response(200, json=_UPLOAD_OK)
+    )
+    uit = "0123456789ACDE42"
+    async with _client() as client:
+        result = await client.upload_document(FlatDeletion(uit=uit), cif="123")
+    assert result.accepted
+    assert f'stergere uit="{uit}"'.encode() in route.calls.last.request.content
+
+
+async def test_upload_document_rejects_conflicting_declarant_code() -> None:
+    flat = build_flat_transport().model_copy(update={"declarant_code": "999"})
+    async with _client() as client:
+        with pytest.raises(AnafConfigError, match="mismatch"):
+            await client.upload_document(flat, cif="123")
 
 
 # --- status ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ from ..efactura.models import (
 )
 from ..efactura.ubl.maindoc import CreditNote
 from ..etransport.models import (
-    FlatTransport,
+    FlatSubmission,
     parse_etransport_document,
     read_flat_transport,
 )
@@ -55,7 +55,17 @@ def invoice_view(xml: bytes) -> FlatInvoice | None:
     return read_flat_invoice(doc) if doc is not None else None
 
 
-def transport_view(xml: bytes) -> FlatTransport | None:
-    """Easy-to-read projection of e-Transport XML, or ``None`` if it does not parse."""
+def transport_view(xml: bytes) -> FlatSubmission | None:
+    """Easy-to-read projection of e-Transport XML, or ``None`` if it does not parse.
+
+    Translation is strict (a parseable document the flat models cannot represent
+    yields ``None``, not a partial view); pydantic's ``ValidationError`` is a
+    ``ValueError``, so one handler covers both failure shapes.
+    """
     doc = parse_etransport_document(xml)
-    return read_flat_transport(doc) if doc is not None else None
+    if doc is None:
+        return None
+    try:
+        return read_flat_transport(doc)
+    except ValueError:
+        return None

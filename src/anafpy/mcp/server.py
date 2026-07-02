@@ -21,8 +21,17 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from pydantic import ValidationError
 
 from ..efactura.models import Filter, TransformStandard, UploadStandard
+from ..etransport.models import (
+    FlatConfirmation,
+    FlatDeletion,
+    FlatSubmission,
+    FlatTransport,
+    FlatVehicleChange,
+    render_etransport,
+)
 from ..exceptions import AnafConfigError, AnafError
 from ..public.models import RegistryLookup
 from .config import ServerConfig
@@ -34,6 +43,7 @@ from .models import (
     SubmitResult,
     UblXmlInput,
 )
+from .nomenclatures import nomenclature_entries
 from .tokens import ConfirmationError, issue_token, verify_token
 
 __all__ = ["create_server"]
@@ -41,11 +51,21 @@ __all__ = ["create_server"]
 _INSTRUCTIONS = """\
 Typed access to Romania's ANAF e-Factura (e-invoicing) and e-Transport services.
 
-Filing an invoice or transport declaration is a two-step, human-gated flow:
-  1. call `efactura_prepare_invoice` / `etransport_prepare` — this parses the
-     document, returns a preview and totals, and a confirmation token;
+Filing is a two-step, human-gated flow:
+  1. call a prepare tool — it returns a preview, the exact XML, and a confirmation
+     token;
   2. show the preview to the user, get explicit approval, then call the matching
-     `*_submit_*` tool with that token and confirm=True.
+     `*_submit*` tool with that token and confirm=True.
+
+e-Factura filing takes complete UBL XML the user's invoicing software exported
+(`efactura_prepare_invoice`) — invoices are never composed here. e-Transport
+declarations ARE composed here, from structured fields — no XML needed:
+`etransport_prepare_declaration` (new declaration or, with correction_of_uit, a
+correction), `etransport_prepare_deletion`, `etransport_prepare_confirmation`,
+and `etransport_prepare_vehicle_change`. Each returns the composed XML — pass it
+back to `etransport_submit` verbatim as document={"xml": ...}. Enum-coded fields
+accept ANAF codes or member names ('TTN', 'CLUJ', 'NADLAC'); list them with
+`etransport_nomenclature`. `etransport_prepare` still accepts ready-made XML.
 
 Confirmation tokens are single-use and bound to the exact document, the CIF, and the
 upload standard — to file again (or for another CIF), run the prepare step again.
@@ -365,12 +385,104 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         }
 
     @mcp.tool(
+        annotations=_READ_ONLY,
+        description="List one e-Transport nomenclature (code list) as "
+        "{name, code[, label]} entries. `kind` is one of: operation_types, "
+        "operation_scopes, counties, border_points, customs_offices, countries, "
+        "document_types, confirmation_types. The names are accepted anywhere the "
+        "etransport_prepare_* tools take an enum-coded field.",
+    )
+    def etransport_nomenclature(kind: str) -> dict[str, object]:
+        return {"kind": kind, "entries": nomenclature_entries(kind)}
+
+    @mcp.tool(
         annotations=_MUTATING,
-        description="STEP 1 of filing an e-Transport declaration: parse the supplied "
-        "XML and return an easy-to-read preview + a confirmation token bound to this "
-        "document and CIF. Show the preview for approval; then call etransport_submit "
-        "with the token and the same cif. Does NOT file. (There is no standalone "
-        "validator — ANAF validates the declaration on upload.)",
+        description="STEP 1 of filing an e-Transport declaration from STRUCTURED "
+        "fields — no XML needed: compose the ANAF declaration XML from the given "
+        "fields (set correction_of_uit to file a correction of an issued UIT) and "
+        "return the exact XML + an easy-to-read preview + a confirmation token. "
+        "Show the preview for approval; then call etransport_submit with "
+        "document={'xml': <the returned xml>}, the token, and confirm=True. Does "
+        "NOT file. Enum-coded fields accept ANAF codes or member names (see "
+        "etransport_nomenclature).",
+    )
+    async def etransport_prepare_declaration(
+        declaration: FlatTransport, cif: str | None = None
+    ) -> PreparedSubmission:
+        return _prepare_composed_transport(cfg, declaration, cif=cif)
+
+    @mcp.tool(
+        annotations=_MUTATING,
+        description="STEP 1 of deleting an issued e-Transport UIT: compose the "
+        "stergere XML and return it + a preview + a confirmation token. Then call "
+        "etransport_submit with document={'xml': <the returned xml>}, the token, "
+        "and confirm=True.",
+    )
+    async def etransport_prepare_deletion(
+        uit: str, cif: str | None = None, declarant_ref: str | None = None
+    ) -> PreparedSubmission:
+        return _prepare_composed_transport(
+            cfg, FlatDeletion, cif=cif, uit=uit, declarant_ref=declarant_ref
+        )
+
+    @mcp.tool(
+        annotations=_MUTATING,
+        description="STEP 1 of confirming an issued e-Transport UIT: compose the "
+        "confirmare XML and return it + a preview + a confirmation token. "
+        "confirmation_type is CONFIRMAT (10), CONFIRMAT_PARTIAL (20) or INFIRMAT "
+        "(30). Then call etransport_submit with document={'xml': <the returned "
+        "xml>}, the token, and confirm=True.",
+    )
+    async def etransport_prepare_confirmation(
+        uit: str,
+        confirmation_type: str,
+        note: str | None = None,
+        cif: str | None = None,
+    ) -> PreparedSubmission:
+        return _prepare_composed_transport(
+            cfg,
+            FlatConfirmation,
+            cif=cif,
+            uit=uit,
+            confirmation_type=confirmation_type,
+            note=note,
+        )
+
+    @mcp.tool(
+        annotations=_MUTATING,
+        description="STEP 1 of changing the vehicle on an issued e-Transport UIT: "
+        "compose the modifVehicul XML and return it + a preview + a confirmation "
+        "token. Then call etransport_submit with document={'xml': <the returned "
+        "xml>}, the token, and confirm=True.",
+    )
+    async def etransport_prepare_vehicle_change(
+        uit: str,
+        plate: str,
+        trailer1: str | None = None,
+        trailer2: str | None = None,
+        note: str | None = None,
+        cif: str | None = None,
+    ) -> PreparedSubmission:
+        return _prepare_composed_transport(
+            cfg,
+            FlatVehicleChange,
+            cif=cif,
+            uit=uit,
+            plate=plate,
+            trailer1=trailer1,
+            trailer2=trailer2,
+            note=note,
+        )
+
+    @mcp.tool(
+        annotations=_MUTATING,
+        description="STEP 1 of filing an e-Transport document the caller already "
+        "has as XML: parse it and return an easy-to-read preview + a confirmation "
+        "token bound to this document and CIF. (To file from structured fields, "
+        "use etransport_prepare_declaration and friends instead.) Show the preview "
+        "for approval; then call etransport_submit with the token and the same "
+        "cif. Does NOT file. (There is no standalone validator — ANAF validates "
+        "the declaration on upload.)",
     )
     async def etransport_prepare(
         document: EtransportXmlInput, cif: str | None = None
@@ -379,9 +491,10 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
 
     @mcp.tool(
         annotations=_MUTATING,
-        description="STEP 2 of filing an e-Transport declaration: file the supplied "
-        "XML with ANAF and return the UIT code. Requires the confirmation_token from "
-        "etransport_prepare for the SAME document and confirm=True.",
+        description="STEP 2 of filing any e-Transport document: file the supplied "
+        "XML with ANAF and return the UIT code. Requires the confirmation_token "
+        "from an etransport_prepare* tool for the SAME document (for the composing "
+        "tools, document={'xml': <the xml they returned>}) and confirm=True.",
     )
     async def etransport_submit(
         document: EtransportXmlInput,
@@ -451,6 +564,52 @@ def _prepare_transport(
         cif=resolved,
         transport_preview=preview,
         message=_prepare_message(parsed=preview is not None),
+    )
+
+
+def _prepare_composed_transport(
+    cfg: ServerConfig,
+    document: FlatSubmission | Callable[..., FlatSubmission],
+    *,
+    cif: str | None,
+    **fields: Any,
+) -> PreparedSubmission:
+    """Compose a flat e-Transport document and gate it like any other filing.
+
+    ``document`` is either a ready flat model or a flat-model class to construct
+    from ``fields`` — construction failures (bad enum names, malformed UIT/plate)
+    come back as an invalid :class:`PreparedSubmission`, not a raised tool error.
+    The confirmation token is bound to the *rendered* bytes, which are echoed in
+    ``xml`` for the submit step.
+    """
+    try:
+        resolved = cfg.require_cif(cif)
+        model = (
+            document
+            if isinstance(
+                document,
+                FlatTransport | FlatDeletion | FlatConfirmation | FlatVehicleChange,
+            )
+            else document(**fields)
+        )
+        xml = render_etransport(model, declarant_code=resolved)
+    except (AnafError, ValidationError) as exc:
+        return PreparedSubmission(valid=False, message=str(exc))
+    token = issue_token(
+        cfg.signing_key,
+        kind=_TRANSPORT_KIND,
+        payload=xml,
+        context=_transport_context(resolved),
+    )
+    return PreparedSubmission(
+        valid=True,
+        confirmation_token=token,
+        cif=resolved,
+        transport_preview=transport_view(xml),
+        xml=xml.decode("utf-8"),
+        message="composed; not pre-validated (ANAF validates on upload). Review "
+        "the preview with the user, then pass the returned xml and token to "
+        "etransport_submit with confirm=True.",
     )
 
 

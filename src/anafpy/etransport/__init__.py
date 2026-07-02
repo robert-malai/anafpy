@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from .client import ETransportClient
 from .models import (
+    FlatConfirmation,
+    FlatDeletion,
+    FlatPriorNotification,
+    FlatSubmission,
     FlatTransport,
+    FlatTransportAddress,
     FlatTransportDocument,
     FlatTransportGood,
     FlatTransportLocation,
     FlatTransportPartner,
     FlatTransportVehicle,
+    FlatVehicleChange,
     InfoItem,
     InfoList,
     Location,
@@ -18,20 +24,28 @@ from .models import (
     Notification,
     NotificationMessage,
     UploadResult,
+    build_etransport,
     parse_etransport_document,
     read_flat_transport,
+    render_etransport,
 )
 from .schema.schema_etr_v2_20230126 import ETransport
 
 __all__ = [
     "ETransport",
     "ETransportClient",
+    "FlatConfirmation",
+    "FlatDeletion",
+    "FlatPriorNotification",
+    "FlatSubmission",
     "FlatTransport",
+    "FlatTransportAddress",
     "FlatTransportDocument",
     "FlatTransportGood",
     "FlatTransportLocation",
     "FlatTransportPartner",
     "FlatTransportVehicle",
+    "FlatVehicleChange",
     "InfoItem",
     "InfoList",
     "Location",
@@ -40,6 +54,8 @@ __all__ = [
     "Notification",
     "NotificationMessage",
     "UploadResult",
+    "build_etransport",
     "parse_etransport_document",
     "read_flat_transport",
+    "render_etransport",
 ]

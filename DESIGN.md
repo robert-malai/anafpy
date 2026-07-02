@@ -15,20 +15,34 @@ software: Romanian law presumes the entity already runs its own invoicing system
 e-Factura is a *filing endpoint*, not an invoicing app. anafpy moves documents to and from
 ANAF; it does not compose them.
 
-- **Outbound = XML pass-through.** The caller (or Claude) supplies a **complete UBL /
-  e-Transport XML**, exported by their invoicing software. anafpy validates it against
-  ANAF's server-side `validare` (e-Factura), uploads, polls, and downloads. It never
+- **e-Factura outbound = XML pass-through.** The caller (or Claude) supplies a
+  **complete UBL XML**, exported by their invoicing software. anafpy validates it
+  against ANAF's server-side `validare`, uploads, polls, and downloads. It never
   builds invoice XML from structured input.
+- **e-Transport = full translation to typed models** *(REVISED 2026-07-03; was
+  pass-through like e-Factura)*. The pass-through premise doesn't hold for
+  e-Transport: there is usually **no upstream software** producing declaration XML
+  (firms fill ANAF's web form by hand), the proprietary XSD is **small and fully
+  enumerated** (one file; nomenclatures dominate it), and the UIT lifecycle
+  operations (delete / confirm / change vehicle) are a UIT plus two-three attributes
+  — demanding XML for those is hostile. So anafpy translates the whole schema: the
+  flat models are **bidirectional** (author + view) and cover all four operations
+  (declaration/correction `FlatTransport`, `FlatDeletion`, `FlatConfirmation`,
+  `FlatVehicleChange`; union `FlatSubmission`). XML input remains supported for
+  callers who do have it.
 - **Read-only inbound (e-Factura only).** List the message inbox (id, type, date,
   counterparty CIF), download the original zip/XML/PDF **as-is**, and parse received UBL
   into a friendly **flat read view** (`FlatInvoice`) for display/triage. e-Transport stays
   outbound + own-declaration status only.
-- **Flat models are a read view, not an authoring surface.** The small, readable
-  `FlatInvoice` / `FlatTransport` shapes are produced *from* UBL — the only mapping
-  direction is **UBL → flat**. They render both the inbound inbox and the outbound
-  `prepare` preview. The view is intentionally **lossy** (raw bytes + full UBL stay
-  authoritative) and carries a `complete` flag + `dropped_fields` when it can't represent
-  something. anafpy still never goes flat → UBL: no invoice composition.
+- **`FlatInvoice` is a read view, not an authoring surface.** It is produced *from*
+  UBL — the only e-Factura mapping direction is **UBL → flat**. It renders both the
+  inbound inbox and the outbound `prepare` preview, is intentionally **lossy** (raw
+  bytes + full UBL stay authoritative), and carries a `complete` flag +
+  `dropped_fields` when it can't represent something. anafpy never goes flat → UBL:
+  no invoice composition. The e-Transport flat models are the deliberate exception
+  (previous bullet): full-fidelity, both directions, strict validation on authoring
+  (XSD patterns/lengths as pydantic constraints; enum fields accept ANAF codes or
+  member names and serialize as names).
 - **Stateless** beyond the OAuth token store: callers own persistence of upload indices,
   message ids, and statuses. Discrete one-call-one-result methods, no transport retry.
 
@@ -43,7 +57,8 @@ Phases & requirements:
 - **Local ANAF API reference docs**, compiled from ANAF's scattered online sources.
 - **Python 3.12+**, **httpx**, **Pydantic v2**.
 
-Out of scope: invoice composition / structured authoring; local persistence of documents;
+Out of scope: invoice composition / structured authoring **of e-Factura UBL**
+(e-Transport authoring is in scope — see above); local persistence of documents;
 reconciliation / accounting logic; inbound e-Transport; SPV; e-TVA; CII syntax;
 e-Transport API v1.
 
@@ -70,12 +85,13 @@ src/anafpy/
     models.py      # value types + FlatInvoice read view + UBL→flat reader
   etransport/
     schema/        # generated models from ANAF e-Transport XSD (v2)
-    client.py
-    models.py      # value types + FlatTransport read view + reader
+    client.py      # incl. upload_document (flat -> XML -> upload)
+    models.py      # value types + bidirectional flat models (4 ops) + read/build/render
   cli/             # `anafpy auth login`, etc.
   mcp/             # MCP server (extra: anafpy[mcp])
-    models.py      # XML pass-through inputs + prepared-submission gate (no authoring)
-    documents.py   # resolve XML input -> bytes; parse bytes -> client flat read view
+    models.py      # UBL XML pass-through inputs + prepared-submission gate
+    documents.py   # resolve XML input -> bytes; parse bytes -> client flat models
+    nomenclatures.py  # e-Transport code lists from the XSD enums
     server.py      # FastMCP tools + resources; config.py / context.py / tokens.py
 docs/anaf-reference/   # agent-compiled local reference (+ _sources/)
 ```
@@ -228,6 +244,25 @@ doc — see `docs/anaf-reference/etransport/api.md`):
   v2 upload form (`/upload/ETRANSP/{cif}/2`).
 - **Proprietary ANAF XSD** (`schema_ETR_v2_20230126.xsd`, not UBL) → generate via
   `xsdata-pydantic` into `etransport/schema/`.
+- **Structured authoring (ADDED 2026-07-03).** e-Transport is the deliberate
+  exception to "outbound = XML pass-through" (§1): the flat models in
+  `etransport/models.py` are bidirectional and cover the XSD's four root operations —
+  `FlatTransport` (a `notificare`, optionally a correction via `correction_of_uit`),
+  `FlatDeletion` (`stergere`), `FlatConfirmation` (`confirmare`), `FlatVehicleChange`
+  (`modifVehicul`) — plus the root attributes (`declarant_code`, `declarant_ref`,
+  `post_incident`). `build_etransport` composes the wire model (filling
+  `cod_declarant` from the upload CIF; a conflicting explicit value raises),
+  `render_etransport` serializes, and `ETransportClient.upload_document` does
+  compose→upload in one call. Authoring validation is **structural only** (XSD
+  patterns, lengths, decimal shapes, exactly-one-of border-point/customs-office/
+  address per route end) — business rules stay ANAF's, per §4 Validation. Enum-coded
+  fields are typed with the generated XSD enums, accept member **names or ANAF
+  codes** on input (plates/UITs are normalized), and serialize as names for readable
+  previews. Reading is the same models via `read_flat_transport` — a full
+  translation (only the XSD's unused `xs:any` hooks are not carried), so the
+  authored document and its preview can never drift. The TEST roundtrip
+  (2026-07-02, re-based onto the flat models 2026-07-03) files a declaration
+  composed this way.
 
 ## 6. Public (no-auth) services
 
@@ -282,19 +317,32 @@ doc — see `docs/anaf-reference/etransport/api.md`):
 
 A **local stdio connector** built on the phase-1 clients (extra `anafpy[mcp]`,
 `python -m anafpy.mcp`). It exposes the operations as Claude Cowork skills, owns the
-XML pass-through tool *inputs* (the friendly `FlatInvoice` read view comes from the client
-layer, §4), reads the existing token store, and refreshes headlessly. *(Implemented: the
-XML-only filing inputs, the gated prepare→submit flow, the UBL→flat read view for previews
-and the e-Factura inbox, and the compiled reference as resources.)*
+XML pass-through tool *inputs* (the friendly flat models come from the client
+layer, §4/§5), reads the existing token store, and refreshes headlessly.
+*(Implemented: the gated prepare→submit flow, XML-only e-Factura filing, composed
+e-Transport filing, the flat previews and the e-Factura inbox, and the compiled
+reference as resources.)*
 
-- **Outbound = XML pass-through only.** The filing tool takes complete XML the caller's
-  invoicing software exported — `UblXmlInput {xml|path}` for e-Factura and
-  `EtransportXmlInput` for e-Transport. The MCP layer does **not** compose invoices: no
-  flat→XML mapping. (`FlatInvoice` is only ever a *read* projection of UBL — never an input.)
+- **e-Factura outbound = XML pass-through only.** The filing tool takes complete UBL
+  XML the caller's invoicing software exported — `UblXmlInput {xml|path}`. The MCP
+  layer does **not** compose invoices: no flat→UBL mapping. (`FlatInvoice` is only
+  ever a *read* projection of UBL — never an input.)
+- **e-Transport outbound = composed from structured fields** (§5; REVISED
+  2026-07-03). `etransport_prepare_declaration` takes the client-layer
+  `FlatTransport` as tool input; `etransport_prepare_deletion` / `_confirmation` /
+  `_vehicle_change` take scalars and build the tiny flat models. Each renders the
+  XML via `render_etransport` and returns it in `PreparedSubmission.xml` next to the
+  preview (the *read-back* of the rendered bytes, so the human approves exactly what
+  will be filed) and the confirmation token (bound to those bytes). The caller
+  passes the XML back to the shared `etransport_submit` verbatim — a mangled echo
+  fails the token check, never files. `etransport_prepare` (`EtransportXmlInput`)
+  stays for ready-made XML; `etransport_nomenclature` (read-only,
+  `mcp/nomenclatures.py`) lists the XSD code lists so the model can map "vama
+  Nădlac" → `NADLAC` instead of guessing codes.
 - **Safety: read-first, two-step gated filing.** Read-only tools (`*_list*`, `*_status`,
   `*_download`, `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
-  freely callable. Filing is split `*_prepare*` → `*_submit*`: `prepare` parses the
-  supplied XML into the **flat read view** to render a preview and
+  freely callable. Filing is split `*_prepare*` → `*_submit*`: `prepare` parses (or,
+  for e-Transport, composes) the XML into the **flat models** to render a preview and
   returns an HMAC **confirmation token** bound to the exact XML bytes plus the submission
   context (CIF, upload standard); `submit` requires that token (same bytes, same CIF)
   **and** `confirm=True`, and redeems it **single-use** so one approval files at most
@@ -356,7 +404,10 @@ and the e-Factura inbox, and the compiled reference as resources.)*
    mapping removed); `FlatInvoice`/`FlatTransport` are client-layer read views built by a
    single `read_flat_invoice` / `read_flat_transport` (+ `complete` / `dropped_fields`),
    exposed as `download` tier 3 (`DownloadedMessage.view`), the MCP prepare preview, and
-   the e-Factura inbox. All three gates green.
+   the e-Factura inbox. All three gates green. **PARTLY REVERSED 2026-07-03 for
+   e-Transport only**: its flat models became bidirectional full translations of the
+   XSD (§5 Structured authoring) — the read-view-only stance now applies to
+   `FlatInvoice` alone.
 
 ## 11. Distribution
 

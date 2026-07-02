@@ -13,8 +13,9 @@ from typing import Any, cast
 import httpx
 import pytest
 import respx
+from mcp.server.fastmcp.exceptions import ToolError
 
-from _wire import credit_note_xml, invoice_xml, transport_xml
+from _wire import build_flat_transport, credit_note_xml, invoice_xml, transport_xml
 from anafpy._transport.base import Environment
 from anafpy.auth import FileTokenStore, TokenSet
 from anafpy.mcp.config import ServerConfig
@@ -309,7 +310,7 @@ async def test_prepare_then_submit_files_transport(tmp_path: Path) -> None:
     server = create_server(_config(tmp_path))
     prepared = await _call(server, "etransport_prepare", document=_transport_doc())
     assert prepared["transport_preview"]["total_gross_weight"] == "120"
-    assert prepared["transport_preview"]["operation_type"] == "30"
+    assert prepared["transport_preview"]["operation_type"] == "TTN"
     out = await _call(
         server,
         "etransport_submit",
@@ -320,6 +321,108 @@ async def test_prepare_then_submit_files_transport(tmp_path: Path) -> None:
     assert out["accepted"] is True
     assert out["uit"] == "3RO123"
     assert route.called
+
+
+# --- composed e-Transport filings (structured fields, no caller XML) ------------------
+
+_UIT = "0123456789ACDE42"
+
+
+@respx.mock
+async def test_prepare_declaration_composes_and_submit_files_it(tmp_path: Path) -> None:
+    route = respx.post(f"{ETRANSPORT}/upload/ETRANSP/123/2").mock(
+        return_value=httpx.Response(
+            200,
+            json={"ExecutionStatus": 0, "index_incarcare": 9, "UIT": "3RO123"},
+        )
+    )
+    server = create_server(_config(tmp_path))
+    declaration = build_flat_transport().model_dump(mode="json")
+    prepared = await _call(
+        server, "etransport_prepare_declaration", declaration=declaration
+    )
+    assert prepared["valid"] is True
+    # The composed XML is echoed for the submit step; the preview is its read-back.
+    assert prepared["xml"].startswith("<?xml")
+    assert 'codDeclarant="123"' in prepared["xml"]
+    assert prepared["transport_preview"]["operation_type"] == "TTN"
+    out = await _call(
+        server,
+        "etransport_submit",
+        document={"xml": prepared["xml"]},
+        confirmation_token=prepared["confirmation_token"],
+        confirm=True,
+    )
+    assert out["accepted"] is True
+    assert out["uit"] == "3RO123"
+    # What went on the wire is byte-for-byte the XML the human approved.
+    assert route.calls.last.request.content == prepared["xml"].encode("utf-8")
+
+
+async def test_prepare_declaration_rejects_invalid_fields(tmp_path: Path) -> None:
+    # Structured input is validated at the tool boundary (FastMCP applies the
+    # FlatTransport schema), so bad fields surface as a tool error — nothing is
+    # composed and no confirmation token is issued.
+    server = create_server(_config(tmp_path))
+    declaration = build_flat_transport().model_dump(mode="json")
+    declaration["goods"] = []
+    with pytest.raises(ToolError, match="at least 1 item"):
+        await _call(server, "etransport_prepare_declaration", declaration=declaration)
+
+
+async def test_prepare_deletion_composes_stergere(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    prepared = await _call(server, "etransport_prepare_deletion", uit=_UIT)
+    assert prepared["valid"] is True
+    assert f'stergere uit="{_UIT}"' in prepared["xml"]
+    assert prepared["transport_preview"]["uit"] == _UIT
+
+
+async def test_prepare_deletion_rejects_malformed_uit(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    prepared = await _call(server, "etransport_prepare_deletion", uit="not-a-uit")
+    assert prepared["valid"] is False
+    assert prepared["confirmation_token"] is None
+
+
+async def test_prepare_confirmation_accepts_name_or_code(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    by_name = await _call(
+        server,
+        "etransport_prepare_confirmation",
+        uit=_UIT,
+        confirmation_type="CONFIRMAT_PARTIAL",
+    )
+    by_code = await _call(
+        server, "etransport_prepare_confirmation", uit=_UIT, confirmation_type="20"
+    )
+    assert by_name["valid"] is by_code["valid"] is True
+    assert 'tipConfirmare="20"' in by_name["xml"]
+    assert 'tipConfirmare="20"' in by_code["xml"]
+
+
+async def test_prepare_vehicle_change_composes_modif_vehicul(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    prepared = await _call(
+        server,
+        "etransport_prepare_vehicle_change",
+        uit=_UIT,
+        plate="cj 99 aaa",
+        trailer1="CJ98BBB",
+    )
+    assert prepared["valid"] is True
+    assert 'nrVehicul="CJ99AAA"' in prepared["xml"]
+    assert prepared["transport_preview"]["plate"] == "CJ99AAA"
+
+
+async def test_etransport_nomenclature_lists_names_and_codes(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    counties = await _call(server, "etransport_nomenclature", kind="counties")
+    assert {"name": "CLUJ", "code": 12} in counties["entries"]
+    ops = await _call(server, "etransport_nomenclature", kind="operation_types")
+    ttn = next(e for e in ops["entries"] if e["name"] == "TTN")
+    assert ttn["code"] == 30
+    assert "teritoriul" in ttn["label"]
 
 
 # --- public no-auth lookups -----------------------------------------------------------

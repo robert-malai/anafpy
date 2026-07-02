@@ -45,6 +45,7 @@ from ..exceptions import (
     AnafTransportError,
 )
 from .models import (
+    FlatSubmission,
     InfoItem,
     InfoList,
     MessageState,
@@ -56,6 +57,7 @@ from .models import (
     _ListaEnvelope,
     _StatusEnvelope,
     _UploadEnvelope,
+    render_etransport,
 )
 
 __all__ = ["ETransportClient"]
@@ -183,6 +185,25 @@ class ETransportClient:
             errors=errors,
             raw=body,
         )
+
+    async def upload_document(
+        self,
+        document: FlatSubmission,
+        *,
+        cif: str,
+        version: int = 2,
+    ) -> UploadResult:
+        """Compose a flat e-Transport document and file it — no XML handling needed.
+
+        Accepts any of the four flat documents (a :class:`FlatTransport`
+        declaration/correction, :class:`FlatDeletion`, :class:`FlatConfirmation`, or
+        :class:`FlatVehicleChange` from :mod:`anafpy.etransport.models`), renders it
+        to the ANAF declaration XML with ``cod_declarant`` taken from ``cif`` (unless
+        the document sets ``declarant_code`` itself), and uploads it. One call, one
+        result-or-raise, same as :meth:`upload`.
+        """
+        xml = render_etransport(document, declarant_code=cif)
+        return await self.upload(xml, cif=cif, version=version)
 
     async def get_status(self, upload_id: str) -> MessageStatus:
         """Poll the processing state for an ``upload_id`` (``index_incarcare``)."""

@@ -20,28 +20,29 @@ import asyncio
 import datetime as dt
 import os
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from xsdata.models.datatype import XmlDate
-from xsdata_pydantic.bindings import XmlSerializer
 
 from anafpy._transport.base import Environment
 from anafpy.auth import FileTokenStore, TokenProvider
-from anafpy.etransport import ETransport, ETransportClient
+from anafpy.etransport import (
+    ETransportClient,
+    FlatTransport,
+    FlatTransportAddress,
+    FlatTransportDocument,
+    FlatTransportGood,
+    FlatTransportLocation,
+    FlatTransportPartner,
+    FlatTransportVehicle,
+)
 from anafpy.etransport.models import MessageState
 from anafpy.etransport.schema.schema_etr_v2_20230126 import (
-    BunuriTransportateType,
     CodJudetType,
     CodScopOperatiuneType,
     CodTaraType,
     CodTipOperatiuneType,
-    DateTransportType,
-    DocumenteTransportType,
-    LocatieType,
-    LocTraseuRutierType,
-    NotificareType,
-    PartenerComercialType,
     TipDocumentType,
 )
 
@@ -84,76 +85,72 @@ def cif() -> str:
     return _require("ANAFPY_CIF")
 
 
-def _domestic_declaration(cif: str, transport_date: dt.date) -> ETransport:
-    """A minimal, ANAF-valid domestic (``tip_op`` 30 = TTN) transport declaration."""
-    day = XmlDate(transport_date.year, transport_date.month, transport_date.day)
-    return ETransport(
-        cod_declarant=cif,
-        ref_declarant="anafpy-live-roundtrip",
-        notificare=NotificareType(
-            cod_tip_operatiune=CodTipOperatiuneType.TTN,
-            bunuri_transportate=[
-                BunuriTransportateType(
-                    cod_scop_operatiune=CodScopOperatiuneType.COMERCIALIZARE,
-                    denumire_marfa="Materiale constructii",
-                    cantitate="100.00",
-                    cod_unitate_masura="KGM",
-                    greutate_neta="100.00",
-                    greutate_bruta="110.00",
-                    valoare_lei_fara_tva="500.00",
-                    cod_tarifar="6810",
-                )
-            ],
-            partener_comercial=PartenerComercialType(
-                cod_tara=CodTaraType.ROMANIA, cod=cif, denumire="Partener SRL"
-            ),
-            date_transport=DateTransportType(
-                nr_vehicul="CJ01ABC",
-                cod_tara_org_transport=CodTaraType.ROMANIA,
-                cod_org_transport=cif,
-                denumire_org_transport="Transport SRL",
-                data_transport=day,
-            ),
-            loc_start_traseu_rutier=LocTraseuRutierType(
-                locatie=LocatieType(
-                    cod_judet=CodJudetType.CLUJ,
-                    denumire_localitate="Cluj-Napoca",
-                    denumire_strada="Str. Memorandumului",
-                    numar="28",
-                )
-            ),
-            loc_final_traseu_rutier=LocTraseuRutierType(
-                locatie=LocatieType(
-                    cod_judet=CodJudetType.MUNICIPIUL_BUCURESTI,
-                    denumire_localitate="Bucuresti",
-                    denumire_strada="Calea Victoriei",
-                    numar="1",
-                )
-            ),
-            documente_transport=[
-                DocumenteTransportType(
-                    tip_document=TipDocumentType.CMR,
-                    numar_document="FAC-001",
-                    data_document=day,
-                )
-            ],
+def _domestic_declaration(cif: str, transport_date: dt.date) -> FlatTransport:
+    """A minimal, ANAF-valid domestic (TTN) declaration — via the flat authoring
+    models, so the roundtrip also keeps anafpy's *composed* XML honest."""
+    return FlatTransport(
+        operation_type=CodTipOperatiuneType.TTN,
+        declarant_ref="anafpy-live-roundtrip",
+        partner=FlatTransportPartner(
+            name="Partener SRL", country=CodTaraType.ROMANIA, code=cif
         ),
+        vehicle=FlatTransportVehicle(
+            plate="CJ01ABC",
+            carrier_name="Transport SRL",
+            carrier_country=CodTaraType.ROMANIA,
+            carrier_code=cif,
+            transport_date=transport_date,
+        ),
+        start_location=FlatTransportLocation(
+            address=FlatTransportAddress(
+                county=CodJudetType.CLUJ,
+                locality="Cluj-Napoca",
+                street="Str. Memorandumului",
+                number="28",
+            )
+        ),
+        end_location=FlatTransportLocation(
+            address=FlatTransportAddress(
+                county=CodJudetType.MUNICIPIUL_BUCURESTI,
+                locality="Bucuresti",
+                street="Calea Victoriei",
+                number="1",
+            )
+        ),
+        goods=[
+            FlatTransportGood(
+                operation_scope=CodScopOperatiuneType.COMERCIALIZARE,
+                name="Materiale constructii",
+                quantity=Decimal("100.00"),
+                unit_code="KGM",
+                gross_weight=Decimal("110.00"),
+                net_weight=Decimal("100.00"),
+                value_ron=Decimal("500.00"),
+                tariff_code="6810",
+            )
+        ],
+        documents=[
+            FlatTransportDocument(
+                doc_type=TipDocumentType.CMR, date=transport_date, number="FAC-001"
+            )
+        ],
     )
 
 
 async def test_etransport_test_roundtrip(provider: TokenProvider, cif: str) -> None:
-    """File a domestic declaration to TEST and drive it to a terminal ``ok``.
+    """File a composed domestic declaration to TEST and drive it to a terminal ``ok``.
 
     Confirms the upload (``index_incarcare`` + ``UIT`` + ``atentie``), ``stareMesaj``
     (``in prelucrare`` → ``ok``), ``lista``-with-results, and ``info`` no-results
     envelope shapes end to end — the ones the respx suite can only assert against
-    fixtures.
+    fixtures — and, since the declaration is composed by ``upload_document`` from the
+    flat models, that ANAF accepts anafpy's own rendered XML.
     """
     transport_date = dt.date.today() + dt.timedelta(days=1)
-    xml = XmlSerializer().render(_domestic_declaration(cif, transport_date))
+    declaration = _domestic_declaration(cif, transport_date)
 
     async with ETransportClient(provider, environment=Environment.TEST) as client:
-        upload = await client.upload(xml, cif=cif, version=2)
+        upload = await client.upload_document(declaration, cif=cif)
         assert upload.accepted, upload.errors
         assert upload.upload_id
         assert upload.uit  # UIT issued immediately at upload time

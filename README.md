@@ -5,16 +5,21 @@ Typed Python clients for Romania's **ANAF** tax-authority web services —
 **public no-auth registries** (VAT/taxpayer lookups, financial statements) — plus a
 local MCP server that exposes them as [Claude Cowork](https://claude.com) skills.
 
-anafpy is a **thin transport client**, not invoicing software: you bring invoice XML that
-your own invoicing system produced, and anafpy validates it, files it with ANAF, tracks
-status, and pulls documents back — wrapping the XML you read back (your filings and
-invoices suppliers issued to you) in a friendly **flat read view** for easy display.
-(e-Factura is a filing endpoint; Romanian law presumes you already run an invoicing
-system.)
+anafpy is a **thin transport client**, not invoicing software. For **e-Factura** you
+bring invoice XML that your own invoicing system produced, and anafpy validates it,
+files it with ANAF, tracks status, and pulls documents back — wrapping the XML you read
+back (your filings and invoices suppliers issued to you) in a friendly **flat read
+view** for easy display. (e-Factura is a filing endpoint; Romanian law presumes you
+already run an invoicing system.) **e-Transport is different**: there is usually no
+upstream software producing declaration XML, so anafpy translates ANAF's whole (small,
+fully enumerated) schema into friendly typed models — you author declarations, UIT
+deletions, confirmations, and vehicle changes from structured fields, no XML handling
+needed, and the same models render what you read back.
 
 > Status: **early / alpha** (`0.x`), not yet published to PyPI. The OAuth2 auth layer,
 > both async clients (with an easy-to-read flat view of downloaded documents), and the
-> MCP server (XML pass-through filing + read-only inbox) are implemented and tested.
+> MCP server (XML pass-through e-Factura filing, structured e-Transport filing, and a
+> read-only inbox) are implemented and tested.
 > Validation is ANAF's own server-side `validare` endpoint — there is no local rule
 > engine. See [`DESIGN.md`](DESIGN.md) for the full design and
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
@@ -35,17 +40,23 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   iterator that pages the message list under the hood (window by `days` or `start`/`end`;
   empty window → empty iterator, real ANAF errors → raise). `download` exposes three read
   tiers: raw signed bytes, the full UBL model, and an easy-to-read `FlatInvoice` **view**.
-- **`ETransportClient`** (async) — `upload`, `get_status`, `info`, `upload_and_wait`, and
-  `list_notifications` (same async-iterator shape).
+- **`ETransportClient`** (async) — `upload`, `get_status`, `info`, `upload_and_wait`,
+  `list_notifications` (same async-iterator shape), and **`upload_document`**, which
+  composes and files any of the four flat documents — a `FlatTransport`
+  declaration/correction, `FlatDeletion`, `FlatConfirmation`, or `FlatVehicleChange` —
+  without the caller touching XML.
 - **`PublicClient`** (async) — ANAF's **unauthenticated** public services on
   `webservicesp.anaf.ro`: `lookup_taxpayers` (VAT registration, VAT-on-collection,
   inactive, split-VAT, and RO e-Factura register membership in one call),
   `lookup_efactura_register`, `lookup_farmers`, `lookup_cult_entities`, and
   `get_financial_statement` (public bilanț indicators). No credentials, no test/prod
   split; requests are paced client-side at ANAF's stated 1 req/s rule.
-- **Flat read views** — `read_flat_invoice` / `read_flat_transport` project UBL /
-  e-Transport documents into small, easy-to-read shapes (lossy, with a `complete` flag);
-  anafpy reads documents into these, it never composes documents from them.
+- **Flat models** — `read_flat_invoice` projects UBL into a small, easy-to-read
+  `FlatInvoice` **read view** (lossy, with a `complete` flag); anafpy never composes
+  UBL from it. The e-Transport flat models are **bidirectional**: `read_flat_transport`
+  views a parsed document and `build_etransport` / `render_etransport` author one —
+  full translation of ANAF's XSD, with enum-coded fields (counties, border points,
+  customs offices, operation types...) accepted by name or code.
 - **Generated models** — UBL 2.1 / CIUS-RO (`from anafpy.efactura import Invoice,
   CreditNote`) and the proprietary e-Transport XSD, generated from vendored schemas.
 - **MCP server** (`anafpy[mcp]`) — a local stdio connector exposing the operations as
@@ -137,6 +148,53 @@ Discrete methods make a single call (no transport retry). HTTP/auth problems rai
 back as typed values, not exceptions. On HTTP 429 the client raises `AnafRateLimitError`
 exposing `retry_after` rather than backing off itself.
 
+e-Transport declarations are authored from typed models — no XML in sight:
+
+```python
+import datetime as dt
+from decimal import Decimal
+
+from anafpy.etransport import (
+    ETransportClient, FlatDeletion, FlatTransport, FlatTransportAddress,
+    FlatTransportDocument, FlatTransportGood, FlatTransportLocation,
+    FlatTransportPartner, FlatTransportVehicle,
+)
+from anafpy.etransport.schema.schema_etr_v2_20230126 import (
+    CodJudetType, CodScopOperatiuneType, CodTaraType, CodTipOperatiuneType,
+    TipDocumentType,
+)
+
+declaration = FlatTransport(
+    operation_type=CodTipOperatiuneType.TTN,           # domestic transport
+    partner=FlatTransportPartner(name="Partener SRL", country=CodTaraType.ROMANIA),
+    vehicle=FlatTransportVehicle(
+        plate="CJ01ABC", carrier_name="Transport SRL",
+        carrier_country=CodTaraType.ROMANIA, transport_date=dt.date(2026, 7, 10),
+    ),
+    start_location=FlatTransportLocation(address=FlatTransportAddress(
+        county=CodJudetType.CLUJ, locality="Cluj-Napoca", street="Memorandumului",
+    )),
+    end_location=FlatTransportLocation(address=FlatTransportAddress(
+        county=CodJudetType.MUNICIPIUL_BUCURESTI, locality="Bucuresti",
+        street="Calea Victoriei",
+    )),
+    goods=[FlatTransportGood(
+        operation_scope=CodScopOperatiuneType.COMERCIALIZARE,
+        name="Materiale constructii", quantity=Decimal("100"), unit_code="KGM",
+        gross_weight=Decimal("110"), tariff_code="6810",
+    )],
+    documents=[FlatTransportDocument(
+        doc_type=TipDocumentType.CMR, date=dt.date(2026, 7, 9), number="FAC-001",
+    )],
+)
+
+async with ETransportClient(provider) as etransport:
+    result = await etransport.upload_document(declaration, cif="12345678")
+    print(result.uit)  # the UIT code, issued at upload time
+    # later: delete / confirm / change vehicle on that UIT the same way, e.g.
+    await etransport.upload_document(FlatDeletion(uit=result.uit), cif="12345678")
+```
+
 The public registries need no auth at all:
 
 ```python
@@ -162,19 +220,27 @@ ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
 
 It exposes **read-only** tools (`auth_status`; the e-Factura inbox via
 `efactura_list_messages` / `efactura_get_status` / `efactura_download`; `etransport_list`
-/ `etransport_get_status` / `etransport_lookup`; `efactura_validate`, which runs
+/ `etransport_get_status` / `etransport_lookup` / `etransport_nomenclature`;
+`efactura_validate`, which runs
 ANAF's authoritative server-side validator without filing; and the `anaf_*` public
 lookups — taxpayer/VAT registry, RO e-Factura register, farmers/cult registers, and
 financial statements — which need **no login at all**) plus **two-step gated
-filing**: `*_prepare*` parses the supplied XML and returns a preview + a confirmation
-token bound to the document and the CIF being filed for; `*_submit*` files only when
+filing**: `*_prepare*` returns a preview + a confirmation
+token bound to the exact document and the CIF being filed for; `etransport_submit` /
+`efactura_submit_invoice` files only when
 given that token (same document, same CIF) and `confirm=True`, and each token is
-single-use — filing again requires a fresh prepare. Filing is **XML pass-through** —
-you hand it the complete UBL /
-e-Transport XML your invoicing software exported; the server does not compose invoices.
-Both the inbox and the `prepare` preview present invoices as a friendly **flat read view**
-(`FlatInvoice`) parsed from the XML — easy to read, lossy by design (the raw bytes stay
-authoritative). The compiled ANAF reference is surfaced as read-only resources. Auth stays
+single-use — filing again requires a fresh prepare. **e-Factura filing is XML
+pass-through** — you hand it the complete UBL XML your invoicing software exported; the
+server never composes invoices. **e-Transport filing is composed for you**:
+`etransport_prepare_declaration` (a new declaration or, via `correction_of_uit`, a
+correction), `etransport_prepare_deletion`, `etransport_prepare_confirmation`, and
+`etransport_prepare_vehicle_change` take structured fields (enum-coded values by ANAF
+code or by name — `TTN`, `CLUJ`, `NADLAC`; discoverable via `etransport_nomenclature`),
+compose the declaration XML, and return it alongside the preview and token;
+`etransport_prepare` still accepts ready-made XML. Both the inbox and the `prepare`
+previews present documents as friendly **flat models** parsed from the XML (for
+invoices, easy to read and lossy by design — the raw bytes stay authoritative). The
+compiled ANAF reference is surfaced as read-only resources. Auth stays
 the host-side CLI — the server only reads and refreshes the token store. Configuration is
 environment-only; see [`CLAUDE.md`](CLAUDE.md).
 
@@ -193,7 +259,8 @@ by default (not a gate). It covers the public services (no credentials needed) p
 with `.env` credentials and an `anafpy auth login` token store, the authenticated
 **TEST** environment: read-only shape checks and two roundtrips that actually file a
 test document — a minimal CIUS-RO invoice (e-Factura) and a domestic transport
-declaration (e-Transport). The roundtrips target TEST only, never production.
+declaration composed via the flat authoring models (e-Transport). The roundtrips
+target TEST only, never production.
 
 Models under `efactura/ubl/` and `etransport/schema/` are **generated** (via
 `scripts/generate_*.py` from vendored XSDs in `schemas/`) and must not be hand-edited.

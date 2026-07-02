@@ -10,13 +10,19 @@ reference of ANAF's APIs.
 **e-Factura** (electronic invoicing), **e-Transport** (goods transport), and the
 **public no-auth services** (`anafpy.public`: registry lookups + financial
 statements). It is a
-**thin, stateless transport client, not invoicing software**: callers bring complete
-invoice XML their own system produced, and anafpy validates, files, tracks, and downloads.
-Outbound is **XML pass-through** (no invoice composition); received UBL is wrapped in a
-friendly **flat read view** (`FlatInvoice`, UBL→flat only) reused for the e-Factura inbox
-and the outbound `prepare` preview. Phase 1 is the typed async clients; phase 2 is the
-**MCP server** (`anafpy.mcp`, extra `anafpy[mcp]`) exposing the operations as Claude Cowork
-skills. The client methods map 1:1 onto MCP tools — discrete operations,
+**thin, stateless transport client, not invoicing software**. **e-Factura outbound is
+XML pass-through** (no invoice composition): callers bring complete invoice XML their
+own system produced, and anafpy validates, files, tracks, and downloads; received UBL
+is wrapped in a friendly **flat read view** (`FlatInvoice`, UBL→flat only) reused for
+the e-Factura inbox and the outbound `prepare` preview. **e-Transport is fully
+translated** (decided 2026-07-03): there is usually no upstream software producing
+declaration XML and ANAF's XSD is small and fully enumerated, so the e-Transport flat
+models are **bidirectional** — the same models author a filing
+(`build_etransport`/`render_etransport`, `upload_document`) and view a parsed one
+(`read_flat_transport`), covering all four operations (declaration/correction,
+deletion, confirmation, vehicle change). Phase 1 is the typed async clients; phase 2 is
+the **MCP server** (`anafpy.mcp`, extra `anafpy[mcp]`) exposing the operations as
+Claude Cowork skills. The client methods map 1:1 onto MCP tools — discrete operations,
 serializable typed inputs/outputs, good docstrings. Distribution is **free and
 as-is**: the library is for anyone to use; the MCP server is **best-effort**, and
 configuring it — including provisioning the OAuth application on ANAF's portal —
@@ -73,16 +79,17 @@ src/anafpy/
     __init__.py          # re-exports Invoice, CreditNote from ubl.maindoc
   etransport/
     schema/              # GENERATED e-Transport XSD models — do not hand-edit
-    client.py            # ETransportClient (async)
-    models.py            # value types + FlatTransport read view + reader
+    client.py            # ETransportClient (async) — incl. upload_document (flat -> XML -> upload)
+    models.py            # value types + BIDIRECTIONAL flat models (4 ops) + read/build/render
   public/
     client.py            # PublicClient (async, no auth) — webservicesp.anaf.ro lookups
     models.py            # lookup value types (TaxpayerRecord, RegistryLookup[...], ...)
   mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2
     config.py            # ServerConfig.from_env (creds, store path, env, default CIF)
     context.py           # AppContext: TokenProvider + lazy clients + token ledger; auth_status
-    models.py            # XML pass-through inputs (no authoring); reuses the client flat read view
-    documents.py         # resolve XML input -> bytes; parse bytes -> client flat read view
+    models.py            # UBL XML pass-through inputs + prepared-submission gate
+    documents.py         # resolve XML input -> bytes; parse bytes -> client flat models
+    nomenclatures.py     # e-Transport code lists (from the XSD enums) for the model
     tokens.py            # HMAC confirmation tokens for two-step gated mutations
     server.py            # FastMCP server: tools + resources; `create_server`, `main`
     __main__.py          # `python -m anafpy.mcp` (stdio)
@@ -130,26 +137,42 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   returns a `FastMCP`; `AppContext` owns one `TokenProvider` + lazily-built clients and
   closes them in the server lifespan. The server reads the existing token store and
   refreshes headlessly — it never drives the cert/browser step (that stays the CLI).
-- **Outbound filing is XML pass-through only.** The tool input is the complete UBL /
-  e-Transport XML the caller's invoicing software exported (`UblXmlInput` /
-  `EtransportXmlInput` in `mcp/models.py`) — the MCP layer does **not** compose invoices,
-  and must never reuse the generated UBL / e-Transport schema models as tool input.
-  `prepare` parses the supplied XML with the shared client-layer **UBL→flat reader** into a
-  `FlatInvoice` read view to build the preview; there is no flat→XML write mapping.
-- **`FlatInvoice` / `FlatTransport` are a read view, not an authoring surface.** Defined at
-  the **client layer** ([efactura/models.py](src/anafpy/efactura/models.py),
-  [etransport/models.py](src/anafpy/etransport/models.py)) and produced *from* UBL by
-  `read_flat_invoice` / `read_flat_transport` (UBL→flat only). They back three things:
-  `DownloadedMessage.view` (`download` tier 3), the e-Factura inbox, and the `prepare`
-  preview. The view is lossy by design — raw bytes + full UBL stay authoritative — and
-  carries `complete` / `dropped_fields` when it can't represent something. There is no
-  flat→UBL path; do not add one.
+- **e-Factura filing is XML pass-through only.** The tool input is the complete UBL
+  XML the caller's invoicing software exported (`UblXmlInput` in `mcp/models.py`) —
+  the MCP layer does **not** compose invoices, and must never reuse the generated UBL
+  schema models as tool input. `prepare` parses the supplied XML with the shared
+  client-layer **UBL→flat reader** into a `FlatInvoice` read view to build the
+  preview; there is no flat→UBL write mapping.
+- **e-Transport filing is composed from structured fields** (decided 2026-07-03; the
+  pass-through rule is e-Factura-only). `etransport_prepare_declaration` /
+  `_deletion` / `_confirmation` / `_vehicle_change` take the client-layer flat models
+  or scalars, render the XML via `render_etransport`, and return it in
+  `PreparedSubmission.xml` alongside the preview and token; the caller passes that
+  XML back to `etransport_submit` verbatim (the token is bound to the rendered
+  bytes, so any mangling fails closed). `etransport_prepare` (`EtransportXmlInput`)
+  remains for callers with ready-made XML. `etransport_nomenclature` lists the XSD
+  code lists (names accepted anywhere an enum-coded field is) — see
+  [mcp/nomenclatures.py](src/anafpy/mcp/nomenclatures.py).
+- **`FlatInvoice` is a read view; the e-Transport flat models are bidirectional.**
+  All are defined at the **client layer**
+  ([efactura/models.py](src/anafpy/efactura/models.py),
+  [etransport/models.py](src/anafpy/etransport/models.py)). `FlatInvoice` is produced
+  *from* UBL by `read_flat_invoice` (UBL→flat only), backs `DownloadedMessage.view`
+  (`download` tier 3), the e-Factura inbox, and the `prepare` preview, is lossy by
+  design — raw bytes + full UBL stay authoritative — and carries `complete` /
+  `dropped_fields` when it can't represent something. There is no flat→UBL path; do
+  not add one. The e-Transport `FlatTransport` / `FlatDeletion` / `FlatConfirmation`
+  / `FlatVehicleChange` (union `FlatSubmission`) are a **full translation** of the
+  XSD: `read_flat_transport` views, `build_etransport` / `render_etransport` author
+  (only the schema's unused `xs:any` hooks are not carried); enum-coded fields are
+  typed with the generated XSD enums, accept name or code, and serialize as names.
 - **Read-first, two-step gated mutations.** Read-only tools (`*_list*`, `*_status`,
-  `*_download`, `*_lookup`, `efactura_validate`, `auth_status`, and the no-auth
+  `*_download`, `*_lookup`, `etransport_nomenclature`, `efactura_validate`,
+  `auth_status`, and the no-auth
   `anaf_*` public lookups over `PublicClient` — registries + financial statements,
   usable even before `anafpy auth login`) are annotated `readOnlyHint` and freely
   callable. Filing is split `*_prepare*` → `*_submit*`: prepare
-  parses the XML for a preview and returns an HMAC **confirmation token**
+  parses (or composes) the XML for a preview and returns an HMAC **confirmation token**
   (`mcp/tokens.py`) bound to the exact XML bytes, the CIF, and (e-Factura) the upload
   standard; submit requires that token (same document, same CIF) **and** `confirm=True`,
   and each token is **single-use** (`TokenLedger`) so a non-idempotent upload is never
@@ -237,7 +260,9 @@ results.
   default — don't move behavioural assertions there, and keep them read-only. The **two
   deliberate exceptions** are the roundtrip files —
   [tests/test_etransport_roundtrip_live.py](tests/test_etransport_roundtrip_live.py)
-  **files** a domestic declaration (upload → `stareMesaj` → `lista` → `info`) and
+  **files** a domestic declaration composed via the flat authoring models — also
+  keeping anafpy's own rendered XML honest — (upload → `stareMesaj` → `lista` →
+  `info`) and
   [tests/test_efactura_roundtrip_live.py](tests/test_efactura_roundtrip_live.py)
   **files** a minimal CIUS-RO invoice (upload → `stareMesaj` → `descarcare` → list) —
   **TEST only, never prod** — to keep the filing wire shapes honest; don't add uploads

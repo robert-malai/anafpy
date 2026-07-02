@@ -1,12 +1,16 @@
 """Wire-XML fixtures: build real UBL / e-Transport documents for the read-view tests.
 
-anafpy no longer composes documents from flat input, so the tests build the generated
-models directly (as a caller's invoicing software would) and serialize them to the XML
-the clients / MCP tools consume.
+anafpy never composes UBL from flat input, so the e-Factura fixtures build the
+generated models directly (as a caller's invoicing software would) and serialize them
+to the XML the clients / MCP tools consume. The e-Transport fixtures come in both
+shapes: ``build_transport()`` builds the generated XSD models (external XML, as a TMS
+would produce) and ``build_flat_transport()`` is its flat-model twin (the authoring
+surface anafpy itself provides).
 """
 
 from __future__ import annotations
 
+import datetime as dt
 from decimal import Decimal
 
 from xsdata.models.datatype import XmlDate
@@ -15,6 +19,15 @@ from xsdata_pydantic.bindings import XmlSerializer
 from anafpy.efactura import CreditNote, Invoice
 from anafpy.efactura.ubl.common import ubl_common_aggregate_components_2_1 as agg
 from anafpy.efactura.ubl.common import ubl_common_basic_components_2_1 as cbc
+from anafpy.etransport import (
+    FlatTransport,
+    FlatTransportAddress,
+    FlatTransportDocument,
+    FlatTransportGood,
+    FlatTransportLocation,
+    FlatTransportPartner,
+    FlatTransportVehicle,
+)
 from anafpy.etransport.schema import schema_etr_v2_20230126 as etr
 
 CIUS_RO = "urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1"
@@ -225,3 +238,50 @@ def build_transport() -> etr.ETransport:
 
 def transport_xml() -> str:
     return XmlSerializer().render(build_transport())
+
+
+def build_flat_transport() -> FlatTransport:
+    """The flat-model twin of :func:`build_transport` (same declaration, authored)."""
+    return FlatTransport(
+        operation_type=etr.CodTipOperatiuneType.TTN,
+        partner=FlatTransportPartner(
+            name="Foreign GmbH", country=etr.CodTaraType.GERMANIA, code="DE9"
+        ),
+        vehicle=FlatTransportVehicle(
+            plate="B100XYZ",
+            carrier_name="Carrier SRL",
+            carrier_country=etr.CodTaraType.ROMANIA,
+            carrier_code="999",
+            transport_date=dt.date(2026, 6, 28),
+        ),
+        start_location=FlatTransportLocation(
+            address=FlatTransportAddress(
+                county=etr.CodJudetType.MUNICIPIUL_BUCURESTI,
+                locality="Bucuresti",
+                street="Str A",
+                number="1",
+            )
+        ),
+        end_location=FlatTransportLocation(
+            address=FlatTransportAddress(
+                county=etr.CodJudetType.CLUJ, locality="Cluj", street="Str B"
+            )
+        ),
+        goods=[
+            FlatTransportGood(
+                operation_scope=etr.CodScopOperatiuneType.GRATUITATI,
+                name="Marfa",
+                quantity=Decimal("100"),
+                unit_code="KGM",
+                gross_weight=Decimal("120"),
+                net_weight=Decimal("100"),
+            )
+        ],
+        documents=[
+            FlatTransportDocument(
+                doc_type=etr.TipDocumentType.FACTURA,
+                date=dt.date(2026, 6, 27),
+                number="FAC1",
+            )
+        ],
+    )
