@@ -109,9 +109,8 @@ async def _do_login(
 
     FileTokenStore(store_path).save(tokens)
     print(f"\n✓ Authenticated. Tokens saved to {store_path}.")
-    if tokens.access_expires_at:
-        days = (tokens.access_expires_at - time.time()) / 86400
-        print(f"  Access token valid ~{days:.0f} days; refresh is headless thereafter.")
+    days = (tokens.access_expires_at - time.time()) / 86400
+    print(f"  Access token valid ~{days:.0f} days; refresh is headless thereafter.")
     return 0
 
 
@@ -152,20 +151,12 @@ def _cmd_status(args: argparse.Namespace) -> int:
         print("not authenticated — run `anafpy auth login`")
         return 1
     now = time.time()
-    acc = (tokens.access_expires_at - now) / 86400 if tokens.access_expires_at else None
-    ref = (
-        (tokens.refresh_expires_at - now) / 86400 if tokens.refresh_expires_at else None
-    )
-    if tokens.access_expired():
-        acc_str = "expired"
-    elif acc is not None:
-        acc_str = f"~{acc:.0f} days left"
-    else:
-        acc_str = "unknown expiry"  # store predates the expiry fields
+    acc = (tokens.access_expires_at - now) / 86400
+    ref = (tokens.refresh_expires_at - now) / 86400
+    acc_str = "expired" if tokens.access_expired() else f"~{acc:.0f} days left"
     print("authenticated")
     print(f"  access token : {acc_str}")
-    if ref is not None:
-        print(f"  refresh token: ~{ref:.0f} days left")
+    print(f"  refresh token: ~{ref:.0f} days left")
     return 0
 
 

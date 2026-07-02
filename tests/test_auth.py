@@ -56,7 +56,8 @@ def test_tokenset_reads_jwt_exp() -> None:
     tokens = TokenSet.from_token_response(_token_response(exp))
     assert tokens.access_expires_at == pytest.approx(exp, abs=1)
     assert not tokens.access_expired()
-    assert tokens.refresh_expires_at is not None  # 365-day fallback
+    # Non-JWT refresh token: 365-day fallback.
+    assert tokens.refresh_expires_at == pytest.approx(time.time() + 365 * 86400, abs=5)
 
 
 def test_tokenset_reads_refresh_jwt_exp() -> None:
@@ -75,8 +76,17 @@ def test_tokenset_tolerates_non_object_jwt_payload() -> None:
     tokens = TokenSet.from_token_response(
         {"access_token": weird, "refresh_token": weird}
     )
-    assert tokens.access_expires_at is not None  # 90-day fallback
-    assert tokens.refresh_expires_at is not None  # 365-day fallback
+    now = time.time()
+    assert tokens.access_expires_at == pytest.approx(now + 90 * 86400, abs=5)
+    assert tokens.refresh_expires_at == pytest.approx(now + 365 * 86400, abs=5)
+
+
+def test_tokenset_prefers_expires_in_over_ttl_fallback() -> None:
+    # Access token isn't a JWT but the response carries `expires_in`: use it.
+    tokens = TokenSet.from_token_response(
+        {"access_token": "opaque", "refresh_token": "r", "expires_in": 3600}
+    )
+    assert tokens.access_expires_at == pytest.approx(time.time() + 3600, abs=5)
 
 
 def test_tokenset_access_expired_with_leeway() -> None:

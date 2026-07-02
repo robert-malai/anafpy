@@ -27,6 +27,8 @@ dependencies = [
     "pydantic>=2.9",
     "xsdata-pydantic>=24.5",
     "tenacity>=8.3",
+    # Unverified `exp` reads to schedule token refresh (verification is ANAF's job).
+    "pyjwt>=2.8",
 ]
 
 [project.optional-dependencies]

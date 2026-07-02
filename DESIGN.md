@@ -52,7 +52,9 @@ e-Transport API v1.
 - **Async is the source of truth; a sync facade is generated via `unasync`.**
   The MCP server (async) drives the async core; batch/script users get sync.
 - **Single distribution** `anafpy` with optional extras (not a multi-package repo):
-  - runtime: `httpx`, `pydantic`, `xsdata-pydantic`, `tenacity`
+  - runtime: `httpx`, `pydantic`, `xsdata-pydantic`, `tenacity`, `pyjwt`
+    (unverified `exp` reads only, to schedule token refresh — verification is
+    ANAF's job)
   - `anafpy[mcp]` → MCP SDK
   *(an `anafpy[validation]` → `saxonche` extra existed and was removed — see §4
   Validation)*

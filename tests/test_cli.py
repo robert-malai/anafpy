@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -22,29 +23,35 @@ def test_status_reports_token_validity(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     store = tmp_path / "tokens.json"
-    FileTokenStore(store).save(
-        TokenSet(
-            access_token="a",
-            refresh_token="r",
-            access_expires_at=time.time() + 90 * 86400,
-            refresh_expires_at=time.time() + 365 * 86400,
-        )
-    )
+    # Non-JWT tokens: expiry falls back to the documented 90/365-day TTLs.
+    FileTokenStore(store).save(TokenSet(access_token="a", refresh_token="r"))
     assert main(["auth", "status", "--store", str(store)]) == 0
     out = capsys.readouterr().out
     assert "authenticated" in out
     assert "~90 days left" in out
+    assert "~365 days left" in out
 
 
-def test_status_tolerates_missing_expiry_fields(
+def test_status_ignores_stored_expiry_keys(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A store written without the computed expiry timestamps (older / hand-migrated
-    # file) must report, not crash formatting None.
+    # Expiries are computed from the tokens, so stale `*_expires_at` keys in an
+    # older store must be ignored, not trusted.
     store = tmp_path / "tokens.json"
-    FileTokenStore(store).save(TokenSet(access_token="a", refresh_token="r"))
+    store.write_text(
+        json.dumps(
+            {
+                "access_token": "a",
+                "refresh_token": "r",
+                "obtained_at": time.time(),
+                "access_expires_at": time.time() - 86400,  # stale: claims expired
+                "refresh_expires_at": time.time() - 86400,
+            }
+        ),
+        encoding="utf-8",
+    )
     assert main(["auth", "status", "--store", str(store)]) == 0
-    assert "unknown expiry" in capsys.readouterr().out
+    assert "~90 days left" in capsys.readouterr().out
 
 
 def test_status_corrupt_store_is_a_cli_error(

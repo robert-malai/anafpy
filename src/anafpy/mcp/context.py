@@ -86,16 +86,8 @@ class AppContext:
                 message="not authenticated — run `anafpy auth login`",
             )
         now = time.time()
-        access_days = (
-            (tokens.access_expires_at - now) / 86400.0
-            if tokens.access_expires_at is not None
-            else None
-        )
-        refresh_days = (
-            (tokens.refresh_expires_at - now) / 86400.0
-            if tokens.refresh_expires_at is not None
-            else None
-        )
+        access_days = (tokens.access_expires_at - now) / 86400.0
+        refresh_days = (tokens.refresh_expires_at - now) / 86400.0
         refresh_dead = tokens.refresh_expired()
         if refresh_dead:
             message = "refresh token expired — run `anafpy auth login`"

@@ -19,6 +19,7 @@ source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
+    { name = "pyjwt" },
     { name = "tenacity" },
     { name = "xsdata-pydantic" },
 ]
@@ -63,6 +64,7 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-settings", marker = "extra == 'mcp'", specifier = ">=2.4" },
+    { name = "pyjwt", specifier = ">=2.8" },
     { name = "tenacity", specifier = ">=8.3" },
     { name = "xsdata-pydantic", specifier = ">=24.5" },
 ]
