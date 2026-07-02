@@ -11,7 +11,7 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, PrivateAttr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .._transport.base import Environment
@@ -55,10 +55,15 @@ class ServerConfig(BaseSettings):
     )
     default_cif: str | None = Field(default=None, validation_alias="ANAFPY_CIF")
     docs_dir: Path | None = Field(default=None, validation_alias="ANAFPY_DOCS_DIR")
-    # Not read from the environment: a fresh per-process secret each run.
-    signing_key: bytes = Field(
-        default_factory=lambda: secrets.token_bytes(32), exclude=True
-    )
+    # A private attribute, not a settings field: BaseSettings populates fields from
+    # the environment by name, and the signing key must never come from a stray
+    # `SIGNING_KEY` env var — it is a fresh per-process secret each run.
+    _signing_key: bytes = PrivateAttr(default_factory=lambda: secrets.token_bytes(32))
+
+    @property
+    def signing_key(self) -> bytes:
+        """Per-process secret backing the confirmation tokens (never from env)."""
+        return self._signing_key
 
     @field_validator("store_path", "docs_dir")
     @classmethod

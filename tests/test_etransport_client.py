@@ -226,6 +226,28 @@ async def test_get_status_rejected_is_terminal() -> None:
 
 
 @respx.mock
+async def test_path_segments_are_url_encoded() -> None:
+    # cif/upload_id ride in the URL path (unlike e-Factura's query params); a stray
+    # `/` must be encoded into the segment, not silently reroute the request.
+    route = respx.get(url__regex=rf"{BASE}/stareMesaj/.*").mock(
+        return_value=httpx.Response(200, json={"stare": "ok"})
+    )
+    async with _client() as client:
+        await client.get_status("50/01")
+    assert route.calls.last.request.url.raw_path.endswith(b"/stareMesaj/50%2F01")
+
+
+@respx.mock
+async def test_upload_cif_path_segment_is_url_encoded() -> None:
+    route = respx.post(url__regex=rf"{BASE}/upload/ETRANSP/.*").mock(
+        return_value=httpx.Response(200, json=_UPLOAD_OK)
+    )
+    async with _client() as client:
+        await client.upload("<eTransport/>", cif="12/3")
+    assert b"/upload/ETRANSP/12%2F3/2" in route.calls.last.request.url.raw_path
+
+
+@respx.mock
 async def test_get_status_query_error_raises_not_rejected() -> None:
     # Errors without `stare` = query failure (bad index, no rights, daily limit),
     # not a document outcome.
@@ -447,16 +469,33 @@ async def test_info_optional_params_forwarded() -> None:
 
 
 @respx.mock
-async def test_info_error_from_anaf() -> None:
+async def test_info_genuine_error_raises() -> None:
+    # Same split as the list endpoints: a real query error (unknown CUI, missing
+    # SPV rights, daily limit) raises; only the benign no-results note is returned.
     respx.get(f"{BASE}/info").mock(
         return_value=httpx.Response(
             200, json={"Errors": [{"errorMessage": "CUI necunoscut"}]}
         )
     )
     async with _client() as client:
+        with pytest.raises(AnafResponseError, match="CUI necunoscut"):
+            await client.info(cui_op="0")
+
+
+@respx.mock
+async def test_info_errors_array_no_results_returned() -> None:
+    # A no-results note riding the `Errors[]` array (not the top-level `error`
+    # string) is still benign — returned, not raised.
+    respx.get(f"{BASE}/info").mock(
+        return_value=httpx.Response(
+            200,
+            json={"Errors": [{"errorMessage": "Nu exista informatii"}]},
+        )
+    )
+    async with _client() as client:
         result = await client.info(cui_op="0")
     assert result.items == []
-    assert result.error == "CUI necunoscut"
+    assert result.error == "Nu exista informatii"
 
 
 @respx.mock

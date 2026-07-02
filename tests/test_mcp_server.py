@@ -432,3 +432,24 @@ async def test_reference_docs_exposed_as_resources(tmp_path: Path, _docs: Path) 
     assert "anafref://efactura/api" in uris
     # README is excluded.
     assert all("README" not in u for u in uris)
+
+
+# --- config -------------------------------------------------------------------------
+
+
+def test_signing_key_never_read_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The confirmation-token key is a fresh per-process secret; a stray SIGNING_KEY
+    # env var must not become the HMAC key (BaseSettings populates fields by name).
+    monkeypatch.setenv("ANAFPY_CLIENT_ID", "CID")
+    monkeypatch.setenv("ANAFPY_CLIENT_SECRET", "S")
+    monkeypatch.setenv("SIGNING_KEY", "weakkey")
+    monkeypatch.setenv("signing_key", "weakkey")
+    cfg = ServerConfig.from_env()
+    assert cfg.signing_key != b"weakkey"
+    assert len(cfg.signing_key) == 32
+
+
+def test_signing_key_unique_per_config() -> None:
+    a = ServerConfig(client_id="CID", client_secret="S")
+    b = ServerConfig(client_id="CID", client_secret="S")
+    assert a.signing_key != b.signing_key

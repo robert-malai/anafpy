@@ -15,6 +15,8 @@ import pytest
 import respx
 
 from anafpy.auth import (
+    CallbackListener,
+    FileTokenStore,
     MemoryTokenStore,
     TokenProvider,
     TokenSet,
@@ -25,7 +27,7 @@ from anafpy.auth import (
     refresh_tokens,
 )
 from anafpy.auth.oauth import TOKEN_URL
-from anafpy.exceptions import AnafAuthError
+from anafpy.exceptions import AnafAuthError, AnafConfigError
 
 
 def _make_jwt(exp: float) -> str:
@@ -63,6 +65,18 @@ def test_tokenset_reads_refresh_jwt_exp() -> None:
         _token_response(time.time() + 90 * 86400, refresh=_make_jwt(refresh_exp))
     )
     assert tokens.refresh_expires_at == pytest.approx(refresh_exp, abs=1)
+
+
+def test_tokenset_tolerates_non_object_jwt_payload() -> None:
+    # A JWT whose payload decodes to JSON but not an object must fall back to the
+    # documented TTLs, not raise.
+    payload = base64.urlsafe_b64encode(b'["not", "a", "dict"]').rstrip(b"=").decode()
+    weird = f"eyJhbGciOiJSUzUxMiJ9.{payload}.sig"
+    tokens = TokenSet.from_token_response(
+        {"access_token": weird, "refresh_token": weird}
+    )
+    assert tokens.access_expires_at is not None  # 90-day fallback
+    assert tokens.refresh_expires_at is not None  # 365-day fallback
 
 
 def test_tokenset_access_expired_with_leeway() -> None:
@@ -235,6 +249,22 @@ async def test_provider_adopts_login_made_after_construction() -> None:
     assert provider.tokens is not None  # visible to auth_status as well
 
 
+# --- token store ------------------------------------------------------------------
+
+
+def test_file_store_missing_file_is_none(tmp_path: Path) -> None:
+    assert FileTokenStore(tmp_path / "tokens.json").load() is None
+
+
+def test_file_store_corrupt_file_raises_config_error(tmp_path: Path) -> None:
+    # A corrupt store must surface in the AnafError hierarchy, not as a raw
+    # pydantic ValidationError.
+    path = tmp_path / "tokens.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(AnafConfigError, match="token store"):
+        FileTokenStore(path).load()
+
+
 # --- authorization-code capture (paste mode + listener) -------------------------------
 
 
@@ -288,6 +318,33 @@ def test_capture_code_plain_http() -> None:
     )
     hitter.start()
     assert capture_authorization_code(uri, timeout=10.0) == "plain-ok"
+
+
+def test_listener_binds_before_wait() -> None:
+    # The login flow binds the listener BEFORE opening the browser: a redirect
+    # arriving between construction and wait() must not be lost.
+    port = _free_port()
+    uri = f"http://127.0.0.1:{port}/callback"
+    with CallbackListener(uri) as listener:
+        httpx.get(f"{uri}?code=early-ok")  # redirect lands before wait()
+        assert listener.wait(timeout=10.0) == "early-ok"
+
+
+def test_listener_wait_timeout_returns_none() -> None:
+    port = _free_port()
+    uri = f"http://127.0.0.1:{port}/callback"
+    with CallbackListener(uri) as listener:
+        assert listener.wait(timeout=0.05) is None
+
+
+def test_listener_bind_failure_raises_config_error() -> None:
+    port = _free_port()
+    uri = f"http://127.0.0.1:{port}/callback"
+    with (
+        CallbackListener(uri),
+        pytest.raises(AnafConfigError, match="cannot bind"),
+    ):
+        CallbackListener(uri)  # port already taken
 
 
 def test_capture_code_error_redirect_raises() -> None:

@@ -12,6 +12,9 @@ import tempfile
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from pydantic import ValidationError
+
+from ..exceptions import AnafConfigError
 from .models import TokenSet
 
 __all__ = ["FileTokenStore", "MemoryTokenStore", "TokenStore"]
@@ -46,9 +49,21 @@ class FileTokenStore:
         self.path = Path(path).expanduser()
 
     def load(self) -> TokenSet | None:
+        """The stored token set, or ``None`` when no store file exists.
+
+        Raises:
+            AnafConfigError: the file exists but cannot be read or parsed — stay in
+                the AnafError hierarchy instead of leaking a raw pydantic/OS error.
+        """
         if not self.path.exists():
             return None
-        return TokenSet.model_validate_json(self.path.read_text(encoding="utf-8"))
+        try:
+            return TokenSet.model_validate_json(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValidationError) as exc:
+            raise AnafConfigError(
+                f"unreadable token store {self.path}: {exc} — "
+                "delete it and run `anafpy auth login` again"
+            ) from exc
 
     def save(self, tokens: TokenSet) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -166,7 +166,11 @@ class InfoItem(BaseModel):
 
 
 class InfoList(BaseModel):
-    """Response from ``GET info?cui_op=...``."""
+    """Response from ``GET info?cui_op=...``.
+
+    ``error`` carries ANAF's benign "no results" note (with ``items`` empty);
+    genuine query errors are raised by the client, never returned here.
+    """
 
     items: list[InfoItem] = []
     error: str | None = None
@@ -223,7 +227,8 @@ class _InfoEnvelope(_JsonEnvelope):
     (``{"error": "Nu exista informatii pentru aceasta solicitare", ...}`` —
     live-confirmed against TEST 2026-07-02), *not* the ``Errors[]`` array the other
     endpoints use; tolerate both here so ``info`` never masquerades a benign
-    no-results as an unrecognised body.
+    no-results as an unrecognised body. The client splits the collected messages
+    like the list endpoints do: no-results is returned, real errors raise.
     """
 
     error: _StrNone = None

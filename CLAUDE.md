@@ -112,7 +112,8 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   ANAF's portal only registers `https://` callback URLs (an `http://` one 400s —
   verified 2026-07-02); the login captures the code via `--paste` (no listener, the
   baseline), a TLS listener (`--tls-cert/--tls-key`), or plain HTTP behind an external
-  TLS terminator — falling back to paste if the listener can't start.
+  TLS terminator — the listener binds *before* the browser opens (a fast redirect must
+  not outrun it) and the CLI falls back to paste if it can't start or times out.
 - **Clients are async**, own their `httpx.AsyncClient` (unless one is injected), and are
   async context managers (`async with EFacturaClient(...) as c:`).
 - **Discrete methods do NO transport retry** — one call, one result-or-raise — so the
@@ -174,11 +175,13 @@ Hybrid, per design — do not collapse it:
 - **Business outcomes** (e-Factura `nok`/`REJECTED`, upload rejections with BR-RO
   findings) are returned as **typed values** (e.g. `UploadResult.accepted is False`,
   `MessageStatus.state`), never raised.
-- **Listing** (`list_messages` / `list_notifications`) is the one place a 200-with-error-note
-  is split: ANAF overloads the note (e-Factura: `eroare`; e-Transport: `Errors[].errorMessage`)
-  for both "no results" and real errors, so a no-results note yields an **empty iterator**
-  while a genuine list error **raises `AnafResponseError`** (`status_code=200`). The
-  classifier is `_transport.base.is_empty_result_message`.
+- **Listing and `info`** (`list_messages` / `list_notifications` / e-Transport `info`) are
+  where a 200-with-error-note is split: ANAF overloads the note (e-Factura: `eroare`;
+  e-Transport: `Errors[].errorMessage`, `info` also a top-level `error` string) for both
+  "no results" and real errors, so a no-results note yields an **empty iterator** (`info`:
+  an empty `InfoList` with the note in `.error`) while a genuine error **raises
+  `AnafResponseError`** (`status_code=200`). The classifier is
+  `_transport.base.is_empty_result_message`.
 
 ## Generated code — do not hand-edit
 

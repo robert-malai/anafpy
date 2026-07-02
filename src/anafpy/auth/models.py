@@ -36,6 +36,8 @@ def _jwt_exp(token: str) -> float | None:
         payload = json.loads(base64.urlsafe_b64decode(payload_b64))
     except (binascii.Error, ValueError):
         return None
+    if not isinstance(payload, dict):
+        return None
     exp = payload.get("exp")
     return float(exp) if isinstance(exp, (int, float)) else None
 

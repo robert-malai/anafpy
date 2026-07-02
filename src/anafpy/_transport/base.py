@@ -123,6 +123,7 @@ _EMPTY_RESULT_MARKERS = (
     "nu exista notificari",
     "nu exista inregistrari",
     "nu exista date",
+    "nu exista informatii",  # e-Transport `info` no-results (live-confirmed 2026-07-02)
 )
 
 

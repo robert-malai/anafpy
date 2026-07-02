@@ -102,7 +102,8 @@ callback still doesn't need a public server; pick how the code gets captured:
   `mkcert localhost 127.0.0.1` — the emitted PEM pair plugs into
   `--tls-cert`/`--tls-key` unchanged, with no browser warning at all.
 - **Neither flag.** The listener speaks plain HTTP; put your own TLS terminator in
-  front of it. If the listener can't start, the CLI falls back to paste mode.
+  front of it. If the listener can't start — or no callback arrives in time — the
+  CLI falls back to paste mode.
 
 This opens your browser for the certificate step, captures the authorization code,
 exchanges it for tokens, and stores them under

@@ -166,6 +166,21 @@ async def test_taxpayer_lookup_accepts_documented_envelope() -> None:
 
 
 @respx.mock
+async def test_taxpayer_lookup_accepts_string_cod_200() -> None:
+    # ANAF's numeric/string typing is inconsistent across services; a stringly
+    # `"200"` must not read as an error.
+    respx.post(f"{BASE}/api/PlatitorTvaRest/v9/tva").mock(
+        return_value=httpx.Response(
+            200,
+            json={"cod": "200", "message": "SUCCESS", "found": [], "notFound": [123]},
+        )
+    )
+    async with _client() as client:
+        result = await client.lookup_taxpayers([123])
+    assert result.not_found == [123]
+
+
+@respx.mock
 async def test_taxpayer_lookup_error_cod_raises() -> None:
     respx.post(f"{BASE}/api/PlatitorTvaRest/v9/tva").mock(
         return_value=httpx.Response(

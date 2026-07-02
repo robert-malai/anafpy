@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .callback import capture_authorization_code, parse_redirect_url
+from .callback import CallbackListener, capture_authorization_code, parse_redirect_url
 from .models import TokenSet
 from .oauth import build_authorize_url, exchange_code, refresh_tokens
 from .provider import AnafAuth, TokenProvider
@@ -10,6 +10,7 @@ from .store import FileTokenStore, MemoryTokenStore, TokenStore
 
 __all__ = [
     "AnafAuth",
+    "CallbackListener",
     "FileTokenStore",
     "MemoryTokenStore",
     "TokenProvider",

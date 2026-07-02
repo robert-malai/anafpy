@@ -15,6 +15,7 @@ Design mirrors ``anafpy.efactura.client`` with four key differences:
 from __future__ import annotations
 
 import json
+import urllib.parse
 from collections.abc import AsyncIterator
 from types import TracebackType
 from typing import Self
@@ -61,6 +62,15 @@ __all__ = ["ETransportClient"]
 
 _STANDARD = "ETRANSP"
 _XML_BODY_HEADERS = {"Content-Type": "application/xml"}
+
+
+def _segment(value: str) -> str:
+    """Encode a caller-supplied value as a single URL path segment.
+
+    Unlike e-Factura's query params, this service embeds ``cif``/``upload_id`` in
+    the path — a stray ``/`` must not silently reroute the request.
+    """
+    return urllib.parse.quote(value, safe="")
 
 
 def _load_envelope[EnvelopeT: _JsonEnvelope](
@@ -154,7 +164,7 @@ class ETransportClient:
         populated — not as an exception.
         """
         body = xml.encode("utf-8") if isinstance(xml, str) else xml
-        path = f"upload/{_STANDARD}/{cif}/{version}"
+        path = f"upload/{_STANDARD}/{_segment(cif)}/{version}"
         response = await self._request(
             "POST", path, content=body, headers=_XML_BODY_HEADERS
         )
@@ -176,7 +186,7 @@ class ETransportClient:
 
     async def get_status(self, upload_id: str) -> MessageStatus:
         """Poll the processing state for an ``upload_id`` (``index_incarcare``)."""
-        response = await self._request("GET", f"stareMesaj/{upload_id}")
+        response = await self._request("GET", f"stareMesaj/{_segment(upload_id)}")
         return self._parse_status(response.content)
 
     @staticmethod
@@ -217,7 +227,7 @@ class ETransportClient:
     async def _iter_notifications(
         self, days: int, cif: str
     ) -> AsyncIterator[Notification]:
-        response = await self._request("GET", f"lista/{days}/{cif}")
+        response = await self._request("GET", f"lista/{days}/{_segment(cif)}")
         for notification in self._parse_notifications(response.content):
             yield notification
 
@@ -249,7 +259,13 @@ class ETransportClient:
         uit: str | None = None,
         ref_decl: str | None = None,
     ) -> InfoList:
-        """Look up active notifications where ``cui_op`` is the transport organizer."""
+        """Look up active notifications where ``cui_op`` is the transport organizer.
+
+        A benign "no results" note comes back as an empty :class:`InfoList` with
+        ``error`` carrying ANAF's wording; a genuine query error (missing SPV
+        rights, daily limit, unknown CUI) raises :class:`AnafResponseError` —
+        the same split the list endpoints apply.
+        """
         params: dict[str, str] = {"cui_op": cui_op}
         if cui_decl is not None:
             params["cui_decl"] = cui_decl
@@ -263,10 +279,12 @@ class ETransportClient:
     @staticmethod
     def _parse_info(body: bytes) -> InfoList:
         """Parse an ``info`` response: a bare JSON array of records (per the info
-        swagger); a JSON object carrying a top-level ``error`` string **or** an
-        ``Errors[]`` array is surfaced via ``InfoList.error`` (live-confirmed
-        2026-07-02: the no-results case is ``{"error": "Nu exista informatii pentru
-        aceasta solicitare"}``, not ``Errors[]``)."""
+        swagger). A JSON object carries an error note instead — a top-level ``error``
+        string (live-confirmed 2026-07-02: the no-results case is ``{"error": "Nu
+        exista informatii pentru aceasta solicitare"}``) or an ``Errors[]`` array.
+        Like the list endpoints, a benign no-results note is returned (via
+        ``InfoList.error``) while a genuine query error (missing SPV rights, daily
+        limit, bad CUI) raises :class:`AnafResponseError`."""
         try:
             data = json.loads(body)
             if isinstance(data, list):
@@ -286,7 +304,13 @@ class ETransportClient:
                 status_code=200,
                 body=as_text(body),
             )
-        return InfoList(items=[], error="; ".join(errors), raw=body)
+        if all(is_empty_result_message(message) for message in errors):
+            return InfoList(items=[], error="; ".join(errors), raw=body)
+        raise AnafResponseError(
+            f"ANAF e-Transport info error: {'; '.join(errors)}",
+            status_code=200,
+            body=as_text(body),
+        )
 
     async def upload_and_wait(
         self,

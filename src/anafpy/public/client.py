@@ -124,10 +124,13 @@ def _parse_lookup[LookupT: RegistryLookup[Any]](
             status_code=200,
             body=text,
         ) from exc
-    if isinstance(data, dict) and data.get("cod") not in (None, 200):
+    cod = data.get("cod") if isinstance(data, dict) else None
+    # `cod` compared as text: ANAF's numeric/string typing is inconsistent across
+    # services, so a stringly `"200"` must not read as an error.
+    if cod is not None and str(cod) != "200":
         message = data.get("message") or text[:200]
         raise AnafResponseError(
-            f"{operation} error: cod={data.get('cod')} {message}",
+            f"{operation} error: cod={cod} {message}",
             status_code=200,
             body=text,
         )

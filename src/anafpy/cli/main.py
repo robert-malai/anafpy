@@ -19,15 +19,18 @@ import httpx
 
 from .. import __version__
 from ..auth import (
+    CallbackListener,
     FileTokenStore,
     build_authorize_url,
-    capture_authorization_code,
     exchange_code,
     parse_redirect_url,
 )
 from ..exceptions import AnafConfigError, AnafError
 
 DEFAULT_STORE = Path(os.environ.get("ANAFPY_TOKEN_STORE", "~/.anafpy/tokens.json"))
+
+#: How long the callback listener waits for the redirect before offering paste mode.
+_CALLBACK_TIMEOUT = 180.0
 
 _PASTE_HINT = (
     "After authorizing, your browser will show a connection error — that is\n"
@@ -65,19 +68,35 @@ async def _do_login(
     ssl_context: ssl.SSLContext | None = None,
 ) -> int:
     url = build_authorize_url(client_id, redirect_uri)
+
+    # Bind the listener BEFORE the browser opens: with a cached certificate/session
+    # the redirect can arrive within a second, and a not-yet-listening port would
+    # drop the code (ANAF's codes expire in ~60s).
+    listener: CallbackListener | None = None
+    if not paste:
+        try:
+            listener = CallbackListener(redirect_uri, ssl_context=ssl_context)
+        except AnafConfigError as exc:
+            print(f"Callback listener unavailable: {exc}", file=sys.stderr)
+
     print("Opening your browser for ANAF authorization (select your certificate)...")
     print(f"  If it doesn't open, visit:\n  {url}\n")
     webbrowser.open(url)
 
-    if paste:
+    if listener is None:
         code = _paste_code()
     else:
-        print(f"Waiting for the callback on {redirect_uri} ...")
-        try:
-            code = capture_authorization_code(redirect_uri, ssl_context=ssl_context)
-        except AnafConfigError as exc:
-            print(f"Callback listener unavailable: {exc}", file=sys.stderr)
+        with listener:
+            print(f"Waiting for the callback on {redirect_uri} ...")
+            captured = listener.wait(_CALLBACK_TIMEOUT)
+        if captured is None:
+            print(
+                f"No callback received within {_CALLBACK_TIMEOUT:.0f}s.",
+                file=sys.stderr,
+            )
             code = _paste_code()
+        else:
+            code = captured
 
     async with httpx.AsyncClient(timeout=30.0) as http:
         tokens = await exchange_code(
@@ -137,7 +156,12 @@ def _cmd_status(args: argparse.Namespace) -> int:
     ref = (
         (tokens.refresh_expires_at - now) / 86400 if tokens.refresh_expires_at else None
     )
-    acc_str = "expired" if tokens.access_expired() else f"~{acc:.0f} days left"
+    if tokens.access_expired():
+        acc_str = "expired"
+    elif acc is not None:
+        acc_str = f"~{acc:.0f} days left"
+    else:
+        acc_str = "unknown expiry"  # store predates the expiry fields
     print("authenticated")
     print(f"  access token : {acc_str}")
     if ref is not None:
