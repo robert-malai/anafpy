@@ -89,7 +89,7 @@ src/anafpy/
 schemas/                 # vendored XSDs (git-tracked, NOT shipped in the wheel)
 scripts/                 # codegen scripts
 docs/anaf-reference/     # compiled ANAF API reference (oauth/efactura/etransport/public)
-tests/                   # respx-mocked unit tests (+ opt-in live smoke: test_public_live.py, test_oauth_live.py)
+tests/                   # respx-mocked unit tests (+ opt-in live: test_public_live.py, test_oauth_live.py read-only; test_etransport_roundtrip_live.py files to TEST)
 ```
 
 ## Architecture & conventions
@@ -195,7 +195,11 @@ Response schemas come from ANAF's official per-endpoint **swagger presentations*
 and folded into `docs/anaf-reference/*/api.md`) — the API PDFs cover URLs/params only.
 First live TEST confirmations 2026-07-02: the e-Factura paginated list's no-results
 shape (200 + `eroare` note) and the e-Transport `lista` no-results shape
-(`Errors[].errorMessage`, `ExecutionStatus: 1`) both matched the docs exactly;
+(`Errors[].errorMessage`, `ExecutionStatus: 1`) both matched the docs exactly. A full
+e-Transport TEST **roundtrip** 2026-07-02 (upload → `stareMesaj` `in prelucrare`→`ok`
+→ `lista` → `info`) confirmed the upload/status/lista-with-results shapes and surfaced
+one doc gap: `info`'s no-results case rides a **top-level singular `error` string**
+(not `Errors[]`) — now handled by `_InfoEnvelope` / `_parse_info`. e-Factura
 upload/status/download shapes remain live-unconfirmed. The
 `live`-marked `tests/test_oauth_live.py` re-confirms the authenticated TEST shapes on
 demand (needs `.env` credentials + `anafpy auth login`). The **public services** have no swagger —
@@ -214,8 +218,11 @@ results.
   [tests/test_oauth_live.py](tests/test_oauth_live.py) — authenticated TEST, read-only,
   credentials from the gitignored repo-root `.env` loaded by `tests/conftest.py`) exist
   only to re-confirm wire shapes on demand (`ANAFPY_LIVE=1`) and are skipped by
-  default — don't move behavioural assertions there, and never add filing/upload
-  calls to them.
+  default — don't move behavioural assertions there, and keep them read-only. The **one
+  deliberate exception** is [tests/test_etransport_roundtrip_live.py](tests/test_etransport_roundtrip_live.py),
+  which **files** a domestic declaration end-to-end (upload → `stareMesaj` → `lista`) —
+  **TEST only, never prod** — to keep the filing wire shapes honest; don't add uploads
+  to any other live file.
 - **Keep the docs in sync with the change.** When a change alters the public surface,
   status, layout, or conventions, update the affected docs in the same change:
   [README.md](README.md) (what works / usage / install), this `CLAUDE.md` (layout,

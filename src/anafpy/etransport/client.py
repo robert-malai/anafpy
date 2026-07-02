@@ -50,6 +50,7 @@ from .models import (
     MessageStatus,
     Notification,
     UploadResult,
+    _InfoEnvelope,
     _JsonEnvelope,
     _ListaEnvelope,
     _StatusEnvelope,
@@ -262,20 +263,23 @@ class ETransportClient:
     @staticmethod
     def _parse_info(body: bytes) -> InfoList:
         """Parse an ``info`` response: a bare JSON array of records (per the info
-        swagger); a JSON object with ``Errors[]`` is surfaced via ``InfoList.error``."""
+        swagger); a JSON object carrying a top-level ``error`` string **or** an
+        ``Errors[]`` array is surfaced via ``InfoList.error`` (live-confirmed
+        2026-07-02: the no-results case is ``{"error": "Nu exista informatii pentru
+        aceasta solicitare"}``, not ``Errors[]``)."""
         try:
             data = json.loads(body)
             if isinstance(data, list):
                 items = [InfoItem.model_validate(item) for item in data]
                 return InfoList(items=items, raw=body)
-            envelope = _JsonEnvelope.model_validate(data)
+            envelope = _InfoEnvelope.model_validate(data)
         except (ValueError, ValidationError) as exc:
             raise AnafResponseError(
                 f"unrecognised info response: {as_text(body)[:200]}",
                 status_code=200,
                 body=as_text(body),
             ) from exc
-        errors = envelope.error_messages
+        errors = envelope.all_error_messages
         if not errors:
             raise AnafResponseError(
                 f"unrecognised info response: {as_text(body)[:200]}",

@@ -48,8 +48,11 @@ is the **transport/API surface**.
 > returned HTTP 200 `{"Errors":[{"errorMessage":"Nu exista mesaje in ultimele 60
 > zile"}],"dateResponse":"…","ExecutionStatus":1,"trace_id":"…"}` — the documented
 > no-results shape (note `ExecutionStatus: 1`, same as genuine errors; the message
-> text is the discriminator). Upload/status/info and lists with results remain
-> live-unconfirmed.
+> text is the discriminator).
+> **Full roundtrip confirmed 2026-07-02** (TEST, tip_op 30 domestic): `upload` →
+> `stareMesaj` (`in prelucrare` → `ok`) → `lista` (record present) → `info`. Upload,
+> status, lista-with-results, and info are now live-confirmed (shapes below). The one
+> surprise was `info`'s no-results shape (see §4).
 
 ## Access modes & base URLs
 
@@ -91,6 +94,12 @@ Body = the transport declaration **XML**; `Content-Type: application/xml`.
 **`index_incarcare`** (the upload index for `stareMesaj`), the **`UIT`** code,
 `trace_id`, and `ref_declarant`; on rejection an `Errors[]` list with `errorMessage`
 entries (e.g. *"Valoarea acceptata pentru parametrul standard este ETRANSP"*).
+Live-confirmed 2026-07-02 (TEST): a successful upload returned
+`{"dateResponse":"…","ExecutionStatus":0,"index_incarcare":<num>,"UIT":"…",` `
+"trace_id":"…","ref_declarant":"…","atentie":"Verificati starea XML-ului transmis.
+Codul UIT este valabil din momentul in care apare ca valid dupa apelul de stare"}` —
+i.e. the UIT is issued immediately but only becomes valid once `stareMesaj` reports
+`ok` (note the `atentie` advisory; `index_incarcare` came back as a JSON **number**).
 
 > `anafpy`: use the **v2 form with `versiune=2`** (decided). `standard` is `ETRANSP`
 > (not the 2022 OAuth PDF's stale `ETRANSPORT`).
@@ -107,7 +116,10 @@ GET https://api.anaf.ro/prod/ETRANSPORT/ws/v1/stareMesaj/{id_incarcare}
 
 **Response (200, JSON):** `stare` (`ok` | `nok`), `dateResponse`, `ExecutionStatus`,
 `trace_id`; on `nok` an `Errors[]` list with `errorMessage` entries (e.g. *"UIT-ul nu
-poate fi identificat."*).
+poate fi identificat."*). Live-confirmed 2026-07-02 (TEST): immediately after a valid
+upload `stare` was **`in prelucrare`** (the processing state — poll until terminal),
+then `ok` within seconds: `{"stare":"ok","dateResponse":"…","ExecutionStatus":0,
+"trace_id":"…"}`.
 
 > Provenance: PDF pp. 2–3; response schema from the stare swagger
 > ([stare.html](../_sources/etransport-swagger/stare.html), 02.07.2024).
@@ -166,6 +178,15 @@ Returns per record: `uit`, `cod_decl`, `den_decl`, `ref_decl`, `data_transp`,
 `loc_start`/`loc_final` (`tip_loc`: `PTF` border point / `BV` customs office / `ADR`
 national address; with `judet`, `localitate`, `strada`, `numar`, …), and `documente[]`.
 The swagger example additionally shows a numeric `id` per record (not in the PDF).
+
+**No-results shape (live-confirmed 2026-07-02, TEST):** unlike every other endpoint,
+`info` does **not** use `Errors[]` — a query with no matching records answers HTTP 200
+with a **top-level singular `error` string**:
+`{"trace_id":"…","dateResponse":"…","error":"Nu exista informatii pentru aceasta
+solicitare"}`. (Observed even for a UIT that was just accepted and is listed by
+`lista`: `info` is scoped to the *transport organizer's* right to look up others' UITs,
+so a self-declared domestic notification returns no `info` record.) `anafpy` surfaces
+this via `InfoList.error`, tolerating both `error` and `Errors[]`.
 
 > Provenance: PDF pp. 3–4; example response in the info swagger
 > ([info_transportatori.html](../_sources/etransport-swagger/info_transportatori.html),

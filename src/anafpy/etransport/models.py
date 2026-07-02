@@ -216,6 +216,26 @@ class _ListaEnvelope(_JsonEnvelope):
     mesaje: list[Notification] = []
 
 
+class _InfoEnvelope(_JsonEnvelope):
+    """``info`` response object shape.
+
+    Its no-results/error case rides a **top-level singular ``error`` string**
+    (``{"error": "Nu exista informatii pentru aceasta solicitare", ...}`` —
+    live-confirmed against TEST 2026-07-02), *not* the ``Errors[]`` array the other
+    endpoints use; tolerate both here so ``info`` never masquerades a benign
+    no-results as an unrecognised body.
+    """
+
+    error: _StrNone = None
+
+    @property
+    def all_error_messages(self) -> list[str]:
+        messages = list(self.error_messages)
+        if self.error:
+            messages.append(self.error)
+        return messages
+
+
 # --- flat read view: e-Transport XSD -> easy-to-read projection ---------------------
 #
 # Produced *from* a parsed declaration only (read direction); anafpy never composes the

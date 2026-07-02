@@ -460,6 +460,30 @@ async def test_info_error_from_anaf() -> None:
 
 
 @respx.mock
+async def test_info_top_level_error_no_results() -> None:
+    """No-results rides a top-level singular ``error`` string, not ``Errors[]``.
+
+    Live-confirmed against TEST 2026-07-02: ``info`` answers HTTP 200 with
+    ``{"error": "Nu exista informatii pentru aceasta solicitare", ...}`` — surface it
+    as ``InfoList.error`` rather than raising an unrecognised-body error.
+    """
+    respx.get(f"{BASE}/info").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "trace_id": "abc",
+                "dateResponse": "202607021429",
+                "error": "Nu exista informatii pentru aceasta solicitare",
+            },
+        )
+    )
+    async with _client() as client:
+        result = await client.info(cui_op="0")
+    assert result.items == []
+    assert result.error == "Nu exista informatii pentru aceasta solicitare"
+
+
+@respx.mock
 async def test_info_unrecognised_body_raises() -> None:
     respx.get(f"{BASE}/info").mock(
         return_value=httpx.Response(200, json={"unexpected": True})
