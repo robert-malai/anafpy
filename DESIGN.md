@@ -93,8 +93,11 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
   (`invalid_client`), i.e. no mutual-TLS there. Consequence: an unattended runtime
   (incl. the Docker container) can refresh for the full ~365-day refresh window
   without the cert; re-bootstrap is needed only ~once a year (or on revocation).
-- **Callback URL does not need a public server**; `https://localhost:PORT/callback`
-  is registered and works (only the user's browser hits it).
+- **Callback URL does not need a public server** — only the user's browser hits it.
+  Register `http://localhost:PORT/callback`: the `auth login` listener speaks plain
+  HTTP, so an `https://localhost` registration would need a TLS terminator in front.
+  (An `https://localhost:PORT/callback` was live-verified as registrable 2026-06-28;
+  the `http://` scheme is assumed to register the same way.)
 
 Design (layered):
 

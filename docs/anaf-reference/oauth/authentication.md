@@ -57,7 +57,7 @@ In the *Profil Oauth* form you provide:
 | Field | Notes |
 |---|---|
 | **Denumire aplicație** | Application name. |
-| **Callback URL 1** | The redirect URI. **Must match exactly** at token time. Multiple callback URLs can be added (`+`). May be `https://localhost:PORT/callback` — it does **not** need a public server (only your browser hits it). *(The localhost fact is this project's live verification, not the PDF — the PDF's example uses Postman's `oauth.pstmn.io` callback.)* |
+| **Callback URL 1** | The redirect URI. **Must match exactly** at token time. Multiple callback URLs can be added (`+`). May be a localhost URL — it does **not** need a public server (only your browser hits it). anafpy expects `http://localhost:PORT/callback` (its `auth login` listener speaks plain HTTP). *(The localhost fact is this project's live verification — done with the `https://` form; `http://` acceptance is assumed, not yet live-verified. The PDF's example uses Postman's `oauth.pstmn.io` callback.)* |
 | **Serviciu** | One or more of: **E-Factura**, **E-Transport**. |
 
 Pressing **Generare Client ID** issues a **Client ID** and **Client Secret**. The

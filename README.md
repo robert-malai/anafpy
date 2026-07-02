@@ -71,9 +71,13 @@ one-time, interactive bootstrap runs on your machine (the cert lives there):
 
 ```bash
 anafpy auth login --client-id <ID> --client-secret <SECRET> \
-                  --redirect-uri https://localhost:9002/callback
+                  --redirect-uri http://localhost:9002/callback
 anafpy auth status        # show stored token validity
 ```
+
+Register the callback URL with the **`http://` scheme** (the local listener that
+captures the code speaks plain HTTP; only your own browser ever hits it). An
+`https://localhost` callback needs a TLS terminator in front of the listener.
 
 This opens your browser for the certificate step, captures the authorization code on a
 local callback listener, exchanges it for tokens, and stores them under

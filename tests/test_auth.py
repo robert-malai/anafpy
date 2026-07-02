@@ -66,7 +66,7 @@ def test_tokenset_access_expired_with_leeway() -> None:
 
 
 def test_authorize_url_contains_required_params() -> None:
-    url = build_authorize_url("CID", "https://localhost:9002/callback")
+    url = build_authorize_url("CID", "http://localhost:9002/callback")
     assert url.startswith("https://logincert.anaf.ro/anaf-oauth2/v1/authorize?")
     assert "response_type=code" in url
     assert "token_content_type=jwt" in url
@@ -87,7 +87,7 @@ async def test_exchange_code_uses_basic_auth_and_jwt_param() -> None:
             client_id="CID",
             client_secret="SECRET",
             code="abc",
-            redirect_uri="https://localhost:9002/callback",
+            redirect_uri="http://localhost:9002/callback",
         )
     assert tokens.token_type == "Bearer"
     req = route.calls.last.request

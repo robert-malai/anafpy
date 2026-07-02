@@ -4,8 +4,9 @@ ANAF redirects the browser (after the certificate step) to the registered callba
 with ``?code=...``. This spins up a tiny local HTTP server on that URL's host/port,
 captures the code, and shuts down.
 
-Note: if you registered an ``https://localhost`` callback, terminate TLS in front of
-this listener (or register an ``http://localhost`` callback) — this server speaks HTTP.
+This server speaks plain HTTP, so register the callback URL with the ``http://``
+scheme (only the user's own browser ever hits it). If you registered an
+``https://localhost`` callback instead, terminate TLS in front of this listener.
 """
 
 from __future__ import annotations
