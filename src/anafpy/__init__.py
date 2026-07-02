@@ -1,4 +1,5 @@
-"""anafpy — typed Python clients for ANAF e-Factura and e-Transport."""
+"""anafpy — typed Python clients for ANAF e-Factura, e-Transport, and the public
+no-auth services (registries, financial statements)."""
 
 from __future__ import annotations
 

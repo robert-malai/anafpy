@@ -33,10 +33,9 @@ from typing import Any, Self
 import httpx
 from pydantic import ValidationError
 
-from .._transport.base import PUBLIC_HOST, retry_after_seconds
+from .._transport.base import PUBLIC_HOST, as_text, raise_for_status
 from ..exceptions import (
     AnafConfigError,
-    AnafRateLimitError,
     AnafResponseError,
     AnafTransportError,
 )
@@ -60,10 +59,6 @@ _EFACTURA_REGISTER_PATH = "api/registruroefactura/v1/interogare"
 _BILANT_PATH = "bilant"
 _AGRIC_PATH = "RegAgric/api/v2/ws/agric"
 _CULT_PATH = "RegCult/api/v2/ws/cult"
-
-
-def _as_text(body: bytes) -> str:
-    return body.decode("utf-8", errors="replace")
 
 
 def _normalize_cui(value: int | str) -> int:
@@ -120,7 +115,7 @@ def _parse_lookup[LookupT: RegistryLookup[Any]](
     neither shape raises :class:`AnafResponseError` — explicit, rather than
     inventing an outcome.
     """
-    text = _as_text(body)
+    text = as_text(body)
     try:
         data = json.loads(body)
     except ValueError as exc:
@@ -223,24 +218,8 @@ class PublicClient:
         except httpx.HTTPError as exc:
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
         if response.status_code not in tolerate:
-            self._raise_for_status(response)
+            raise_for_status(response)
         return response
-
-    @staticmethod
-    def _raise_for_status(response: httpx.Response) -> None:
-        if response.is_success:
-            return
-        body = _as_text(response.content)
-        if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
-            raise AnafRateLimitError(
-                retry_after=retry_after_seconds(response.headers.get("Retry-After")),
-                body=body,
-            )
-        raise AnafResponseError(
-            f"ANAF returned HTTP {response.status_code}",
-            status_code=response.status_code,
-            body=body,
-        )
 
     # -- operations ------------------------------------------------------------------
 
@@ -288,7 +267,7 @@ class PublicClient:
             data = _json_or_none(response.content)
             if not (isinstance(data, dict) and ("found" in data or "notFound" in data)):
                 # A genuine 404 (bad path, gateway), not the register's "no data".
-                self._raise_for_status(response)
+                raise_for_status(response)
         return _parse_lookup(
             response.content, EfacturaRegisterLookup, "e-Factura register lookup"
         )
@@ -343,9 +322,9 @@ class PublicClient:
             statement = FinancialStatement.model_validate(json.loads(body))
         except (ValueError, ValidationError) as exc:
             raise AnafResponseError(
-                f"unrecognised bilant response: {_as_text(body)[:200]}",
+                f"unrecognised bilant response: {as_text(body)[:200]}",
                 status_code=200,
-                body=_as_text(body),
+                body=as_text(body),
             ) from exc
         statement.raw = body
         return statement

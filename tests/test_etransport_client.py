@@ -210,6 +210,22 @@ async def test_get_status_processing_is_non_terminal() -> None:
 
 
 @respx.mock
+async def test_get_status_rejected_is_terminal() -> None:
+    # Upload-time rejection arrives as this `stare`; nothing further will happen
+    # to the declaration, so polling must stop.
+    respx.get(f"{BASE}/stareMesaj/5004").mock(
+        return_value=httpx.Response(
+            200, json={"stare": "XML cu erori nepreluat de sistem"}
+        )
+    )
+    async with _client() as client:
+        status = await client.get_status("5004")
+    assert status.state is MessageState.REJECTED
+    assert status.is_terminal
+    assert not status.is_processing
+
+
+@respx.mock
 async def test_get_status_query_error_raises_not_rejected() -> None:
     # Errors without `stare` = query failure (bad index, no rights, daily limit),
     # not a document outcome.

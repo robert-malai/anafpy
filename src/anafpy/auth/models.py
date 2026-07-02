@@ -69,7 +69,9 @@ class TokenSet(BaseModel):
             token_type=str(data.get("token_type", "Bearer")),
             obtained_at=now,
             access_expires_at=access_exp,
-            refresh_expires_at=now + _REFRESH_TTL,
+            # Same preference for the refresh token: its JWT `exp`, else the
+            # documented 365-day TTL.
+            refresh_expires_at=_jwt_exp(refresh) or now + _REFRESH_TTL,
         )
 
     def access_expired(self, *, leeway: float = 300.0) -> bool:

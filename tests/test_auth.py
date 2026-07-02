@@ -51,6 +51,14 @@ def test_tokenset_reads_jwt_exp() -> None:
     assert tokens.refresh_expires_at is not None  # 365-day fallback
 
 
+def test_tokenset_reads_refresh_jwt_exp() -> None:
+    refresh_exp = time.time() + 200 * 86400
+    tokens = TokenSet.from_token_response(
+        _token_response(time.time() + 90 * 86400, refresh=_make_jwt(refresh_exp))
+    )
+    assert tokens.refresh_expires_at == pytest.approx(refresh_exp, abs=1)
+
+
 def test_tokenset_access_expired_with_leeway() -> None:
     tokens = TokenSet.from_token_response(_token_response(time.time() + 100))
     assert tokens.access_expired(leeway=300) is True
@@ -203,3 +211,19 @@ async def test_provider_without_tokens_raises() -> None:
     )
     with pytest.raises(AnafAuthError, match="auth login"):
         await provider.access_token()
+
+
+async def test_provider_adopts_login_made_after_construction() -> None:
+    # `anafpy auth login` ran while the provider (e.g. the MCP server) was already
+    # up: tokens landing in the store afterwards must be picked up — no restart.
+    store = MemoryTokenStore(None)
+    provider = TokenProvider(client_id="CID", client_secret="SECRET", store=store)
+    with pytest.raises(AnafAuthError, match="auth login"):
+        await provider.access_token()
+
+    fresh = TokenSet.from_token_response(
+        _token_response(time.time() + 90 * 86400, refresh="r1")
+    )
+    store.save(fresh)
+    assert await provider.access_token() == fresh.access_token
+    assert provider.tokens is not None  # visible to auth_status as well

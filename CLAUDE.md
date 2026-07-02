@@ -60,7 +60,7 @@ All three gates (pytest / ruff / mypy --strict) are currently green and must sta
 ```
 src/anafpy/
   exceptions.py          # AnafError hierarchy (see "Error model")
-  _transport/base.py     # Environment, Service, service_base_url — shared host/path logic
+  _transport/base.py     # Environment, Service, service_base_url + shared error raising
   auth/                  # OAuth2 layer: models, store, oauth, provider, callback
   cli/main.py            # `anafpy auth login|status`
   efactura/

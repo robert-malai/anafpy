@@ -118,7 +118,7 @@ class MessageStatus(BaseModel):
 
     @property
     def is_terminal(self) -> bool:
-        return self.state in (MessageState.OK, MessageState.NOK)
+        return self.state is not MessageState.PROCESSING
 
 
 class RemoteValidationResult(BaseModel):

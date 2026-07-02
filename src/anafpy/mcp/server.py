@@ -13,7 +13,6 @@ resources so the model can ground BR-RO explanations and code lists.
 
 from __future__ import annotations
 
-import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -136,7 +135,7 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     _register_efactura(mcp, ctx, cfg)
     _register_etransport(mcp, ctx, cfg)
     _register_public(mcp, ctx)
-    _register_resources(mcp)
+    _register_resources(mcp, cfg)
     return mcp
 
 
@@ -540,18 +539,15 @@ def _prepare_message(*, parsed: bool) -> str:
     )
 
 
-def _docs_dir() -> Path | None:
-    override = os.environ.get("ANAFPY_DOCS_DIR")
-    if override:
-        path = Path(override).expanduser()
-        return path if path.is_dir() else None
-    candidate = Path(__file__).resolve().parents[3] / "docs" / "anaf-reference"
-    return candidate if candidate.is_dir() else None
+def _docs_dir(cfg: ServerConfig) -> Path | None:
+    default = Path(__file__).resolve().parents[3] / "docs" / "anaf-reference"
+    docs = cfg.docs_dir or default
+    return docs if docs.is_dir() else None
 
 
-def _register_resources(mcp: FastMCP) -> None:
+def _register_resources(mcp: FastMCP, cfg: ServerConfig) -> None:
     """Expose the compiled ANAF reference Markdown as read-only resources."""
-    docs = _docs_dir()
+    docs = _docs_dir(cfg)
     if docs is None:
         return
     for md in sorted(docs.rglob("*.md")):

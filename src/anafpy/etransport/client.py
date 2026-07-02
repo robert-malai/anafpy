@@ -32,14 +32,14 @@ from tenacity import (
 from .._transport.base import (
     Environment,
     Service,
+    as_text,
     is_empty_result_message,
-    retry_after_seconds,
+    raise_for_status,
     service_base_url,
 )
 from ..auth.provider import AnafAuth, TokenProvider
 from ..exceptions import (
     AnafConfigError,
-    AnafRateLimitError,
     AnafResponseError,
     AnafTransportError,
 )
@@ -62,10 +62,6 @@ _STANDARD = "ETRANSP"
 _XML_BODY_HEADERS = {"Content-Type": "application/xml"}
 
 
-def _as_text(body: bytes) -> str:
-    return body.decode("utf-8", errors="replace")
-
-
 def _load_envelope[EnvelopeT: _JsonEnvelope](
     body: bytes, model: type[EnvelopeT], operation: str
 ) -> EnvelopeT:
@@ -78,9 +74,9 @@ def _load_envelope[EnvelopeT: _JsonEnvelope](
         return model.model_validate(json.loads(body))
     except (ValueError, ValidationError) as exc:
         raise AnafResponseError(
-            f"unrecognised {operation} response: {_as_text(body)[:200]}",
+            f"unrecognised {operation} response: {as_text(body)[:200]}",
             status_code=200,
-            body=_as_text(body),
+            body=as_text(body),
         ) from exc
 
 
@@ -137,24 +133,8 @@ class ETransportClient:
             )
         except httpx.HTTPError as exc:
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
-        self._raise_for_status(response)
+        raise_for_status(response)
         return response
-
-    @staticmethod
-    def _raise_for_status(response: httpx.Response) -> None:
-        if response.is_success:
-            return
-        body = _as_text(response.content)
-        if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
-            raise AnafRateLimitError(
-                retry_after=retry_after_seconds(response.headers.get("Retry-After")),
-                body=body,
-            )
-        raise AnafResponseError(
-            f"ANAF returned HTTP {response.status_code}",
-            status_code=response.status_code,
-            body=body,
-        )
 
     # -- operations ------------------------------------------------------------------
 
@@ -185,7 +165,7 @@ class ETransportClient:
         errors = envelope.error_messages
         if envelope.index_incarcare is None and not errors:
             # Be explicit rather than silently returning an empty result.
-            errors = [f"unrecognised upload response: {_as_text(body)[:200]}"]
+            errors = [f"unrecognised upload response: {as_text(body)[:200]}"]
         return UploadResult(
             upload_id=envelope.index_incarcare,
             uit=envelope.uit,
@@ -206,16 +186,16 @@ class ETransportClient:
             # `Errors` without `stare` is a *query* failure (unknown/invalid index,
             # missing SPV rights, daily limit — per the stare swagger), not a document
             # outcome — so it raises rather than masquerading as a rejection.
-            detail = "; ".join(errors) or f"missing `stare`: {_as_text(body)[:200]}"
+            detail = "; ".join(errors) or f"missing `stare`: {as_text(body)[:200]}"
             raise AnafResponseError(
-                f"stareMesaj error: {detail}", status_code=200, body=_as_text(body)
+                f"stareMesaj error: {detail}", status_code=200, body=as_text(body)
             )
         try:
             state = MessageState.from_raw(envelope.stare)
         except ValueError as exc:
             # A state string we don't know: be explicit, in the AnafError hierarchy.
             raise AnafResponseError(
-                str(exc), status_code=200, body=_as_text(body)
+                str(exc), status_code=200, body=as_text(body)
             ) from exc
         return MessageStatus(state=state, errors=errors, raw=body)
 
@@ -256,7 +236,7 @@ class ETransportClient:
             raise AnafResponseError(
                 f"ANAF e-Transport list error: {'; '.join(errors)}",
                 status_code=200,
-                body=_as_text(body),
+                body=as_text(body),
             )
         return envelope.mesaje
 
@@ -291,16 +271,16 @@ class ETransportClient:
             envelope = _JsonEnvelope.model_validate(data)
         except (ValueError, ValidationError) as exc:
             raise AnafResponseError(
-                f"unrecognised info response: {_as_text(body)[:200]}",
+                f"unrecognised info response: {as_text(body)[:200]}",
                 status_code=200,
-                body=_as_text(body),
+                body=as_text(body),
             ) from exc
         errors = envelope.error_messages
         if not errors:
             raise AnafResponseError(
-                f"unrecognised info response: {_as_text(body)[:200]}",
+                f"unrecognised info response: {as_text(body)[:200]}",
                 status_code=200,
-                body=_as_text(body),
+                body=as_text(body),
             )
         return InfoList(items=[], error="; ".join(errors), raw=body)
 

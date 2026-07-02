@@ -134,6 +134,18 @@ async def test_upload_optional_flags_become_query_params() -> None:
     assert "executare" not in params
 
 
+@respx.mock
+async def test_upload_non_xml_body_raises_anaf_error() -> None:
+    # A 200 that is not XML at all (HTML error page, gateway response) must land in
+    # the AnafError hierarchy, not leak an ET.ParseError.
+    respx.post(f"{BASE}/upload").mock(
+        return_value=httpx.Response(200, text="<html>Service Unavailable</html> oops&")
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="unrecognised upload response"):
+            await client.upload(b"<Invoice/>", cif="123")
+
+
 # --- status ---------------------------------------------------------------------------
 
 
@@ -174,6 +186,22 @@ async def test_get_status_processing_is_non_terminal() -> None:
 
 
 @respx.mock
+async def test_get_status_rejected_is_terminal() -> None:
+    # Upload-time rejection arrives as this `stare`; nothing further will happen
+    # to the document, so polling must stop.
+    respx.get(f"{BASE}/stareMesaj").mock(
+        return_value=httpx.Response(
+            200, text='<header stare="XML cu erori nepreluat de sistem"/>'
+        )
+    )
+    async with _client() as client:
+        status = await client.get_status("3828")
+    assert status.state is MessageState.REJECTED
+    assert status.is_terminal
+    assert not status.is_processing
+
+
+@respx.mock
 async def test_get_status_unknown_state_raises_anaf_error() -> None:
     respx.get(f"{BASE}/stareMesaj").mock(
         return_value=httpx.Response(200, text='<header stare="suspendat"/>')
@@ -201,6 +229,16 @@ async def test_get_status_query_error_raises_not_rejected() -> None:
             await client.get_status("15000")
     assert ei.value.status_code == 200
     assert "Nu exista factura" in str(ei.value)
+
+
+@respx.mock
+async def test_get_status_non_xml_body_raises_anaf_error() -> None:
+    respx.get(f"{BASE}/stareMesaj").mock(
+        return_value=httpx.Response(200, text="not xml at all")
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="unrecognised stareMesaj"):
+            await client.get_status("3828")
 
 
 # --- download -------------------------------------------------------------------------
@@ -336,6 +374,28 @@ async def test_list_messages_real_error_raises() -> None:
             [m async for m in client.list_messages(days=5, cif="bad")]
     assert ei.value.status_code == 200
     assert "CIF invalid" in str(ei.value)
+
+
+@respx.mock
+async def test_list_messages_non_json_body_raises_anaf_error() -> None:
+    # Garbage 200 bodies (HTML, or JSON that is not an object) must land in the
+    # AnafError hierarchy, not leak a JSONDecodeError / AttributeError.
+    respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        return_value=httpx.Response(200, text="<html>502</html>")
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="unrecognised list response"):
+            [m async for m in client.list_messages(days=5, cif="123")]
+
+
+@respx.mock
+async def test_list_messages_json_array_body_raises_anaf_error() -> None:
+    respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        return_value=httpx.Response(200, json=[1, 2, 3])
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="unrecognised list response"):
+            [m async for m in client.list_messages(days=5, cif="123")]
 
 
 def test_list_messages_window_args_are_validated() -> None:

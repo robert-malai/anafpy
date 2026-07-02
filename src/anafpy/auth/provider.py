@@ -44,10 +44,18 @@ class TokenProvider:
             self._http = httpx.AsyncClient(timeout=30.0)
         return self._http
 
+    def _current(self) -> TokenSet | None:
+        # A login may happen after construction (e.g. `anafpy auth login` while the
+        # MCP server is running) — adopt it from the store instead of demanding a
+        # restart.
+        if self._tokens is None:
+            self._tokens = self._store.load()
+        return self._tokens
+
     async def access_token(self) -> str:
         """Return a currently-valid access token, refreshing if expired."""
         async with self._lock:
-            tokens = self._tokens
+            tokens = self._current()
             if tokens is None:
                 raise AnafAuthError("not authenticated — run `anafpy auth login`")
             if tokens.access_expired():
@@ -62,11 +70,12 @@ class TokenProvider:
         token is returned without burning another refresh rotation.
         """
         async with self._lock:
-            if self._tokens is None:
+            tokens = self._current()
+            if tokens is None:
                 raise AnafAuthError("not authenticated — run `anafpy auth login`")
-            if stale is not None and self._tokens.access_token != stale:
-                return self._tokens.access_token
-            tokens = await self._refresh_locked(self._tokens)
+            if stale is not None and tokens.access_token != stale:
+                return tokens.access_token
+            tokens = await self._refresh_locked(tokens)
             return tokens.access_token
 
     async def _refresh_locked(self, tokens: TokenSet) -> TokenSet:
@@ -93,8 +102,12 @@ class TokenProvider:
 
     @property
     def tokens(self) -> TokenSet | None:
-        """The current token set, if authenticated (read-only snapshot)."""
-        return self._tokens
+        """The current token set, if authenticated (read-only snapshot).
+
+        Falls back to the store when unauthenticated, so a login performed after
+        construction is visible (e.g. to ``auth_status``) without a refresh cycle.
+        """
+        return self._current()
 
     async def aclose(self) -> None:
         if self._owns_http and self._http is not None:

@@ -31,14 +31,14 @@ from .._transport.base import (
     OAUTH_HOST,
     Environment,
     Service,
+    as_text,
     is_empty_result_message,
-    retry_after_seconds,
+    raise_for_status,
     service_base_url,
 )
 from ..auth.provider import AnafAuth, TokenProvider
 from ..exceptions import (
     AnafConfigError,
-    AnafRateLimitError,
     AnafResponseError,
     AnafTransportError,
 )
@@ -113,8 +113,21 @@ def _header_errors(root: ET.Element) -> list[str]:
     return errors
 
 
-def _as_text(body: bytes) -> str:
-    return body.decode("utf-8", errors="replace")
+def _parse_xml_header(body: bytes, operation: str) -> ET.Element:
+    """Parse an XML ``<header>`` response body.
+
+    A 200 body that is not XML at all (an HTML error page, a gateway response)
+    raises :class:`AnafResponseError` — in the AnafError hierarchy, like every
+    other unrecognised-shape path.
+    """
+    try:
+        return ET.fromstring(body)
+    except ET.ParseError as exc:
+        raise AnafResponseError(
+            f"unrecognised {operation} response: {as_text(body)[:200]}",
+            status_code=200,
+            body=as_text(body),
+        ) from exc
 
 
 class EFacturaClient:
@@ -170,24 +183,8 @@ class EFacturaClient:
             )
         except httpx.HTTPError as exc:  # connect/read/timeout/etc.
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
-        self._raise_for_status(response)
+        raise_for_status(response)
         return response
-
-    @staticmethod
-    def _raise_for_status(response: httpx.Response) -> None:
-        if response.is_success:
-            return
-        body = _as_text(response.content)
-        if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
-            raise AnafRateLimitError(
-                retry_after=retry_after_seconds(response.headers.get("Retry-After")),
-                body=body,
-            )
-        raise AnafResponseError(
-            f"ANAF returned HTTP {response.status_code}",
-            status_code=response.status_code,
-            body=body,
-        )
 
     # -- operations ------------------------------------------------------------------
 
@@ -224,12 +221,12 @@ class EFacturaClient:
 
     @staticmethod
     def _parse_upload(body: bytes) -> UploadResult:
-        root = ET.fromstring(body)
+        root = _parse_xml_header(body, "upload")
         upload_id = root.get("index_incarcare") or root.get("index_descarcare")
         errors = _header_errors(root)
         if upload_id is None and not errors:
             # Be explicit rather than silently returning an empty result.
-            errors = [f"unrecognised upload response: {_as_text(body)[:200]}"]
+            errors = [f"unrecognised upload response: {as_text(body)[:200]}"]
         return UploadResult(upload_id=upload_id, errors=errors, raw=body)
 
     async def get_status(self, upload_id: str) -> MessageStatus:
@@ -241,7 +238,7 @@ class EFacturaClient:
 
     @staticmethod
     def _parse_status(body: bytes) -> MessageStatus:
-        root = ET.fromstring(body)
+        root = _parse_xml_header(body, "stareMesaj")
         errors = _header_errors(root)
         raw_state = root.get("stare")
         if raw_state is None:
@@ -249,18 +246,18 @@ class EFacturaClient:
             # missing SPV rights, daily limit — per the stareMesaj swagger), not a
             # document outcome; upload-time rejection arrives as
             # `stare="XML cu erori nepreluat de sistem"`.
-            detail = "; ".join(errors) or f"missing `stare`: {_as_text(body)[:200]}"
+            detail = "; ".join(errors) or f"missing `stare`: {as_text(body)[:200]}"
             raise AnafResponseError(
                 f"stareMesaj error: {detail}",
                 status_code=200,
-                body=_as_text(body),
+                body=as_text(body),
             )
         try:
             state = MessageState.from_raw(raw_state)
         except ValueError as exc:
             # A state string we don't know: be explicit, in the AnafError hierarchy.
             raise AnafResponseError(
-                str(exc), status_code=200, body=_as_text(body)
+                str(exc), status_code=200, body=as_text(body)
             ) from exc
         download_id = root.get("id_descarcare")
         return MessageStatus(
@@ -280,9 +277,9 @@ class EFacturaClient:
         except zipfile.BadZipFile as exc:
             raise AnafResponseError(
                 f"descarcare returned a non-ZIP body for id {message_id!r}: "
-                f"{_as_text(response.content)[:200]}",
+                f"{as_text(response.content)[:200]}",
                 status_code=response.status_code,
-                body=_as_text(response.content),
+                body=as_text(response.content),
             ) from exc
 
     def list_messages(
@@ -344,7 +341,16 @@ class EFacturaClient:
         Raises :class:`AnafResponseError` when ANAF's ``eroare`` is a real error; a
         benign "no messages" note returns an empty page so iteration stops cleanly.
         """
-        data = json.loads(body)
+        try:
+            data = json.loads(body)
+            if not isinstance(data, dict):
+                raise ValueError("not a JSON object")
+        except ValueError as exc:
+            raise AnafResponseError(
+                f"unrecognised list response: {as_text(body)[:200]}",
+                status_code=200,
+                body=as_text(body),
+            ) from exc
         error = data.get("eroare")
         if error is not None:
             if is_empty_result_message(str(error)):
@@ -352,7 +358,7 @@ class EFacturaClient:
             raise AnafResponseError(
                 f"ANAF e-Factura list error: {error}",
                 status_code=200,
-                body=_as_text(body),
+                body=as_text(body),
             )
         messages = [
             MessageListItem.model_validate(m) for m in (data.get("mesaje") or [])
@@ -394,9 +400,9 @@ class EFacturaClient:
         except (ValueError, TypeError, KeyError) as exc:
             # Be explicit rather than inventing an outcome for an unknown shape.
             raise AnafResponseError(
-                f"unrecognised validare response: {_as_text(body)[:200]}",
+                f"unrecognised validare response: {as_text(body)[:200]}",
                 status_code=200,
-                body=_as_text(body),
+                body=as_text(body),
             ) from exc
         messages = [
             str(m.get("message", m)) if isinstance(m, dict) else str(m)
@@ -436,7 +442,7 @@ class EFacturaClient:
             response = await self._http.post(url, files=files)
         except httpx.HTTPError as exc:
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
-        self._raise_for_status(response)
+        raise_for_status(response)
         return self._parse_signature_validation(response.content)
 
     @staticmethod
@@ -446,9 +452,9 @@ class EFacturaClient:
             message = str(data["msg"])
         except (ValueError, TypeError, KeyError) as exc:
             raise AnafResponseError(
-                f"unrecognised signature validation response: {_as_text(body)[:200]}",
+                f"unrecognised signature validation response: {as_text(body)[:200]}",
                 status_code=200,
-                body=_as_text(body),
+                body=as_text(body),
             ) from exc
         # Valid and invalid are both HTTP 200 `{msg}` payloads, distinguished only by
         # wording (per the validaresemnatura swagger): "… NU au putut fi validate …"
@@ -462,7 +468,7 @@ class EFacturaClient:
             raise AnafResponseError(
                 f"unrecognised signature validation message: {message[:200]}",
                 status_code=200,
-                body=_as_text(body),
+                body=as_text(body),
             )
         return SignatureValidationResult(valid=valid, message=message, raw=body)
 

@@ -35,6 +35,9 @@ class ServerConfig(BaseSettings):
         store_path: token-store JSON file (``ANAFPY_TOKEN_STORE``).
         environment: ``test`` or ``prod`` (``ANAFPY_ENV``).
         default_cif: fiscal code used when a tool call omits ``cif`` (``ANAFPY_CIF``).
+        docs_dir: directory of the compiled ANAF reference exposed as MCP resources
+            (``ANAFPY_DOCS_DIR``); defaults to the repo's ``docs/anaf-reference/``
+            when present.
         signing_key: per-process secret backing the confirmation tokens issued by the
             two-step ``prepare`` → ``submit`` flow. Defaults to a fresh random key, so
             tokens are only valid within the lifetime of one server process.
@@ -51,19 +54,20 @@ class ServerConfig(BaseSettings):
         default=Environment.PROD, validation_alias="ANAFPY_ENV"
     )
     default_cif: str | None = Field(default=None, validation_alias="ANAFPY_CIF")
+    docs_dir: Path | None = Field(default=None, validation_alias="ANAFPY_DOCS_DIR")
     # Not read from the environment: a fresh per-process secret each run.
     signing_key: bytes = Field(
         default_factory=lambda: secrets.token_bytes(32), exclude=True
     )
 
-    @field_validator("store_path")
+    @field_validator("store_path", "docs_dir")
     @classmethod
-    def _expand_store_path(cls, value: Path) -> Path:
-        return value.expanduser()
+    def _expand_path(cls, value: Path | None) -> Path | None:
+        return value.expanduser() if value is not None else None
 
-    @field_validator("default_cif")
+    @field_validator("default_cif", "docs_dir", mode="before")
     @classmethod
-    def _blank_cif_is_none(cls, value: str | None) -> str | None:
+    def _blank_is_none(cls, value: object) -> object:
         return value or None
 
     @classmethod

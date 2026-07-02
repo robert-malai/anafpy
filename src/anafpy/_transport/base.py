@@ -1,4 +1,4 @@
-"""Shared transport concerns: environment + per-service base URLs.
+"""Shared transport concerns: environment, per-service base URLs, error raising.
 
 Both OAuth services are reached on the **same host** ``api.anaf.ro``; they differ
 only by **path prefix** (``/FCTEL/rest`` vs ``/ETRANSPORT/ws/v1``). See
@@ -8,6 +8,11 @@ The unauthenticated public services (registries, financial statements) live on a
 different host, ``webservicesp.anaf.ro``, with **no test/prod split** — so
 :data:`PUBLIC_HOST` sits outside the :func:`service_base_url` scheme. See
 ``docs/anaf-reference/public/api.md``.
+
+:func:`raise_for_status` and :func:`as_text` implement the error half of the hybrid
+model shared by all clients: non-success HTTP raises (429 as
+:class:`~anafpy.exceptions.AnafRateLimitError` with ``retry_after``); business
+outcomes are the clients' job to return as values.
 """
 
 from __future__ import annotations
@@ -17,12 +22,18 @@ import unicodedata
 from email.utils import parsedate_to_datetime
 from enum import StrEnum
 
+import httpx
+
+from ..exceptions import AnafRateLimitError, AnafResponseError
+
 __all__ = [
     "OAUTH_HOST",
     "PUBLIC_HOST",
     "Environment",
     "Service",
+    "as_text",
     "is_empty_result_message",
+    "raise_for_status",
     "retry_after_seconds",
     "service_base_url",
 ]
@@ -72,6 +83,34 @@ def retry_after_seconds(value: str | None) -> float | None:
     except ValueError:
         return None
     return max(delay, 0.0)
+
+
+def as_text(body: bytes) -> str:
+    """Decode a response body for diagnostics (lossy — replacement characters)."""
+    return body.decode("utf-8", errors="replace")
+
+
+def raise_for_status(response: httpx.Response) -> None:
+    """Raise the anafpy error for a non-success response; a no-op on success.
+
+    HTTP 429 raises :class:`~anafpy.exceptions.AnafRateLimitError` carrying
+    ``retry_after``; anything else non-success raises
+    :class:`~anafpy.exceptions.AnafResponseError`. No auto-backoff — per the
+    design, the caller decides how to retry.
+    """
+    if response.is_success:
+        return
+    body = as_text(response.content)
+    if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
+        raise AnafRateLimitError(
+            retry_after=retry_after_seconds(response.headers.get("Retry-After")),
+            body=body,
+        )
+    raise AnafResponseError(
+        f"ANAF returned HTTP {response.status_code}",
+        status_code=response.status_code,
+        body=body,
+    )
 
 
 #: Substrings (accent-stripped, casefolded) that mark an ANAF list ``eroare`` as a

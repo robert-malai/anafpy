@@ -97,7 +97,8 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="anafpy", description="ANAF e-Factura / e-Transport client"
+        prog="anafpy",
+        description="ANAF e-Factura / e-Transport / public-services client",
     )
     parser.add_argument("--version", action="version", version=f"anafpy {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
