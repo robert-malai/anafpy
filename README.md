@@ -1,8 +1,9 @@
 # anafpy
 
 Typed Python clients for Romania's **ANAF** tax-authority web services —
-**e-Factura** (electronic invoicing) and **e-Transport** (goods transport) — plus a local
-MCP server that exposes them as [Claude Cowork](https://claude.com) skills.
+**e-Factura** (electronic invoicing), **e-Transport** (goods transport), and the
+**public no-auth registries** (VAT/taxpayer lookups, financial statements) — plus a
+local MCP server that exposes them as [Claude Cowork](https://claude.com) skills.
 
 anafpy is a **thin transport client**, not invoicing software: you bring invoice XML that
 your own invoicing system produced, and anafpy validates it, files it with ANAF, tracks
@@ -35,6 +36,12 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   tiers: raw signed bytes, the full UBL model, and an easy-to-read `FlatInvoice` **view**.
 - **`ETransportClient`** (async) — `upload`, `get_status`, `info`, `upload_and_wait`, and
   `list_notifications` (same async-iterator shape).
+- **`PublicClient`** (async) — ANAF's **unauthenticated** public services on
+  `webservicesp.anaf.ro`: `lookup_taxpayers` (VAT registration, VAT-on-collection,
+  inactive, split-VAT, and RO e-Factura register membership in one call),
+  `lookup_efactura_register`, `lookup_farmers`, `lookup_cult_entities`, and
+  `get_financial_statement` (public bilanț indicators). No credentials, no test/prod
+  split; requests are paced client-side at ANAF's stated 1 req/s rule.
 - **Flat read views** — `read_flat_invoice` / `read_flat_transport` project UBL /
   e-Transport documents into small, easy-to-read shapes (lossy, with a `complete` flag);
   anafpy reads documents into these, it never composes documents from them.
@@ -100,6 +107,18 @@ Discrete methods make a single call (no transport retry). HTTP/auth problems rai
 back as typed values, not exceptions. On HTTP 429 the client raises `AnafRateLimitError`
 exposing `retry_after` rather than backing off itself.
 
+The public registries need no auth at all:
+
+```python
+from anafpy.public import PublicClient
+
+async with PublicClient() as public:
+    lookup = await public.lookup_taxpayers(["RO12345678"])
+    if lookup.found:
+        record = lookup.found[0]
+        print(record.name, record.vat_registered, record.efactura_registered)
+```
+
 ## MCP server
 
 The `anafpy[mcp]` extra ships a **local stdio MCP server** that wraps the clients as
@@ -134,7 +153,12 @@ uv sync --all-extras
 uv run pytest                              # respx-mocked, credential-free
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                                # strict
+ANAFPY_LIVE=1 uv run pytest -m live        # opt-in: live smoke of the public services
 ```
+
+The `live` marker re-confirms the public-service wire shapes against real ANAF
+endpoints (no credentials needed, network + production ANAF required); it is skipped
+by default and is not a gate.
 
 Models under `efactura/ubl/` and `etransport/schema/` are **generated** (via
 `scripts/generate_*.py` from vendored XSDs in `schemas/`) and must not be hand-edited.

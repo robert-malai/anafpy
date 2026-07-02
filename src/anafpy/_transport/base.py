@@ -1,8 +1,13 @@
 """Shared transport concerns: environment + per-service base URLs.
 
-Both services are reached over OAuth2 on the **same host** ``api.anaf.ro``; they differ
+Both OAuth services are reached on the **same host** ``api.anaf.ro``; they differ
 only by **path prefix** (``/FCTEL/rest`` vs ``/ETRANSPORT/ws/v1``). See
 ``docs/anaf-reference/{efactura,etransport}/api.md``.
+
+The unauthenticated public services (registries, financial statements) live on a
+different host, ``webservicesp.anaf.ro``, with **no test/prod split** — so
+:data:`PUBLIC_HOST` sits outside the :func:`service_base_url` scheme. See
+``docs/anaf-reference/public/api.md``.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ from enum import StrEnum
 
 __all__ = [
     "OAUTH_HOST",
+    "PUBLIC_HOST",
     "Environment",
     "Service",
     "is_empty_result_message",
@@ -24,6 +30,10 @@ __all__ = [
 #: OAuth2 API host for both services (the cert-direct host ``webserviceapl.anaf.ro`` is
 #: intentionally not used by anafpy).
 OAUTH_HOST = "https://api.anaf.ro"
+
+#: Host of the unauthenticated public services (registries, financial statements).
+#: Production only — ANAF exposes no TEST variant for these.
+PUBLIC_HOST = "https://webservicesp.anaf.ro"
 
 
 class Environment(StrEnum):

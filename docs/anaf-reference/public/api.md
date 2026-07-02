@@ -203,13 +203,16 @@ make a throwaway probe wasteful); shape shares §1's caveats.
 
 ## Notes for `anafpy`
 
-- These endpoints are **not consumed by the phase-1 clients** (which are OAuth-only,
-  `api.anaf.ro`). They are candidates for a zero-credential lookup surface — e.g. an
-  MCP `anaf_lookup` tool answering "is this CUI VAT-registered / e-Factura-registered"
-  before filing — with §1 covering nearly every practical question in one call.
-- If implemented: honour the **1 req/s** limit client-side (unlike the OAuth clients'
+- These endpoints are wrapped by **`anafpy.public.PublicClient`** (implemented
+  2026-07-02; §1–§5 — the async §6 variant is deliberately unwrapped: its result
+  downloads once and the not-ready response is undocumented). A future MCP
+  `anaf_lookup` tool can sit on top, answering "is this CUI VAT-registered /
+  e-Factura-registered" before filing — §1 covers nearly every practical question in
+  one call.
+- The client honours the **1 req/s** limit client-side (unlike the OAuth clients'
   no-auto-backoff stance, ANAF states this limit as a usage *rule*, not via 429s),
-  batch up to the documented CUI caps, and read membership from the `status*` booleans
-  (§4/§5 live note). The empty-`data_inreg_Reg_RO_e_Factura` + `statusRO_e_Factura:
-  false` combination in §1 is the common case for post-mandate companies that never
-  joined the opt-in register — it does **not** mean they can't receive e-Factura.
+  caps batches per the documented CUI limits, and membership must be read from the
+  `status*` booleans (§4/§5 live note). The empty-`data_inreg_Reg_RO_e_Factura` +
+  `statusRO_e_Factura: false` combination in §1 is the common case for post-mandate
+  companies that never joined the opt-in register — it does **not** mean they can't
+  receive e-Factura.

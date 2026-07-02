@@ -37,13 +37,15 @@ Phases & requirements:
 - **Phase 1 — typed async clients** for e-Factura and e-Transport (ANAF OAuth2 + a
   qualified digital certificate, XML payloads). *(Implemented.)*
 - **Phase 2 — a local MCP server** wrapping the clients, exposing the operations as Claude
-  Cowork skills. *(In progress — see §7.)*
+  Cowork skills. *(In progress — see §8.)*
+- **Public no-auth services** — `PublicClient` for the registry lookups + financial
+  statements on `webservicesp.anaf.ro` (see §6). *(Implemented.)*
 - **Local ANAF API reference docs**, compiled from ANAF's scattered online sources.
 - **Python 3.12+**, **httpx**, **Pydantic v2**.
 
 Out of scope: invoice composition / structured authoring; local persistence of documents;
-reconciliation / accounting logic; inbound e-Transport; the public CUI/VAT lookup web
-service; SPV; e-TVA; CII syntax; e-Transport API v1.
+reconciliation / accounting logic; inbound e-Transport; SPV; e-TVA; CII syntax;
+e-Transport API v1.
 
 ## 2. Cross-cutting architecture
 
@@ -213,7 +215,41 @@ doc — see `docs/anaf-reference/etransport/api.md`):
 - **Proprietary ANAF XSD** (`schema_ETR_v2_20230126.xsd`, not UBL) → generate via
   `xsdata-pydantic` into `etransport/schema/`.
 
-## 6. Local ANAF reference docs
+## 6. Public (no-auth) services
+
+`anafpy.public.PublicClient` wraps ANAF's unauthenticated lookups on
+`webservicesp.anaf.ro` (registries + financial statements — see
+`docs/anaf-reference/public/api.md`, live-confirmed 2026-07-02). Decisions:
+
+- **A third client, not a mode of the OAuth ones.** Different host, no test/prod
+  split, no `TokenProvider`/`environment` — it sits outside `service_base_url`
+  (`PUBLIC_HOST` in `_transport/base.py`). Same shape otherwise: async, owns its
+  `httpx.AsyncClient`, context-manager, hybrid error model.
+- **Client-side pacing (deliberate exception to "no auto-backoff").** ANAF states the
+  public host's 1 req/s limit as a usage *rule* ("va fi pedepsită"), not via 429s, so
+  the client spaces its own requests (`min_request_interval`, default 1.0 s; `0`
+  opts out). Reads are idempotent, so pacing carries none of the repeat-a-POST risk
+  that motivated the no-retry stance.
+- **Operations**: `lookup_taxpayers` (v9 — VAT, VAT-on-collection, inactive,
+  split-VAT, e-Factura register membership in one call), `lookup_efactura_register`,
+  `lookup_farmers`, `lookup_cult_entities`, `get_financial_statement`. Registry
+  queries are batched CUIs at one as-of date, capped per ANAF (100 / 500). The
+  **async job variant** of the taxpayer lookup is deliberately not wrapped: its
+  result downloads exactly once and the not-ready response is undocumented.
+- **Business-vs-error mapping**: `notFound` CUIs and `registered is False` records
+  are values; the e-Factura register's **404-with-`found`/`notFound`-body** is a
+  business "not found" (returned), while a non-200 `cod` inside an HTTP 200 envelope
+  raises `AnafResponseError`. Membership always reads from the status booleans
+  (RegAgric/RegCult return unknown CUIs under `found`).
+- **English models over wire names.** The wire mixes casings (`scpTVA`,
+  `statusRO_e_Factura`); models expose snake_case English fields with the wire names
+  as pydantic aliases, raw bytes retained on every container.
+- **Testing (hybrid)**: the respx suite is the gate; an opt-in `live` marker
+  (`ANAFPY_LIVE=1`) re-confirms the wire shapes against production — possible here
+  precisely because no credentials are needed, but never a CI gate (registry data
+  drifts; ANAF punishes hammering).
+
+## 7. Local ANAF reference docs
 
 - A version-pinned local reference *about ANAF*, mirrored from PDFs/HTML/XSD/Schematron.
 - **Agent-driven (LLM) compilation** — reconcile scattered sources into coherent
@@ -228,7 +264,7 @@ doc — see `docs/anaf-reference/etransport/api.md`):
     `status: draft|reviewed`.
   - Keep **original Romanian** (+ English index). Organize by service.
 
-## 7. MCP server (phase 2)
+## 8. MCP server (phase 2)
 
 A **local stdio connector** built on the phase-1 clients (extra `anafpy[mcp]`,
 `python -m anafpy.mcp`). It exposes the operations as Claude Cowork skills, owns the
@@ -262,7 +298,7 @@ and the e-Factura inbox, and the compiled reference as resources.)*
   stays the host-side CLI. A read-only **`auth_status`** reports validity; all tools fail
   with a clear "run `anafpy auth login`" remediation when unauthenticated.
 
-## 8. Tooling
+## 9. Tooling
 
 - **uv** (deps + lockfile), **hatchling** (build), **ruff** (lint+format),
   **mypy `--strict`**, **pytest** + **pytest-asyncio** + **respx**, **pre-commit**.
@@ -270,11 +306,13 @@ and the e-Factura inbox, and the compiled reference as resources.)*
 - **License: Apache-2.0** (explicit patent grant; ship `NOTICE`).
 - **CI: GitHub Actions** (lint + type + test matrix; later publish-to-PyPI).
 - **Testing (layered)**: respx mock suite as the credential-free CI gate + an opt-in
-  `@pytest.mark.integration` live suite against ANAF's TEST env. Two tiers:
+  live suite. Two tiers:
   1. golden round-trip on generated UBL models (catch regen/serialization regressions);
   2. client behavior via respx (upload→poll→download, `nok`, 401-refresh, 429).
+  The live tier exists today as the `live` marker (`ANAFPY_LIVE=1`) smoke-testing the
+  public services (§6); an OAuth TEST-env variant remains future work.
 
-## 9. Open / deferred items
+## 10. Open / deferred items
 
 1. ~~Verify: does `logincert.anaf.ro/token` require client-cert mTLS for
    refresh/exchange?~~ **RESOLVED 2026-06-28: no.** The `/token` endpoint accepts a
@@ -288,8 +326,10 @@ and the e-Factura inbox, and the compiled reference as resources.)*
    directly in Cowork vs only Claude Desktop. ANAF's cert forces local execution
    regardless; affects only which surface hosts it. Verify at build time.
 5. **Phase-2 MCP prompts** and in-session `begin_login` — deferred by design.
-6. **Public CUI/VAT lookup, SPV, e-TVA, CII, e-Transport v1** — out of scope; revisit
-   only if needed.
+6. ~~Public CUI/VAT lookup~~ **DONE 2026-07-02** (`anafpy.public.PublicClient`, §6).
+   **SPV, e-TVA, CII, e-Transport v1** remain out of scope; revisit only if needed.
+   Still open within the public family: the async job variant of the taxpayer lookup
+   (deliberately unwrapped) and an MCP `anaf_lookup` tool over `PublicClient`.
 7. ~~Code realignment to thin transport~~ **DONE.** Outbound is XML pass-through (flat→UBL
    mapping removed); `FlatInvoice`/`FlatTransport` are client-layer read views built by a
    single `read_flat_invoice` / `read_flat_transport` (+ `complete` / `dropped_fields`),

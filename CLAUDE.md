@@ -7,7 +7,9 @@ reference of ANAF's APIs.
 ## What this is
 
 `anafpy` — typed Python clients for Romania's **ANAF** tax-authority web services,
-**e-Factura** (electronic invoicing) and **e-Transport** (goods transport). It is a
+**e-Factura** (electronic invoicing), **e-Transport** (goods transport), and the
+**public no-auth services** (`anafpy.public`: registry lookups + financial
+statements). It is a
 **thin, stateless transport client, not invoicing software**: callers bring complete
 invoice XML their own system produced, and anafpy validates, files, tracks, and downloads.
 Outbound is **XML pass-through** (no invoice composition); received UBL is wrapped in a
@@ -27,6 +29,7 @@ uv run pytest -q                     # tests (respx-mocked, credential-free)
 uv run pytest tests/test_auth.py     # one file
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                          # strict
+ANAFPY_LIVE=1 uv run pytest -m live  # opt-in live smoke of the public services (network)
 ```
 
 Run the MCP server (host-side, where the `anafpy auth login` token store lives):
@@ -69,6 +72,9 @@ src/anafpy/
     schema/              # GENERATED e-Transport XSD models — do not hand-edit
     client.py            # ETransportClient (async)
     models.py            # value types + FlatTransport read view + reader
+  public/
+    client.py            # PublicClient (async, no auth) — webservicesp.anaf.ro lookups
+    models.py            # lookup value types (TaxpayerRecord, RegistryLookup[...], ...)
   mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2
     config.py            # ServerConfig.from_env (creds, store path, env, default CIF)
     context.py           # AppContext: TokenProvider + lazy clients + token ledger; auth_status
@@ -80,14 +86,22 @@ src/anafpy/
 schemas/                 # vendored XSDs (git-tracked, NOT shipped in the wheel)
 scripts/                 # codegen scripts
 docs/anaf-reference/     # compiled ANAF API reference (oauth/efactura/etransport/public)
-tests/                   # respx-mocked unit tests
+tests/                   # respx-mocked unit tests (+ opt-in live smoke: test_public_live.py)
 ```
 
 ## Architecture & conventions
 
-- **Both services share one host** `api.anaf.ro`, differing only by path prefix
+- **Both OAuth services share one host** `api.anaf.ro`, differing only by path prefix
   (`FCTEL/rest` vs `ETRANSPORT/ws/v1`) and `test`/`prod` segment. All of that lives in
   [_transport/base.py](src/anafpy/_transport/base.py); clients take an `environment`.
+- **`PublicClient` is the odd one out**: the unauthenticated registries/bilanț live on
+  `PUBLIC_HOST` (`webservicesp.anaf.ro`) — no `TokenProvider`, no `environment`
+  (production only). Unlike the OAuth clients' no-auto-backoff stance, it **paces its
+  own requests** (`min_request_interval`, default 1 req/s) because ANAF states that
+  limit as a usage *rule*, not via 429s. Registry membership is read from the
+  `registered` booleans, never from presence in `found` (RegAgric/RegCult return
+  unknown CUIs in `found` with empty fields). The e-Factura register's HTTP 404 with a
+  `found`/`notFound` body is a business "not found" (returned), not raised.
 - **Auth is a separate layer.** Clients receive a `TokenProvider` and drive httpx via
   the `AnafAuth` (`httpx.Auth`) class, which handles transparent token refresh. The
   qualified-certificate step happens only in the interactive `anafpy auth login` browser
@@ -170,13 +184,21 @@ Public UBL entry points: `from anafpy.efactura import Invoice, CreditNote`.
 Response schemas come from ANAF's official per-endpoint **swagger presentations**
 (vendored 2026-07-02 under `docs/anaf-reference/_sources/{efactura,etransport}-swagger/`
 and folded into `docs/anaf-reference/*/api.md`) — the API PDFs cover URLs/params only.
-Still not confirmed against a live TEST call. When touching parsing code, treat the doc
-as the source of truth and prefer being explicit over silently returning empty results.
+Still not confirmed against a live TEST call. The **public services** have no swagger —
+their reference (`docs/anaf-reference/public/api.md`) is compiled from ANAF's
+instruction files and **was live-confirmed in production** (2026-07-02); the `live`
+test marker re-confirms those shapes on demand. When touching parsing code, treat the
+doc as the source of truth and prefer being explicit over silently returning empty
+results.
 
 ## Conventions for changes
 
 - Keep `pytest`, `ruff`, and `mypy --strict` green; add/extend respx tests for client
   behavior changes (upload→poll→download, `nok` path, 401-refresh, 429 surfacing).
+  The respx suite is the gate; the `live`-marked smoke tests
+  ([tests/test_public_live.py](tests/test_public_live.py)) exist only to re-confirm the
+  public-service wire shapes on demand (`ANAFPY_LIVE=1`) and are skipped by default —
+  don't move behavioural assertions there.
 - **Keep the docs in sync with the change.** When a change alters the public surface,
   status, layout, or conventions, update the affected docs in the same change:
   [README.md](README.md) (what works / usage / install), this `CLAUDE.md` (layout,
