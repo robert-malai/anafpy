@@ -1,4 +1,4 @@
-"""Confirmation tokens for the two-step gated mutation flow (``DESIGN.md`` §7).
+"""Confirmation tokens for the two-step gated mutation flow (``DESIGN.md`` §8).
 
 A mutating skill is split in two: ``prepare`` validates a document, shows a preview, and
 hands back a **confirmation token** that is an HMAC over the exact bytes that would be

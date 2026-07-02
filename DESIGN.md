@@ -292,6 +292,12 @@ and the e-Factura inbox, and the compiled reference as resources.)*
   CIF) → `efactura_download` (raw zip/XML/PDF) → the `FlatInvoice` **read view** for
   display/triage, from the same client-layer reader. e-Transport stays outbound +
   `lista`/`stareMesaj`.
+- **Public lookups as `anaf_*` tools** (over `PublicClient`, §6): `anaf_lookup_taxpayers`
+  / `anaf_lookup_efactura_register` / `anaf_lookup_farmers` / `anaf_lookup_cult_entities`
+  / `anaf_financial_statement`. Read-only, **no auth required** (usable before
+  `anafpy auth login`), 1:1 on the client methods; `raw` bytes stay client-side
+  (excluded from tool payloads). The counterparty sanity-check before filing lives
+  here.
 - **ANAF reference exposed as MCP resources** (with draft/Romanian notes) so the skill can
   ground BR-RO explanations and code lists. Prompts deferred.
 - **Auth handling**: server reads the token store + transparent refresh; interactive login
@@ -326,10 +332,10 @@ and the e-Factura inbox, and the compiled reference as resources.)*
    directly in Cowork vs only Claude Desktop. ANAF's cert forces local execution
    regardless; affects only which surface hosts it. Verify at build time.
 5. **Phase-2 MCP prompts** and in-session `begin_login` — deferred by design.
-6. ~~Public CUI/VAT lookup~~ **DONE 2026-07-02** (`anafpy.public.PublicClient`, §6).
-   **SPV, e-TVA, CII, e-Transport v1** remain out of scope; revisit only if needed.
-   Still open within the public family: the async job variant of the taxpayer lookup
-   (deliberately unwrapped) and an MCP `anaf_lookup` tool over `PublicClient`.
+6. ~~Public CUI/VAT lookup~~ **DONE 2026-07-02** (`anafpy.public.PublicClient`, §6;
+   exposed as the MCP `anaf_*` lookup tools, §8). **SPV, e-TVA, CII, e-Transport v1**
+   remain out of scope; revisit only if needed. Still open within the public family:
+   the async job variant of the taxpayer lookup (deliberately unwrapped).
 7. ~~Code realignment to thin transport~~ **DONE.** Outbound is XML pass-through (flat→UBL
    mapping removed); `FlatInvoice`/`FlatTransport` are client-layer read views built by a
    single `read_flat_invoice` / `read_flat_transport` (+ `complete` / `dropped_fields`),

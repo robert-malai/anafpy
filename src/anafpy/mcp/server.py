@@ -1,13 +1,14 @@
 """The anafpy MCP server: e-Factura / e-Transport operations as Cowork skills.
 
-Built on the phase-1 async clients (``DESIGN.md`` §7). Read-only skills (status, list,
+Built on the phase-1 async clients (``DESIGN.md`` §8). Read-only skills (status, list,
 download, lookup, validate) are freely callable. Mutating skills are **two-step**: a
 ``prepare`` tool renders a preview and returns a confirmation token, and the matching
 ``submit`` tool will only file when handed that token back with the *same* document and
 an explicit ``confirm=True``. Validation is ANAF's own: ``efactura_validate`` calls the
 server-side ``validare`` endpoint (authoritative); there is no local rule engine. The
-compiled ANAF reference is surfaced as read-only MCP resources so the model can ground
-BR-RO explanations and code lists.
+``anaf_*`` lookups wrap the unauthenticated public services (``anafpy.public``) and
+work without a login. The compiled ANAF reference is surfaced as read-only MCP
+resources so the model can ground BR-RO explanations and code lists.
 """
 
 from __future__ import annotations
@@ -17,12 +18,14 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from ..efactura.models import Filter, TransformStandard, UploadStandard
 from ..exceptions import AnafConfigError, AnafError
+from ..public.models import RegistryLookup
 from .config import ServerConfig
 from .context import AppContext, AuthStatus
 from .documents import invoice_view, resolve_xml, transport_view, upload_standard
@@ -52,6 +55,14 @@ To pre-check an invoice, `efactura_validate` runs ANAF's own server-side validat
 without filing (authoritative). e-Transport has no standalone validator — ANAF
 validates on upload. If a tool reports "not authenticated", the user must run
 `anafpy auth login` host-side.
+
+The `anaf_*` lookup tools query ANAF's PUBLIC no-auth services and work even without
+a login: the taxpayer/VAT registry (`anaf_lookup_taxpayers` answers "is this CUI
+VAT-registered / e-Factura-registered" and more, in one call — use it to sanity-check
+a counterparty before filing), the RO e-Factura opt-in register, the farmers/cult
+registers, and public annual financial statements. Registry membership must be read
+from the `registered` booleans, not from presence in `found`. Requests are paced at
+ANAF's 1 request/second rule, so large batches take time.
 """
 
 _READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
@@ -124,6 +135,7 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
 
     _register_efactura(mcp, ctx, cfg)
     _register_etransport(mcp, ctx, cfg)
+    _register_public(mcp, ctx)
     _register_resources(mcp)
     return mcp
 
@@ -439,6 +451,81 @@ def _prepare_transport(
         transport_preview=preview,
         message=_prepare_message(parsed=preview is not None),
     )
+
+
+def _register_public(mcp: FastMCP, ctx: AppContext) -> None:
+    """Read-only lookups over ANAF's unauthenticated public services.
+
+    No CIF/auth involved; the client paces requests at ANAF's 1 req/s rule. ``raw``
+    body bytes are kept client-side and excluded from the tool payloads.
+    """
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Look up CUIs (max 100) in ANAF's public taxpayer/VAT registry — "
+        "no auth needed. One call answers, per CUI as of `date` (ISO, default "
+        "today): VAT registration, VAT-on-collection, inactive status, split-VAT, "
+        "RO e-Factura register membership, and general company data. CUIs with no "
+        "data come back in `not_found`. The 'RO' VAT prefix is tolerated.",
+    )
+    async def anaf_lookup_taxpayers(
+        cuis: list[str | int], date: str | None = None
+    ) -> dict[str, object]:
+        result = await ctx.public().lookup_taxpayers(cuis, date=date)
+        return _lookup_payload(result)
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Query the Registrul RO e-Factura (opt-in register) for CUIs "
+        "(max 100) — no auth needed. Mostly relevant for B2G option dates; for a "
+        "plain 'is this CUI e-Factura-registered' check prefer anaf_lookup_taxpayers "
+        "(its `efactura_registered` answers it alongside everything else).",
+    )
+    async def anaf_lookup_efactura_register(
+        cuis: list[str | int], date: str | None = None
+    ) -> dict[str, object]:
+        result = await ctx.public().lookup_efactura_register(cuis, date=date)
+        return _lookup_payload(result)
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Query ANAF's farmers' special-regime register (art. 315¹) for "
+        "CUIs (max 500) — no auth needed. Membership is the record's `registered` "
+        "boolean: unknown CUIs still come back under `found` with empty fields.",
+    )
+    async def anaf_lookup_farmers(
+        cuis: list[str | int], date: str | None = None
+    ) -> dict[str, object]:
+        result = await ctx.public().lookup_farmers(cuis, date=date)
+        return _lookup_payload(result)
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Query ANAF's register of cult entities (tax-credit eligible "
+        "religious entities) for CUIs (max 500) — no auth needed. Membership is the "
+        "record's `registered` boolean.",
+    )
+    async def anaf_lookup_cult_entities(
+        cuis: list[str | int], date: str | None = None
+    ) -> dict[str, object]:
+        result = await ctx.public().lookup_cult_entities(cuis, date=date)
+        return _lookup_payload(result)
+
+    @mcp.tool(
+        annotations=_READ_ONLY,
+        description="Fetch the public indicators of one CUI's annual financial "
+        "statement (bilanț) for a given year — no auth needed. The indicator set "
+        "varies by statement type (commercial / banking / insurance).",
+    )
+    async def anaf_financial_statement(cui: str | int, year: int) -> dict[str, object]:
+        statement = await ctx.public().get_financial_statement(cui, year)
+        return statement.model_dump(mode="json", exclude={"raw"})
+
+
+def _lookup_payload(result: RegistryLookup[Any]) -> dict[str, object]:
+    payload: dict[str, object] = result.model_dump(mode="json", exclude={"raw"})
+    payload["count"] = len(result.found)
+    return payload
 
 
 def _prepare_message(*, parsed: bool) -> str:

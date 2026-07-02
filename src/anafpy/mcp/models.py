@@ -1,4 +1,4 @@
-"""MCP tool input/return types (``DESIGN.md`` §7).
+"""MCP tool input/return types (``DESIGN.md`` §8).
 
 Outbound filing is **XML pass-through**: the only inputs are :class:`UblXmlInput` /
 :class:`EtransportXmlInput`, carrying a complete document the caller's invoicing

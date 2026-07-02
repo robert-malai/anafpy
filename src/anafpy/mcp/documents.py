@@ -1,4 +1,4 @@
-"""Resolve XML pass-through inputs and project them to read views (``DESIGN.md`` §7).
+"""Resolve XML pass-through inputs and project them to read views (``DESIGN.md`` §8).
 
 The filing tools take a *complete* document; this module turns an ``xml`` / ``path``
 input into bytes and — for the ``prepare`` preview — parses those bytes into the

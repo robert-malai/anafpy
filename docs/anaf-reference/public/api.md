@@ -205,8 +205,8 @@ make a throwaway probe wasteful); shape shares §1's caveats.
 
 - These endpoints are wrapped by **`anafpy.public.PublicClient`** (implemented
   2026-07-02; §1–§5 — the async §6 variant is deliberately unwrapped: its result
-  downloads once and the not-ready response is undocumented). A future MCP
-  `anaf_lookup` tool can sit on top, answering "is this CUI VAT-registered /
+  downloads once and the not-ready response is undocumented), and exposed as the MCP
+  `anaf_*` lookup tools (no auth required), answering "is this CUI VAT-registered /
   e-Factura-registered" before filing — §1 covers nearly every practical question in
   one call.
 - The client honours the **1 req/s** limit client-side (unlike the OAuth clients'

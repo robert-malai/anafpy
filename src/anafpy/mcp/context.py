@@ -1,7 +1,9 @@
 """Runtime context shared by the MCP tools.
 
-Holds the long-lived :class:`TokenProvider` and the two clients, built from a
+Holds the long-lived :class:`TokenProvider` and the clients, built from a
 :class:`ServerConfig`. Clients are created lazily on first use and closed on shutdown.
+The public-services client needs no auth (and ignores the configured environment —
+the public host has no test/prod split).
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from pydantic import BaseModel
 from ..auth import FileTokenStore, TokenProvider
 from ..efactura.client import EFacturaClient
 from ..etransport.client import ETransportClient
+from ..public.client import PublicClient
 from .config import ServerConfig
 from .tokens import TokenLedger
 
@@ -44,6 +47,7 @@ class AppContext:
         )
         self._efactura: EFacturaClient | None = None
         self._etransport: ETransportClient | None = None
+        self._public: PublicClient | None = None
         #: Redeemed confirmation tokens (single-use gate for the submit tools).
         self.token_ledger = TokenLedger()
 
@@ -64,6 +68,11 @@ class AppContext:
                 self._provider, environment=self.config.environment
             )
         return self._etransport
+
+    def public(self) -> PublicClient:
+        if self._public is None:
+            self._public = PublicClient()
+        return self._public
 
     def auth_status(self) -> AuthStatus:
         """Report whether a usable ANAF session is present (read-only)."""
@@ -109,4 +118,6 @@ class AppContext:
             await self._efactura.aclose()
         if self._etransport is not None:
             await self._etransport.aclose()
+        if self._public is not None:
+            await self._public.aclose()
         await self._provider.aclose()

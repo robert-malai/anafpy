@@ -1,6 +1,6 @@
 """Golden round-trip tests for the generated UBL 2.1 models.
 
-These guard against regeneration / serialization regressions (DESIGN §8, tier 1): a
+These guard against regeneration / serialization regressions (DESIGN §9, tier 1): a
 model built in Python must serialize to XML and parse back to an equal model, and the
 emitted XML must carry the CIUS-RO customization marker and correct UBL namespace.
 """

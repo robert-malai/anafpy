@@ -132,8 +132,10 @@ ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
 
 It exposes **read-only** tools (`auth_status`; the e-Factura inbox via
 `efactura_list_messages` / `efactura_get_status` / `efactura_download`; `etransport_list`
-/ `etransport_get_status` / `etransport_lookup`; and `efactura_validate`, which runs
-ANAF's authoritative server-side validator without filing) plus **two-step gated
+/ `etransport_get_status` / `etransport_lookup`; `efactura_validate`, which runs
+ANAF's authoritative server-side validator without filing; and the `anaf_*` public
+lookups — taxpayer/VAT registry, RO e-Factura register, farmers/cult registers, and
+financial statements — which need **no login at all**) plus **two-step gated
 filing**: `*_prepare*` parses the supplied XML and returns a preview + a confirmation
 token bound to the document and the CIF being filed for; `*_submit*` files only when
 given that token (same document, same CIF) and `confirm=True`, and each token is

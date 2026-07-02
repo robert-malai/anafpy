@@ -137,8 +137,10 @@ tests/                   # respx-mocked unit tests (+ opt-in live smoke: test_pu
   carries `complete` / `dropped_fields` when it can't represent something. There is no
   flat→UBL path; do not add one.
 - **Read-first, two-step gated mutations.** Read-only tools (`*_list*`, `*_status`,
-  `*_download`, `*_lookup`, `efactura_validate`, `auth_status`) are annotated
-  `readOnlyHint` and freely callable. Filing is split `*_prepare*` → `*_submit*`: prepare
+  `*_download`, `*_lookup`, `efactura_validate`, `auth_status`, and the no-auth
+  `anaf_*` public lookups over `PublicClient` — registries + financial statements,
+  usable even before `anafpy auth login`) are annotated `readOnlyHint` and freely
+  callable. Filing is split `*_prepare*` → `*_submit*`: prepare
   parses the XML for a preview and returns an HMAC **confirmation token**
   (`mcp/tokens.py`) bound to the exact XML bytes, the CIF, and (e-Factura) the upload
   standard; submit requires that token (same document, same CIF) **and** `confirm=True`,

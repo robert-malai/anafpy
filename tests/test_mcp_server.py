@@ -320,6 +320,96 @@ async def test_prepare_then_submit_files_transport(tmp_path: Path) -> None:
     assert route.called
 
 
+# --- public no-auth lookups -----------------------------------------------------------
+
+PUBLIC = "https://webservicesp.anaf.ro"
+
+
+@respx.mock
+async def test_anaf_lookup_taxpayers_works_without_login(tmp_path: Path) -> None:
+    respx.post(f"{PUBLIC}/api/PlatitorTvaRest/v9/tva").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "found": [
+                    {
+                        "date_generale": {"cui": 1590082, "denumire": "OMV PETROM"},
+                        "inregistrare_scop_Tva": {"scpTVA": True},
+                    }
+                ],
+                "notFound": [456],
+            },
+        )
+    )
+    # The public lookups need no ANAF session at all.
+    server = create_server(_config(tmp_path, authenticated=False))
+    out = await _call(server, "anaf_lookup_taxpayers", cuis=["RO 1590082", 456])
+    assert out["count"] == 1
+    assert out["found"][0]["general"]["name"] == "OMV PETROM"
+    assert out["found"][0]["vat"]["registered"] is True
+    assert out["not_found"] == [456]
+    assert "raw" not in out
+
+
+@respx.mock
+async def test_anaf_lookup_efactura_register_404_is_not_found(tmp_path: Path) -> None:
+    respx.post(f"{PUBLIC}/api/registruroefactura/v1/interogare").mock(
+        return_value=httpx.Response(404, json={"found": [], "notFound": [123]})
+    )
+    server = create_server(_config(tmp_path))
+    out = await _call(server, "anaf_lookup_efactura_register", cuis=[123])
+    assert out["count"] == 0
+    assert out["not_found"] == [123]
+
+
+@respx.mock
+async def test_anaf_lookup_farmers_membership_boolean(tmp_path: Path) -> None:
+    respx.post(f"{PUBLIC}/RegAgric/api/v2/ws/agric").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "cod": 200,
+                "message": "SUCCESS",
+                "found": [{"cui": 123, "statusRegAgric": False}],
+                "notFound": [],
+            },
+        )
+    )
+    server = create_server(_config(tmp_path))
+    out = await _call(server, "anaf_lookup_farmers", cuis=[123])
+    assert out["found"][0]["registered"] is False
+
+
+@respx.mock
+async def test_anaf_financial_statement(tmp_path: Path) -> None:
+    route = respx.get(f"{PUBLIC}/bilant").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "an": 2023,
+                "cui": 1590082,
+                "deni": "OMV PETROM S.A.",
+                "i": [
+                    {
+                        "indicator": "I13",
+                        "val_indicator": 100,
+                        "val_den_indicator": "Cifra de afaceri neta",
+                    }
+                ],
+            },
+        )
+    )
+    server = create_server(_config(tmp_path))
+    out = await _call(server, "anaf_financial_statement", cui="RO1590082", year=2023)
+    assert out["year"] == 2023
+    assert out["indicators"][0]["code"] == "I13"
+    assert "raw" not in out
+    assert dict(route.calls.last.request.url.params) == {
+        "an": "2023",
+        "cui": "1590082",
+    }
+
+
 # --- resources ----------------------------------------------------------------------
 
 
