@@ -8,7 +8,8 @@ triggers a single refresh-and-retry.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Generator
+from contextlib import asynccontextmanager
 
 import httpx
 
@@ -21,7 +22,13 @@ __all__ = ["AnafAuth", "TokenProvider"]
 
 
 class TokenProvider:
-    """Provides valid access tokens, refreshing and persisting as needed."""
+    """Provides valid access tokens, refreshing and persisting as needed.
+
+    The ``TokenStore`` is the single source of truth: the provider keeps no token
+    state of its own. Every operation reads the freshest persisted set under the
+    lock, so a login or a refresh-token rotation performed by another process
+    sharing the store (the CLI, a second server) is picked up on the next call.
+    """
 
     def __init__(
         self,
@@ -36,78 +43,62 @@ class TokenProvider:
         self._store = store
         self._http = http
         self._owns_http = http is None
-        self._tokens: TokenSet | None = store.load()
         self._lock = asyncio.Lock()
 
-    async def _client(self) -> httpx.AsyncClient:
+    @property
+    def _client(self) -> httpx.AsyncClient:
+        # Lazily built so a provider that never refreshes never opens a client;
+        # ``aclose`` resets it, so a later use transparently gets a fresh one.
         if self._http is None:
             self._http = httpx.AsyncClient(timeout=30.0)
         return self._http
 
-    def _current(self) -> TokenSet | None:
-        # A login may happen after construction (e.g. `anafpy auth login` while the
-        # MCP server is running) — adopt it from the store instead of demanding a
-        # restart.
-        if self._tokens is None:
-            self._tokens = self._store.load()
-        return self._tokens
+    @asynccontextmanager
+    async def _authenticated(self) -> AsyncIterator[TokenSet]:
+        # Scopes a single operation: serialize refreshes and hand the operation
+        # the freshest persisted token set. Tokens must not outlive the block —
+        # holding them across operations would reintroduce a stale cache.
+        async with self._lock:
+            tokens = self._store.load()
+            if tokens is None:
+                raise AnafAuthError("not authenticated — run `anafpy auth login`")
+            yield tokens
 
     async def access_token(self) -> str:
         """Return a currently-valid access token, refreshing if expired."""
-        async with self._lock:
-            tokens = self._current()
-            if tokens is None:
-                raise AnafAuthError("not authenticated — run `anafpy auth login`")
+        async with self._authenticated() as tokens:
             if tokens.access_expired():
-                tokens = await self._refresh_locked(tokens)
+                tokens = await self._refresh(tokens)
             return tokens.access_token
 
     async def force_refresh(self, *, stale: str | None = None) -> str:
         """Refresh unconditionally (used after a 401); return the new access token.
 
         Pass the access token the failing request carried as ``stale``: when it has
-        already been replaced (a concurrent request refreshed first), the current
-        token is returned without burning another refresh rotation.
+        already been replaced (a concurrent request or another process refreshed
+        first), the current token is returned without burning another rotation.
         """
-        async with self._lock:
-            tokens = self._current()
-            if tokens is None:
-                raise AnafAuthError("not authenticated — run `anafpy auth login`")
+        async with self._authenticated() as tokens:
             if stale is not None and tokens.access_token != stale:
                 return tokens.access_token
-            tokens = await self._refresh_locked(tokens)
-            return tokens.access_token
+            return (await self._refresh(tokens)).access_token
 
-    async def _refresh_locked(self, tokens: TokenSet) -> TokenSet:
-        # ANAF rotates the refresh token on every refresh. Another process sharing
-        # the store (CLI, a second server) may have rotated already — adopt the
-        # stored set instead of refreshing with our now-invalidated refresh token.
-        stored = self._store.load()
-        if stored is not None and stored.refresh_token != tokens.refresh_token:
-            self._tokens = stored
-            if not stored.access_expired():
-                return stored
-            tokens = stored
+    async def _refresh(self, tokens: TokenSet) -> TokenSet:
         if tokens.refresh_expired():
             raise AnafAuthError("refresh token expired — run `anafpy auth login`")
         new = await refresh_tokens(
-            await self._client(),
+            self._client,
             client_id=self._client_id,
             client_secret=self._client_secret,
             refresh_token=tokens.refresh_token,
         )
-        self._tokens = new
-        self._store.save(new)  # persist rotated refresh token
+        self._store.save(new)  # persist the rotated refresh token
         return new
 
     @property
     def tokens(self) -> TokenSet | None:
-        """The current token set, if authenticated (read-only snapshot).
-
-        Falls back to the store when unauthenticated, so a login performed after
-        construction is visible (e.g. to ``auth_status``) without a refresh cycle.
-        """
-        return self._current()
+        """The persisted token set, if authenticated (read-only snapshot)."""
+        return self._store.load()
 
     async def aclose(self) -> None:
         if self._owns_http and self._http is not None:
