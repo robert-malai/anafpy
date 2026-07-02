@@ -38,7 +38,7 @@ def test_wrong_kind_is_rejected() -> None:
 
 def test_wrong_key_is_rejected() -> None:
     token = issue_token(KEY, kind="efactura.invoice", payload=b"x")
-    with pytest.raises(ConfirmationError, match="does not match"):
+    with pytest.raises(ConfirmationError, match="does not verify"):
         verify_token(b"j" * 32, token, kind="efactura.invoice", payload=b"x")
 
 
