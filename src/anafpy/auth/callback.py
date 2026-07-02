@@ -83,8 +83,8 @@ def capture_authorization_code(
     done = threading.Event()
 
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *_args: object) -> None:  # silence default logging
-            pass
+        def log_message(self, format: str, *args: object) -> None:
+            pass  # silence default request logging
 
         def do_GET(self) -> None:
             url = urllib.parse.urlparse(self.path)

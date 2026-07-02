@@ -35,12 +35,12 @@ _CIF = "1234567890"
 def _minimal_declaration() -> ETransport:
     """Minimal valid ETransport notificare (uses required fields only)."""
     locatie_start = LocatieType(
-        cod_judet=CodJudetType.VALUE_12,  # Cluj
+        cod_judet=CodJudetType.CLUJ,
         denumire_localitate="Cluj-Napoca",
         denumire_strada="Str. Principala",
     )
     locatie_final = LocatieType(
-        cod_judet=CodJudetType.VALUE_3,  # Ilfov / Bucuresti
+        cod_judet=CodJudetType.MUNICIPIUL_BUCURESTI,
         denumire_localitate="Bucuresti",
         denumire_strada="Calea Victoriei",
     )
@@ -49,7 +49,7 @@ def _minimal_declaration() -> ETransport:
         notificare=NotificareType(
             bunuri_transportate=[
                 BunuriTransportateType(
-                    cod_scop_operatiune=CodScopOperatiuneType.VALUE_101,
+                    cod_scop_operatiune=CodScopOperatiuneType.COMERCIALIZARE,
                     denumire_marfa="Materiale constructii",
                     cantitate="100.00",
                     cod_unitate_masura="KGM",
@@ -57,12 +57,12 @@ def _minimal_declaration() -> ETransport:
                 )
             ],
             partener_comercial=PartenerComercialType(
-                cod_tara=CodTaraType.RO,
+                cod_tara=CodTaraType.ROMANIA,
                 denumire="Partener SRL",
             ),
             date_transport=DateTransportType(
                 nr_vehicul="B01ABC",
-                cod_tara_org_transport=CodTaraType.RO,
+                cod_tara_org_transport=CodTaraType.ROMANIA,
                 denumire_org_transport="Transport SRL",
                 data_transport=XmlDate(2026, 6, 30),
             ),
@@ -70,11 +70,11 @@ def _minimal_declaration() -> ETransport:
             loc_final_traseu_rutier=LocTraseuRutierType(locatie=locatie_final),
             documente_transport=[
                 DocumenteTransportType(
-                    tip_document=TipDocumentType.VALUE_10,
+                    tip_document=TipDocumentType.CMR,
                     data_document=XmlDate(2026, 6, 28),
                 )
             ],
-            cod_tip_operatiune=CodTipOperatiuneType.VALUE_10,
+            cod_tip_operatiune=CodTipOperatiuneType.ACHIZITIE_INTRACOMUNITARA,
         ),
     )
 
@@ -91,17 +91,17 @@ def test_etransport_roundtrips_to_equal_model() -> None:
     n = restored.notificare
     assert len(n.bunuri_transportate) == 1
     b = n.bunuri_transportate[0]
-    assert b.cod_scop_operatiune is CodScopOperatiuneType.VALUE_101
+    assert b.cod_scop_operatiune is CodScopOperatiuneType.COMERCIALIZARE
     assert b.denumire_marfa == "Materiale constructii"
     assert b.cantitate == "100.00"
     assert b.greutate_bruta == "110.00"
-    assert n.partener_comercial.cod_tara is CodTaraType.RO
+    assert n.partener_comercial.cod_tara is CodTaraType.ROMANIA
     assert n.partener_comercial.denumire == "Partener SRL"
     assert n.date_transport.nr_vehicul == "B01ABC"
     assert n.date_transport.data_transport == XmlDate(2026, 6, 30)
-    assert n.cod_tip_operatiune is CodTipOperatiuneType.VALUE_10
+    assert n.cod_tip_operatiune is CodTipOperatiuneType.ACHIZITIE_INTRACOMUNITARA
     assert len(n.documente_transport) == 1
-    assert n.documente_transport[0].tip_document is TipDocumentType.VALUE_10
+    assert n.documente_transport[0].tip_document is TipDocumentType.CMR
 
 
 def test_serialized_declaration_carries_namespace() -> None:

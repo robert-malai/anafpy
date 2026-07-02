@@ -79,6 +79,16 @@ files = ["src", "tests"]
 # Generated UBL/e-Transport model packages are excluded from strict typing.
 exclude = ['(^|/)(ubl|schema)/']
 
+[tool.pyright]
+# Mirrors the ruff/mypy stance for Pylance users: the generated model packages are
+# not analysable (xsdata-pydantic's `field()` is not a Pydantic field specifier).
+exclude = [
+    "**/__pycache__",
+    ".venv",
+    "src/anafpy/efactura/ubl",
+    "src/anafpy/etransport/schema",
+]
+
 [[tool.mypy.overrides]]
 module = ["xsdata_pydantic.*", "respx.*"]
 ignore_missing_imports = true

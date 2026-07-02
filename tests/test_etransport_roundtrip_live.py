@@ -91,10 +91,10 @@ def _domestic_declaration(cif: str, transport_date: dt.date) -> ETransport:
         cod_declarant=cif,
         ref_declarant="anafpy-live-roundtrip",
         notificare=NotificareType(
-            cod_tip_operatiune=CodTipOperatiuneType.VALUE_30,
+            cod_tip_operatiune=CodTipOperatiuneType.TRANSPORT_PE_TERITORIUL_NATIONAL,
             bunuri_transportate=[
                 BunuriTransportateType(
-                    cod_scop_operatiune=CodScopOperatiuneType.VALUE_101,
+                    cod_scop_operatiune=CodScopOperatiuneType.COMERCIALIZARE,
                     denumire_marfa="Materiale constructii",
                     cantitate="100.00",
                     cod_unitate_masura="KGM",
@@ -105,18 +105,18 @@ def _domestic_declaration(cif: str, transport_date: dt.date) -> ETransport:
                 )
             ],
             partener_comercial=PartenerComercialType(
-                cod_tara=CodTaraType.RO, cod=cif, denumire="Partener SRL"
+                cod_tara=CodTaraType.ROMANIA, cod=cif, denumire="Partener SRL"
             ),
             date_transport=DateTransportType(
                 nr_vehicul="CJ01ABC",
-                cod_tara_org_transport=CodTaraType.RO,
+                cod_tara_org_transport=CodTaraType.ROMANIA,
                 cod_org_transport=cif,
                 denumire_org_transport="Transport SRL",
                 data_transport=day,
             ),
             loc_start_traseu_rutier=LocTraseuRutierType(
                 locatie=LocatieType(
-                    cod_judet=CodJudetType.VALUE_12,  # Cluj
+                    cod_judet=CodJudetType.CLUJ,
                     denumire_localitate="Cluj-Napoca",
                     denumire_strada="Str. Memorandumului",
                     numar="28",
@@ -124,7 +124,7 @@ def _domestic_declaration(cif: str, transport_date: dt.date) -> ETransport:
             ),
             loc_final_traseu_rutier=LocTraseuRutierType(
                 locatie=LocatieType(
-                    cod_judet=CodJudetType.VALUE_40,  # Bucuresti
+                    cod_judet=CodJudetType.MUNICIPIUL_BUCURESTI,
                     denumire_localitate="Bucuresti",
                     denumire_strada="Calea Victoriei",
                     numar="1",
@@ -132,7 +132,7 @@ def _domestic_declaration(cif: str, transport_date: dt.date) -> ETransport:
             ),
             documente_transport=[
                 DocumenteTransportType(
-                    tip_document=TipDocumentType.VALUE_10,
+                    tip_document=TipDocumentType.CMR,
                     numar_document="FAC-001",
                     data_document=day,
                 )
