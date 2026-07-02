@@ -216,3 +216,9 @@ make a throwaway probe wasteful); shape shares §1's caveats.
   `statusRO_e_Factura: false` combination in §1 is the common case for post-mandate
   companies that never joined the opt-in register — it does **not** mean they can't
   receive e-Factura.
+- **Connection hygiene (live-observed 2026-07-02):** the host resets pooled
+  keep-alive connections left idle between paced requests (RegAgric RST-on-reuse),
+  and RegAgric/RegCult intermittently reset even fresh connections during bad
+  spells. The client therefore disables keep-alive on the `httpx` client it owns
+  (harmless at ≤1 req/s); it still does **no** transport retry — a
+  reset surfaces as `AnafTransportError` for the caller to retry.

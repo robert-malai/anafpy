@@ -45,8 +45,12 @@ deliberately has no local rule engine (see `/DESIGN.md` §4). This doc is the
 > endpoint behaviour with a live test-environment call during implementation.
 > **First live TEST confirmation 2026-07-02**: `listaMesajePaginatieFactura` returned
 > HTTP 200 `{"eroare":"Nu exista mesaje in intervalul selectat","titlu":"Lista Mesaje"}`
-> for an empty window — exactly the documented no-results shape below. Other endpoints
-> (upload, stare, descarcare, lists with results) remain live-unconfirmed.
+> for an empty window — exactly the documented no-results shape below.
+> **Full roundtrip confirmed 2026-07-02** (TEST, minimal CIUS-RO invoice): `upload`
+> (`index_incarcare`) → `stareMesaj` (`in prelucrare` → `ok` + `id_descarcare`) →
+> `descarcare` (ZIP with signed invoice + `semnatura` XML) → paginated list with
+> results — all matching the shapes below. The same session confirmed that `validare`
+> and `transformare` answer **HTTP 404 on `test`** (see the caveat below).
 
 ## Access modes & base URLs
 
@@ -61,8 +65,12 @@ Every endpoint has **two access modes**, differing only by host:
 All paths below are shown for the **OAuth2** mode, e.g.
 `https://api.anaf.ro/prod/FCTEL/rest/...`. Swap `prod`↔`test` for the environments —
 with one caveat: the PDF documents `validare`, `transformare`, and
-`validate/signature` for **producție only** (no test URLs shown); a `test` variant of
-those three is an inference, not sourced.
+`validate/signature` for **producție only** (no test URLs shown), and for the first
+two that is not an omission — **live-confirmed 2026-07-02** that
+`https://api.anaf.ro/test/FCTEL/rest/{validare,transformare}/FACT1` answer **HTTP
+404**: they exist only on `prod` (`validate/signature` lives at the host root with no
+prod/test segment at all). Documents filed to TEST are validated by the upload
+pipeline itself (`stareMesaj` → `ok`/`nok`).
 
 > Provenance: PDF pp. 1–5 (each operation lists both `webserviceapl` cert mode and
 > `api.anaf.ro` oauth2 mode).
@@ -160,6 +168,13 @@ index), `detalii`, `cif_emitent` (seller), `cif_beneficiar` (buyer), `tip`
 `serial`, `cui`, `titlu`. The non-paginated list (3a) caps at **500 messages** and
 errors with "folositi endpoint-ul cu paginatie" beyond that.
 
+**Indexing lag (live-observed 2026-07-02, TEST):** list entries are created
+asynchronously after processing — a freshly filed invoice whose `stareMesaj` is
+already `ok` (and whose ZIP downloads fine) may take anywhere from seconds to
+~15 minutes to appear in the lists; `data_creare` is the indexing time, not the
+upload time. A self-billed filing (seller CIF == buyer CIF) produces **two** entries
+per invoice, `FACTURA TRIMISA` and `FACTURA PRIMITA`, sharing one `id_solicitare`.
+
 **200-with-`eroare`**: both list endpoints return errors *and* the no-results note in
 the same `eroare` field on HTTP 200. Known no-results wordings: `"Nu exista mesaje in
 intervalul selectat"` (3b) / `"Nu exista mesaje in ultimele {N} zile"` (3a). Everything
@@ -192,7 +207,11 @@ POST https://webservicesp.anaf.ro/prod/FCTEL/rest/validare/{FACT1|FCN}   # no au
 Content-Type: text/plain        # XML in the body
 ```
 `std` (✔): `FACT1` (invoice) or `FCN` (credit note). **Server-side** validation.
-Available **without auth** on `webservicesp.anaf.ro`.
+Available **without auth** on `webservicesp.anaf.ro`. **Prod-only** — the `test` path
+answers HTTP 404 (live-confirmed 2026-07-02). `anafpy` therefore always calls the
+no-auth `webservicesp.anaf.ro/prod` variant, regardless of the client's environment
+(both response shapes live-confirmed there 2026-07-02: `ok`, and `nok` with
+`Messages[]` + `trace_id`).
 
 Response (JSON): `{"stare": "ok"|"nok", "Messages": [{"message": "..."}], "trace_id":
 "..."}` — `Messages` present on `nok`.
@@ -208,7 +227,10 @@ Content-Type: text/plain        # XML in the body
 ```
 `std` (✔): `FACT1` | `FCN`. Optional `novld=DA` skips validation (⚠️ ANAF does not
 guarantee correctness of the PDF for unvalidated XML). Also available no-auth on
-`webservicesp.anaf.ro`.
+`webservicesp.anaf.ro`. **Prod-only** — the `test` path answers HTTP 404
+(live-confirmed 2026-07-02). `anafpy` therefore always calls the no-auth
+`webservicesp.anaf.ro/prod` variant, regardless of the client's environment
+(live-confirmed 2026-07-02: returns `%PDF` bytes for a valid invoice).
 
 > Provenance: PDF p. 5.
 
@@ -260,8 +282,8 @@ limit — the limits file is newer and is the authority.)
 | `get_status(index)` | `GET /FCTEL/rest/stareMesaj` |
 | `list_messages(cif, *, days \| start+end, filter=None)` → `AsyncIterator[MessageListItem]` | `GET /FCTEL/rest/listaMesajePaginatieFactura` (paged internally) |
 | `download(id)` → `DownloadedMessage` | `GET /FCTEL/rest/descarcare` |
-| `validate_remote(xml, standard)` | `POST /FCTEL/rest/validare/{std}` |
-| `to_pdf(xml, standard, validate=True)` | `POST /FCTEL/rest/transformare/{std}` |
+| `validate_remote(xml, standard)` | `POST webservicesp.anaf.ro/prod/FCTEL/rest/validare/{std}` (no auth, env-independent) |
+| `to_pdf(xml, standard, validate=True)` | `POST webservicesp.anaf.ro/prod/FCTEL/rest/transformare/{std}` (no auth, env-independent) |
 | `validate_signature(file, signature)` | `POST /api/validate/signature` |
 
 **Implementation notes**
@@ -279,5 +301,6 @@ limit — the limits file is newer and is the authority.)
   the latter **raises `AnafResponseError`** (matched by wording; see
   `is_empty_result_message`; the official wordings are catalogued in §3).
 - `download` returns a **ZIP** (binary) — handle as bytes, unzip to the two XML members.
-- The public `webservicesp.anaf.ro` no-auth `validare`/`transformare` could power a
-  zero-credential "lint my invoice" path; keep behind the same `Validator` seam.
+- `validate_remote`/`to_pdf` use the public no-auth `webservicesp.anaf.ro/prod`
+  variants (stateless, prod-only — see §5/§6) and deliberately send **no Bearer
+  header**; they ignore the client's `environment`.

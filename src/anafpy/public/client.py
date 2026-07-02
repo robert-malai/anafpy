@@ -180,7 +180,12 @@ class PublicClient:
         min_request_interval: float = 1.0,
     ) -> None:
         self._owns_http = http is None
-        self._http = http or httpx.AsyncClient(timeout=timeout)
+        # No keep-alive: ANAF's public host resets pooled idle connections between
+        # paced requests (RegAgric RSTs on reuse, live-observed 2026-07-02), and at
+        # ≤1 req/s a fresh connection per request costs nothing.
+        self._http = http or httpx.AsyncClient(
+            timeout=timeout, limits=httpx.Limits(max_keepalive_connections=0)
+        )
         self._pacer = _RequestPacer(min_request_interval)
 
     async def __aenter__(self) -> Self:

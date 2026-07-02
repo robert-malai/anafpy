@@ -210,7 +210,9 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         annotations=_READ_ONLY,
         description="Validate a complete UBL invoice / credit note (XML) with ANAF's "
         "own server-side validator, without filing. Authoritative — the same rules "
-        "the upload is checked against.",
+        "the upload is checked against. Uses ANAF's public no-auth validator, which "
+        "exists only in production, so it works (and answers identically) whatever "
+        "environment this server is configured for; nothing is filed anywhere.",
     )
     async def efactura_validate(document: UblXmlInput) -> dict[str, object]:
         xml = resolve_xml(document)

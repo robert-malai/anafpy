@@ -22,6 +22,8 @@ from anafpy.mcp.server import create_server
 
 EFACTURA = "https://api.anaf.ro/test/FCTEL/rest"
 ETRANSPORT = "https://api.anaf.ro/test/ETRANSPORT/ws/v1"
+# `validare` is public, no-auth, and prod-only — routed there whatever ANAFPY_ENV is.
+EFACTURA_PUBLIC = "https://webservicesp.anaf.ro/prod/FCTEL/rest"
 
 
 def _jwt(exp: float) -> str:
@@ -116,7 +118,7 @@ async def test_efactura_get_status(tmp_path: Path) -> None:
 
 @respx.mock
 async def test_efactura_validate_calls_anaf_validator(tmp_path: Path) -> None:
-    route = respx.post(f"{EFACTURA}/validare/FACT1").mock(
+    route = respx.post(f"{EFACTURA_PUBLIC}/validare/FACT1").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -135,7 +137,7 @@ async def test_efactura_validate_calls_anaf_validator(tmp_path: Path) -> None:
 
 @respx.mock
 async def test_efactura_validate_routes_credit_notes_to_fcn(tmp_path: Path) -> None:
-    route = respx.post(f"{EFACTURA}/validare/FCN").mock(
+    route = respx.post(f"{EFACTURA_PUBLIC}/validare/FCN").mock(
         return_value=httpx.Response(200, json={"stare": "ok"})
     )
     server = create_server(_config(tmp_path))

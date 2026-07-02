@@ -28,8 +28,9 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   certificate), local token store, and headless refresh, exposed via the `anafpy` CLI
   and an `httpx.Auth` integration for the clients.
 - **`EFacturaClient`** (async) — `upload`, `get_status`, `download`, `to_pdf`,
-  `validate_remote` (ANAF's authoritative server-side validation, no filing),
-  `validate_signature` (checks the MF signature over a downloaded invoice), the
+  `validate_remote` (ANAF's authoritative server-side validation, no filing — uses the
+  public no-auth production validator, so it works whatever environment the client
+  targets), `validate_signature` (checks the MF signature over a downloaded invoice), the
   `upload_and_wait` poll-until-terminal helper, and `list_messages` — a single async
   iterator that pages the message list under the hood (window by `days` or `start`/`end`;
   empty window → empty iterator, real ANAF errors → raise). `download` exposes three read
@@ -183,12 +184,15 @@ uv sync --all-extras
 uv run pytest                              # respx-mocked, credential-free
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                                # strict
-ANAFPY_LIVE=1 uv run pytest -m live        # opt-in: live smoke of the public services
+ANAFPY_LIVE=1 uv run pytest -m live        # opt-in: live smoke against real ANAF
 ```
 
-The `live` marker re-confirms the public-service wire shapes against real ANAF
-endpoints (no credentials needed, network + production ANAF required); it is skipped
-by default and is not a gate.
+The `live` marker re-confirms wire shapes against real ANAF endpoints and is skipped
+by default (not a gate). It covers the public services (no credentials needed) plus,
+with `.env` credentials and an `anafpy auth login` token store, the authenticated
+**TEST** environment: read-only shape checks and two roundtrips that actually file a
+test document — a minimal CIUS-RO invoice (e-Factura) and a domestic transport
+declaration (e-Transport). The roundtrips target TEST only, never production.
 
 Models under `efactura/ubl/` and `etransport/schema/` are **generated** (via
 `scripts/generate_*.py` from vendored XSDs in `schemas/`) and must not be hand-edited.

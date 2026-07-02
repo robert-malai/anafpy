@@ -29,6 +29,7 @@ from tenacity import (
 
 from .._transport.base import (
     OAUTH_HOST,
+    PUBLIC_HOST,
     Environment,
     Service,
     as_text,
@@ -60,6 +61,10 @@ __all__ = ["EFacturaClient"]
 # ANAF wants the XML payload as a raw text/plain body (per the API PDF), despite it
 # being XML.
 _XML_BODY_HEADERS = {"Content-Type": "text/plain"}
+
+# Overrides the client's `AnafAuth` for the public no-auth endpoints (the base
+# `httpx.Auth` passes requests through untouched — no Bearer header).
+_NO_AUTH = httpx.Auth()
 
 # Defensive upper bound on pages walked by ``list_messages`` — guards against a
 # misbehaving server that never returns an empty/terminal page.
@@ -382,15 +387,35 @@ class EFacturaClient:
         ANAF's own validator — authoritative, unlike any local pre-check. An invalid
         document is returned as a :class:`RemoteValidationResult` with ``valid=False``
         and the findings in ``messages``, not raised.
+
+        Validation is stateless and ANAF exposes ``validare`` only on **production**
+        (the ``test`` path answers HTTP 404, live-confirmed 2026-07-02) — so, like
+        ``validate_signature``, this calls the **public no-auth** variant on
+        ``webservicesp.anaf.ro`` and ignores this client's ``environment``. Nothing
+        is filed anywhere.
         """
-        body = xml.encode("utf-8") if isinstance(xml, str) else xml
-        response = await self._request(
-            "POST",
-            f"validare/{standard.value}",
-            content=body,
-            headers=_XML_BODY_HEADERS,
+        response = await self._post_public(
+            self._public_prod_url(f"validare/{standard.value}"), xml
         )
         return self._parse_validate(response.content)
+
+    @staticmethod
+    def _public_prod_url(path: str) -> str:
+        """URL of the public no-auth **production** variant of a stateless document
+        service — `validare`/`transformare` exist only there (no `test` segment)."""
+        return f"{PUBLIC_HOST}/prod/{Service.EFACTURA.value}/{path}"
+
+    async def _post_public(self, url: str, xml: str | bytes) -> httpx.Response:
+        """POST an XML body to a public no-auth URL (no Bearer header attached)."""
+        body = xml.encode("utf-8") if isinstance(xml, str) else xml
+        try:
+            response = await self._http.post(
+                url, content=body, headers=_XML_BODY_HEADERS, auth=_NO_AUTH
+            )
+        except httpx.HTTPError as exc:
+            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        raise_for_status(response)
+        return response
 
     @staticmethod
     def _parse_validate(body: bytes) -> RemoteValidationResult:
@@ -480,14 +505,13 @@ class EFacturaClient:
         validate: bool = True,
     ) -> bytes:
         """Render invoice XML to a PDF (``transformare``). ``validate=False`` skips
-        ANAF's validation (it then does not guarantee the PDF)."""
-        body = xml.encode("utf-8") if isinstance(xml, str) else xml
+        ANAF's validation (it then does not guarantee the PDF). Stateless and
+        prod-only like ``validare``, so this calls the public no-auth variant and
+        ignores this client's ``environment``."""
         path = f"transformare/{standard.value}"
         if not validate:
             path += "/DA"
-        response = await self._request(
-            "POST", path, content=body, headers=_XML_BODY_HEADERS
-        )
+        response = await self._post_public(self._public_prod_url(path), xml)
         return response.content
 
     async def upload_and_wait(

@@ -415,10 +415,15 @@ def test_list_messages_window_args_are_validated() -> None:
 
 # --- validate_remote ------------------------------------------------------------------
 
+# `validare`/`transformare` exist only on production, as public no-auth endpoints —
+# the client routes them to webservicesp.anaf.ro/prod regardless of its environment
+# (this client is TEST) and must not attach the Bearer token.
+PUBLIC_BASE = "https://webservicesp.anaf.ro/prod/FCTEL/rest"
+
 
 @respx.mock
 async def test_validate_remote_ok() -> None:
-    route = respx.post(f"{BASE}/validare/FACT1").mock(
+    route = respx.post(f"{PUBLIC_BASE}/validare/FACT1").mock(
         return_value=httpx.Response(200, json={"stare": "ok", "trace_id": "abc-123"})
     )
     async with _client() as client:
@@ -427,11 +432,12 @@ async def test_validate_remote_ok() -> None:
     assert result.messages == []
     assert result.trace_id == "abc-123"
     assert route.calls.last.request.headers["content-type"] == "text/plain"
+    assert "authorization" not in route.calls.last.request.headers
 
 
 @respx.mock
 async def test_validate_remote_nok_returns_findings_not_exception() -> None:
-    respx.post(f"{BASE}/validare/FCN").mock(
+    respx.post(f"{PUBLIC_BASE}/validare/FCN").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -451,12 +457,38 @@ async def test_validate_remote_nok_returns_findings_not_exception() -> None:
 
 @respx.mock
 async def test_validate_remote_unknown_shape_raises() -> None:
-    respx.post(f"{BASE}/validare/FACT1").mock(
+    respx.post(f"{PUBLIC_BASE}/validare/FACT1").mock(
         return_value=httpx.Response(200, text="<html>maintenance</html>")
     )
     async with _client() as client:
         with pytest.raises(AnafResponseError, match="unrecognised validare"):
             await client.validate_remote(b"<Invoice/>")
+
+
+# --- to_pdf ---------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_to_pdf_posts_to_public_prod_and_returns_bytes() -> None:
+    route = respx.post(f"{PUBLIC_BASE}/transformare/FACT1").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7 ...")
+    )
+    async with _client() as client:
+        pdf = await client.to_pdf(b"<Invoice/>")
+    assert pdf.startswith(b"%PDF")
+    assert "authorization" not in route.calls.last.request.headers
+
+
+@respx.mock
+async def test_to_pdf_novalidation_appends_da_segment() -> None:
+    route = respx.post(f"{PUBLIC_BASE}/transformare/FCN/DA").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7 ...")
+    )
+    async with _client() as client:
+        await client.to_pdf(
+            b"<CreditNote/>", standard=TransformStandard.CREDIT_NOTE, validate=False
+        )
+    assert route.called
 
 
 # --- validate_signature ---------------------------------------------------------------

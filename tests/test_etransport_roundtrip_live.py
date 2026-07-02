@@ -145,8 +145,9 @@ async def test_etransport_test_roundtrip(provider: TokenProvider, cif: str) -> N
     """File a domestic declaration to TEST and drive it to a terminal ``ok``.
 
     Confirms the upload (``index_incarcare`` + ``UIT`` + ``atentie``), ``stareMesaj``
-    (``in prelucrare`` → ``ok``), and ``lista``-with-results shapes end to end — the
-    ones the respx suite can only assert against fixtures.
+    (``in prelucrare`` → ``ok``), ``lista``-with-results, and ``info`` no-results
+    envelope shapes end to end — the ones the respx suite can only assert against
+    fixtures.
     """
     transport_date = dt.date.today() + dt.timedelta(days=1)
     xml = XmlSerializer().render(_domestic_declaration(cif, transport_date))
@@ -169,3 +170,12 @@ async def test_etransport_test_roundtrip(provider: TokenProvider, cif: str) -> N
         # The accepted UIT must now surface in the notification list.
         uits = {n.uit async for n in client.list_notifications(days=1, cif=cif)}
         assert upload.uit in uits
+
+        # `info` is scoped to a transport organizer looking up *others'* UITs, so a
+        # self-declared notification yields its no-results envelope — the top-level
+        # singular `error` string that diverges from every other endpoint's `Errors[]`
+        # (the one doc gap the 2026-07-02 roundtrip surfaced; api.md §4). Pin it.
+        info = await client.info(cui_op=cif, uit=upload.uit)
+        assert not info.items
+        assert info.error is not None
+        assert "nu exista informatii" in info.error.lower()

@@ -89,7 +89,7 @@ src/anafpy/
 schemas/                 # vendored XSDs (git-tracked, NOT shipped in the wheel)
 scripts/                 # codegen scripts
 docs/anaf-reference/     # compiled ANAF API reference (oauth/efactura/etransport/public)
-tests/                   # respx-mocked unit tests (+ opt-in live: test_public_live.py, test_oauth_live.py read-only; test_etransport_roundtrip_live.py files to TEST)
+tests/                   # respx-mocked unit tests (+ opt-in live: test_public_live.py, test_oauth_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST)
 ```
 
 ## Architecture & conventions
@@ -155,7 +155,10 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   repeated on one approval. Don't collapse this into a `dry_run` bool.
 - **Validation is ANAF's, not local.** `efactura_validate` calls the server-side
   `validare` endpoint via `EFacturaClient.validate_remote` (authoritative by
-  definition); e-Transport has no standalone validator — ANAF validates on upload.
+  definition). `validare`/`transformare` are **public, no-auth, prod-only** (their
+  TEST paths 404), so the client routes them to `webservicesp.anaf.ro/prod`
+  regardless of `environment` — validation works on test configs too and files
+  nothing; e-Transport has no standalone validator — ANAF validates on upload.
   There is deliberately **no local rule engine** (a Schematron/saxonche extra existed
   and was removed 2026-07-02); prepare never blocks on validation — the human review +
   ANAF's verdict are the gates. Don't reintroduce local validation.
@@ -199,8 +202,13 @@ shape (200 + `eroare` note) and the e-Transport `lista` no-results shape
 e-Transport TEST **roundtrip** 2026-07-02 (upload → `stareMesaj` `in prelucrare`→`ok`
 → `lista` → `info`) confirmed the upload/status/lista-with-results shapes and surfaced
 one doc gap: `info`'s no-results case rides a **top-level singular `error` string**
-(not `Errors[]`) — now handled by `_InfoEnvelope` / `_parse_info`. e-Factura
-upload/status/download shapes remain live-unconfirmed. The
+(not `Errors[]`) — now handled by `_InfoEnvelope` / `_parse_info`. A full **e-Factura
+TEST roundtrip** the same day (upload → `stareMesaj` `in prelucrare`→`ok` →
+`descarcare` ZIP → paginated list with results) confirmed the e-Factura
+upload/status/download shapes, and established that **`validare` and `transformare`
+are prod-only** (the `test` paths answer HTTP 404) — since they are also public and
+no-auth, the client always calls them on `webservicesp.anaf.ro/prod`, whatever its
+`environment`. The
 `live`-marked `tests/test_oauth_live.py` re-confirms the authenticated TEST shapes on
 demand (needs `.env` credentials + `anafpy auth login`). The **public services** have no swagger —
 their reference (`docs/anaf-reference/public/api.md`) is compiled from ANAF's
@@ -218,9 +226,12 @@ results.
   [tests/test_oauth_live.py](tests/test_oauth_live.py) — authenticated TEST, read-only,
   credentials from the gitignored repo-root `.env` loaded by `tests/conftest.py`) exist
   only to re-confirm wire shapes on demand (`ANAFPY_LIVE=1`) and are skipped by
-  default — don't move behavioural assertions there, and keep them read-only. The **one
-  deliberate exception** is [tests/test_etransport_roundtrip_live.py](tests/test_etransport_roundtrip_live.py),
-  which **files** a domestic declaration end-to-end (upload → `stareMesaj` → `lista`) —
+  default — don't move behavioural assertions there, and keep them read-only. The **two
+  deliberate exceptions** are the roundtrip files —
+  [tests/test_etransport_roundtrip_live.py](tests/test_etransport_roundtrip_live.py)
+  **files** a domestic declaration (upload → `stareMesaj` → `lista` → `info`) and
+  [tests/test_efactura_roundtrip_live.py](tests/test_efactura_roundtrip_live.py)
+  **files** a minimal CIUS-RO invoice (upload → `stareMesaj` → `descarcare` → list) —
   **TEST only, never prod** — to keep the filing wire shapes honest; don't add uploads
   to any other live file.
 - **Keep the docs in sync with the change.** When a change alters the public surface,
