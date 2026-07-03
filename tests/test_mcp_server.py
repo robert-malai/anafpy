@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
+import jsonschema
 import pytest
 import respx
 from mcp.server.fastmcp.exceptions import ToolError
@@ -431,6 +432,29 @@ async def test_prepare_declaration_rejects_invalid_fields(tmp_path: Path) -> Non
     declaration["goods"] = []
     with pytest.raises(ToolError, match="at least 1 item"):
         await _call(server, "etransport_prepare_declaration", declaration=declaration)
+
+
+async def test_prepare_declaration_output_matches_declared_schema(
+    tmp_path: Path,
+) -> None:
+    # Regression: the flat models serialize enum-coded fields as member names
+    # ('TTN', 'GERMANIA', 'NADLAC_2_A1'), but pydantic's default enum schema lists
+    # only the raw ANAF codes — MCP clients validate structured output against the
+    # declared schema, so a code-only schema rejected every prepare result.
+    server = create_server(_config(tmp_path))
+    declaration = build_flat_transport().model_dump(mode="json")
+    declaration["start_location"] = {"border_point": "NADLAC_2_A1"}
+    prepared = await _call(
+        server, "etransport_prepare_declaration", declaration=declaration
+    )
+    assert prepared["valid"] is True
+    tool = next(
+        t
+        for t in await server.list_tools()
+        if t.name == "etransport_prepare_declaration"
+    )
+    assert tool.outputSchema is not None
+    jsonschema.validate(prepared, tool.outputSchema)
 
 
 async def test_prepare_deletion_composes_stergere(tmp_path: Path) -> None:

@@ -32,6 +32,7 @@ from pydantic import (
     ConfigDict,
     Field,
     PlainSerializer,
+    WithJsonSchema,
     computed_field,
     model_validator,
 )
@@ -312,8 +313,11 @@ class _InfoEnvelope(_JsonEnvelope):
 # (``build_etransport`` / ``render_etransport``). Enum-coded fields are typed with the
 # generated XSD enums and accept either the ANAF code (``30``) or the member name
 # (``"TTN"``, ``"CLUJ"``, ``"NADLAC"``); they serialize as the member name so previews
-# stay human-readable. The only structure not carried is the XSD's unused ``xs:any``
-# extension hooks.
+# stay human-readable. Their declared JSON schema is a plain string — pydantic's
+# enum schema would list only the raw codes, which neither matches what validation
+# accepts (names too) nor what serialization emits (names), and MCP clients validate
+# tool output against it. The only structure not carried is the XSD's unused
+# ``xs:any`` extension hooks.
 
 
 def _member_or_value(enum_cls: type[Enum]) -> Callable[[object], object]:
@@ -333,11 +337,13 @@ def _member_or_value(enum_cls: type[Enum]) -> Callable[[object], object]:
 
 
 _AS_NAME = PlainSerializer(lambda member: member.name, return_type=str)
+_STR_SCHEMA = WithJsonSchema({"type": "string"})
 
 _OperationType = Annotated[
     CodTipOperatiuneType,
     BeforeValidator(_member_or_value(CodTipOperatiuneType)),
     _AS_NAME,
+    _STR_SCHEMA,
     Field(
         description="ANAF operation type: the sigla name ('TTN', 'AIC', 'LIC', "
         "'IMP', 'EXP', ...) or its numeric code (30, 10, 20, 40, 50, ...)."
@@ -347,6 +353,7 @@ _OperationScope = Annotated[
     CodScopOperatiuneType,
     BeforeValidator(_member_or_value(CodScopOperatiuneType)),
     _AS_NAME,
+    _STR_SCHEMA,
     Field(
         description="Operation scope: member name ('COMERCIALIZARE', ...) or "
         "numeric code (101, ...)."
@@ -356,30 +363,35 @@ _County = Annotated[
     CodJudetType,
     BeforeValidator(_member_or_value(CodJudetType)),
     _AS_NAME,
+    _STR_SCHEMA,
     Field(description="County: name ('CLUJ', 'MUNICIPIUL_BUCURESTI') or ANAF code."),
 ]
 _Country = Annotated[
     CodTaraType,
     BeforeValidator(_member_or_value(CodTaraType)),
     _AS_NAME,
+    _STR_SCHEMA,
     Field(description="Country: ISO-3166 alpha-2 code ('RO') or name ('ROMANIA')."),
 ]
 _BorderPoint = Annotated[
     CodPtfType,
     BeforeValidator(_member_or_value(CodPtfType)),
     _AS_NAME,
+    _STR_SCHEMA,
     Field(description="Border crossing point: name ('NADLAC', ...) or ANAF code."),
 ]
 _CustomsOffice = Annotated[
     CodBirouVamalType,
     BeforeValidator(_member_or_value(CodBirouVamalType)),
     _AS_NAME,
+    _STR_SCHEMA,
     Field(description="Customs office: name ('BVI_CLUJ_NAPOCA', ...) or ANAF code."),
 ]
 _DocumentType = Annotated[
     TipDocumentType,
     BeforeValidator(_member_or_value(TipDocumentType)),
     _AS_NAME,
+    _STR_SCHEMA,
     Field(
         description="Document type: 'CMR', 'FACTURA', 'AVIZ_DE_INSOTIRE_A_MARFII', "
         "'ALTELE' — or the ANAF code (10/20/30/9999)."
@@ -389,6 +401,7 @@ _ConfirmationType = Annotated[
     TipConfirmareType,
     BeforeValidator(_member_or_value(TipConfirmareType)),
     _AS_NAME,
+    _STR_SCHEMA,
     Field(description="'CONFIRMAT' (10), 'CONFIRMAT_PARTIAL' (20) or 'INFIRMAT' (30)."),
 ]
 

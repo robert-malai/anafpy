@@ -47,7 +47,9 @@ Issues = "https://github.com/robert-malai/anafpy/issues"
 
 # PEP 735 dependency groups (dev-only; installed via `uv sync`).
 [dependency-groups]
-test = ["pytest>=8.2", "pytest-asyncio>=0.23", "respx>=0.21"]
+# types-jsonschema: jsonschema comes in via the mcp SDK; the MCP tests use it to
+# check tool output against the declared schema, and mypy strict wants its stubs.
+test = ["pytest>=8.2", "pytest-asyncio>=0.23", "respx>=0.21", "types-jsonschema>=4.21"]
 lint = ["ruff>=0.5", "mypy>=1.10"]
 docs = ["markitdown>=0.0.1"]
 # Code generation of UBL / e-Transport models from vendored XSDs (dev-only).
