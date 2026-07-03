@@ -17,10 +17,12 @@ import jsonschema
 import pytest
 import respx
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.types import GetPromptResult, TextContent
 
 from _wire import build_flat_transport, credit_note_xml, invoice_xml, transport_xml
 from anafpy._transport.base import Environment
 from anafpy.auth import FileTokenStore, TokenSet
+from anafpy.exceptions import AnafConfigError
 from anafpy.mcp.config import ServerConfig
 from anafpy.mcp.server import create_server
 
@@ -670,6 +672,99 @@ async def test_reference_docs_exposed_as_resources(tmp_path: Path, _docs: Path) 
     assert "anafref://efactura/api" in uris
     # README is excluded.
     assert all("README" not in u for u in uris)
+
+
+# --- prompts (workflow skills) --------------------------------------------------------
+
+
+@pytest.fixture
+def _skills(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    skills = tmp_path / "skills"
+    (skills / "demo-flow").mkdir(parents=True)
+    (skills / "demo-flow" / "SKILL.md").write_text(
+        "---\n"
+        "name: demo-flow\n"
+        "description: >\n"
+        "  Do the demo thing\n"
+        "  end to end.\n"
+        "---\n"
+        "\n"
+        "# Demo\n"
+        "\n"
+        "Call `demo_tool` first.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ANAFPY_SKILLS_DIR", str(skills))
+    yield skills
+
+
+def _prompt_text(result: GetPromptResult) -> str:
+    (message,) = result.messages
+    assert isinstance(message.content, TextContent)
+    return message.content.text
+
+
+async def test_skills_exposed_as_prompts(tmp_path: Path, _skills: Path) -> None:
+    server = create_server(_config(tmp_path))
+    (prompt,) = await server.list_prompts()
+    assert prompt.name == "demo-flow"
+    # The `>` folded frontmatter scalar becomes a one-line description.
+    assert prompt.description == "Do the demo thing end to end."
+    assert prompt.arguments is not None
+    (argument,) = prompt.arguments
+    assert (argument.name, argument.required) == ("source", False)
+
+
+async def test_prompt_renders_body_without_frontmatter(
+    tmp_path: Path, _skills: Path
+) -> None:
+    server = create_server(_config(tmp_path))
+    text = _prompt_text(await server.get_prompt("demo-flow"))
+    assert text.startswith("# Demo")
+    assert "demo_tool" in text
+
+
+async def test_prompt_source_argument_is_appended(
+    tmp_path: Path, _skills: Path
+) -> None:
+    server = create_server(_config(tmp_path))
+    text = _prompt_text(
+        await server.get_prompt("demo-flow", {"source": "invoice 42 from ACME"})
+    )
+    assert text.startswith("# Demo")
+    assert text.rstrip().endswith("invoice 42 from ACME")
+
+
+async def test_repo_skills_parse_and_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Default resolution serves the repo's own skills/ — keeps the real SKILL.md
+    # frontmatter parseable by the loader.
+    monkeypatch.delenv("ANAFPY_SKILLS_DIR", raising=False)
+    server = create_server(_config(tmp_path))
+    names = {p.name for p in await server.list_prompts()}
+    assert "etransport-declare" in names
+
+
+async def test_missing_skills_dir_serves_no_prompts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ANAFPY_SKILLS_DIR", str(tmp_path / "nope"))
+    server = create_server(_config(tmp_path))
+    assert await server.list_prompts() == []
+
+
+def test_malformed_skill_fails_loudly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    skills = tmp_path / "skills"
+    (skills / "bad").mkdir(parents=True)
+    (skills / "bad" / "SKILL.md").write_text(
+        "---\ndescription: no name here\n---\nbody\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("ANAFPY_SKILLS_DIR", str(skills))
+    with pytest.raises(AnafConfigError, match="name"):
+        create_server(_config(tmp_path))
 
 
 # --- config -------------------------------------------------------------------------

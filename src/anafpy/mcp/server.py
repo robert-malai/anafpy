@@ -20,7 +20,10 @@ context: ``save_zip_as`` / ``save_pdf_as`` write the signed ZIP and ANAF's
 its filesystem is the user's), and the PDF is also a resource template
 (``anafmsg://{message_id}/pdf``) for hosts with resource UX. The compiled ANAF
 reference is surfaced as read-only MCP
-resources so the model can ground BR-RO explanations and code lists.
+resources so the model can ground BR-RO explanations and code lists. The plugin's
+workflow skills (``skills/*/SKILL.md``) are re-served as MCP **prompts** of the same
+name, so clients without the plugin (Claude Desktop, a bare ``claude mcp add``) get
+the same playbooks as a user-invoked entry point.
 """
 
 from __future__ import annotations
@@ -29,11 +32,11 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from ..efactura.models import Filter, TransformStandard, UploadStandard
 from ..etransport.models import (
@@ -56,6 +59,7 @@ from .models import (
     UblXmlInput,
 )
 from .nomenclatures import nomenclature_entries
+from .skills import load_skills
 from .tokens import ConfirmationError, issue_token, verify_token
 
 __all__ = ["create_server"]
@@ -208,6 +212,7 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     _register_etransport(mcp, ctx, cfg)
     _register_public(mcp, ctx)
     _register_resources(mcp, cfg)
+    _register_prompts(mcp, cfg)
     return mcp
 
 
@@ -745,6 +750,46 @@ def _make_reader(path: Path) -> Callable[[], str]:
         return path.read_text(encoding="utf-8")
 
     return read
+
+
+def _skills_dir(cfg: ServerConfig) -> Path | None:
+    default = Path(__file__).resolve().parents[3] / "skills"
+    skills = cfg.skills_dir or default
+    return skills if skills.is_dir() else None
+
+
+def _register_prompts(mcp: FastMCP, cfg: ServerConfig) -> None:
+    """Expose the plugin workflow skills as user-invoked MCP prompts.
+
+    The plugin ships the ``skills/`` playbooks model-triggered; for MCP clients
+    without the plugin (a bare ``claude mcp add``, Claude Desktop, ...) each skill
+    is also served as a prompt of the same name, carrying the same Markdown —
+    prompts are the closest MCP primitive to a skill, invoked by the *user* (a
+    slash command in Claude Code, the "+" attachment menu in Claude Desktop).
+    """
+    if (skills := _skills_dir(cfg)) is None:
+        return
+    for skill in load_skills(skills):
+        mcp.prompt(name=skill.name, description=skill.description)(
+            _make_prompt(skill.body)
+        )
+
+
+def _make_prompt(body: str) -> Callable[..., str]:
+    def prompt(
+        source: Annotated[
+            str,
+            Field(
+                description="Optional: the source data or a pointer to it (pasted "
+                "text, a file path, a message reference) to seed the workflow with."
+            ),
+        ] = "",
+    ) -> str:
+        if source:
+            return f"{body}\n---\n\nSource data from the user:\n{source}\n"
+        return body
+
+    return prompt
 
 
 def main() -> None:

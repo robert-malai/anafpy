@@ -250,7 +250,10 @@ compose the declaration XML, and return it alongside the preview and token;
 e-Transport `prepare`
 previews present documents as friendly **flat models** parsed from the XML (for
 invoices, easy to read and lossy by design — the raw bytes stay authoritative). The
-compiled ANAF reference is surfaced as read-only resources. Auth stays
+compiled ANAF reference is surfaced as read-only resources, and the plugin's
+workflow skills double as MCP **prompts** of the same name — a user-invoked entry
+point for clients without the plugin (Claude Desktop's "+" menu, or
+`/mcp__anafpy__etransport-declare` after a bare `claude mcp add`). Auth stays
 the host-side CLI — the server only reads and refreshes the token store. Configuration is
 environment-only; see [`CLAUDE.md`](CLAUDE.md).
 
@@ -278,7 +281,9 @@ The plugin also ships workflow skills: `/anafpy:etransport-declare` walks Claude
 through filing an e-Transport declaration from whatever source the data lives in
 (an email, a PDF invoice, a CMR, a spreadsheet) — extract, map to the structured
 declaration, prepare, show the preview for your approval, submit, then poll until
-ANAF issues a valid UIT.
+ANAF issues a valid UIT. The same playbooks are served by the MCP server itself as
+prompts (see above), so they travel with any connection method, not just the
+plugin.
 
 ## Development
 

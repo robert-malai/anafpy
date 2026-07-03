@@ -41,6 +41,9 @@ class ServerConfig(BaseSettings):
         docs_dir: directory of the compiled ANAF reference exposed as MCP resources
             (``ANAFPY_DOCS_DIR``); defaults to the repo's ``docs/anaf-reference/``
             when present.
+        skills_dir: directory of plugin workflow skills re-exposed as MCP prompts
+            (``ANAFPY_SKILLS_DIR``); defaults to the repo's ``skills/`` when
+            present.
         signing_key: per-process secret backing the confirmation tokens issued by the
             two-step ``prepare`` → ``submit`` flow. Defaults to a fresh random key, so
             tokens are only valid within the lifetime of one server process.
@@ -60,6 +63,7 @@ class ServerConfig(BaseSettings):
     )
     default_cif: str | None = Field(default=None, validation_alias="ANAFPY_CIF")
     docs_dir: Path | None = Field(default=None, validation_alias="ANAFPY_DOCS_DIR")
+    skills_dir: Path | None = Field(default=None, validation_alias="ANAFPY_SKILLS_DIR")
     # A private attribute, not a settings field: BaseSettings populates fields from
     # the environment by name, and the signing key must never come from a stray
     # `SIGNING_KEY` env var — it is a fresh per-process secret each run.
@@ -70,13 +74,18 @@ class ServerConfig(BaseSettings):
         """Per-process secret backing the confirmation tokens (never from env)."""
         return self._signing_key
 
-    @field_validator("store_path", "docs_dir")
+    @field_validator("store_path", "docs_dir", "skills_dir")
     @classmethod
     def _expand_path(cls, value: Path | None) -> Path | None:
         return value.expanduser() if value is not None else None
 
     @field_validator(
-        "client_id", "client_secret", "default_cif", "docs_dir", mode="before"
+        "client_id",
+        "client_secret",
+        "default_cif",
+        "docs_dir",
+        "skills_dir",
+        mode="before",
     )
     @classmethod
     def _blank_is_none(cls, value: object) -> object:

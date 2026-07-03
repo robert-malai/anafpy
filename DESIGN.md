@@ -403,7 +403,16 @@ reference as resources.)*
   (excluded from tool payloads). The counterparty sanity-check before filing lives
   here.
 - **ANAF reference exposed as MCP resources** (with draft/Romanian notes) so the skill can
-  ground BR-RO explanations and code lists. Prompts deferred.
+  ground BR-RO explanations and code lists.
+- **Workflow skills re-served as MCP prompts** (2026-07-03): each `skills/*/SKILL.md`
+  becomes a prompt of the same name — frontmatter `description` as the prompt
+  description, the Markdown body as the prompt text, plus an optional `source`
+  argument. Prompts are the closest MCP primitive to a skill but **user-invoked**
+  (a slash command in Claude Code, the "+" menu in Claude Desktop), so this is
+  parity for consumers without the plugin, not a replacement for it: only the
+  plugin's skill copy is model-triggered. The SKILL.md files stay the single source
+  of truth (`anafpy.mcp.skills` reads them at server start via
+  `python-frontmatter`, failing loudly when `name`/`description` are missing).
 - **Auth handling**: server reads the token store + transparent refresh; interactive login
   stays the host-side CLI. A read-only **`auth_status`** reports validity; all tools fail
   with a clear "run `anafpy auth login`" remediation when unauthenticated.
@@ -437,7 +446,12 @@ reference as resources.)*
 4. **Cowork local-stdio availability** — live ambiguity whether local connectors run
    directly in Cowork vs only Claude Desktop. ANAF's cert forces local execution
    regardless; affects only which surface hosts it. Verify at build time.
-5. **Phase-2 MCP prompts** and in-session `begin_login` — deferred by design.
+5. ~~Phase-2 MCP prompts~~ **DONE 2026-07-03**: the `skills/*/SKILL.md` playbooks
+   are re-served as MCP prompts of the same name (single source of truth, read from
+   `ANAFPY_SKILLS_DIR`, default the repo's `skills/`) — plugin installs get them
+   model-triggered, prompt-capable clients (Claude Desktop, bare `claude mcp add`)
+   get them user-invoked, with an optional `source` argument to seed the workflow.
+   In-session `begin_login` remains deferred by design.
 6. ~~Public CUI/VAT lookup~~ **DONE 2026-07-02** (`anafpy.public.PublicClient`, §6;
    exposed as the MCP `anaf_*` lookup tools, §8). **SPV, e-TVA, CII, e-Transport v1**
    remain out of scope; revisit only if needed. Still open within the public family:

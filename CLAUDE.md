@@ -55,7 +55,9 @@ Config is env-only — `anafpy.mcp.config.ServerConfig` is a `pydantic-settings`
 the public `anaf_*` lookups; the authenticated tools raise a how-to-enable
 `AnafConfigError`), `ANAFPY_TOKEN_STORE` (default `~/.anafpy/tokens.json`),
 `ANAFPY_ENV` (`test`/`prod`), `ANAFPY_CIF` (default fiscal code), `ANAFPY_DOCS_DIR`
-(reference resources, defaults to the repo `docs/anaf-reference/`).
+(reference resources, defaults to the repo `docs/anaf-reference/`),
+`ANAFPY_SKILLS_DIR` (workflow skills re-served as MCP prompts, defaults to the repo
+`skills/`).
 
 Codegen (only when re-vendoring XSDs — see below):
 
@@ -92,8 +94,9 @@ src/anafpy/
     models.py            # UBL XML pass-through inputs + prepared-submission gate
     documents.py         # resolve XML input -> bytes; parse bytes -> client flat models
     nomenclatures.py     # e-Transport code lists (from the XSD enums) for the model
+    skills.py            # skills/*/SKILL.md loader (frontmatter + body) for MCP prompts
     tokens.py            # HMAC confirmation tokens for two-step gated mutations
-    server.py            # FastMCP server: tools + resources; `create_server`, `main`
+    server.py            # FastMCP server: tools + resources + prompts; `create_server`, `main`
     __main__.py          # `python -m anafpy.mcp` (stdio)
 .claude-plugin/          # Claude Code plugin: plugin.json (inline mcpServers, runs
                          # `uv run --frozen --extra mcp anafpy-mcp` from the plugin
@@ -101,7 +104,8 @@ src/anafpy/
                          # single-plugin marketplace); no `version` field on purpose
                          # -> commit-SHA versioning, every push is an update
 skills/                  # plugin workflow skills (etransport-declare: source data ->
-                         # FlatTransport -> prepare -> approval -> submit -> status)
+                         # FlatTransport -> prepare -> approval -> submit -> status);
+                         # also re-served by the MCP server as same-name prompts
 schemas/                 # vendored XSDs (git-tracked, NOT shipped in the wheel)
 scripts/                 # codegen scripts
 docs/anaf-reference/     # compiled ANAF API reference (oauth/efactura/etransport/public)
@@ -152,6 +156,14 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   returns a `FastMCP`; `AppContext` owns one `TokenProvider` + lazily-built clients and
   closes them in the server lifespan. The server reads the existing token store and
   refreshes headlessly — it never drives the cert/browser step (that stays the CLI).
+- **Workflow skills double as MCP prompts** (2026-07-03). Each `skills/*/SKILL.md`
+  is re-served as a same-name prompt (`anafpy.mcp.skills` reads frontmatter + body;
+  optional `source` argument seeds the workflow) so clients without the plugin
+  (Claude Desktop, bare `claude mcp add`) get the playbooks user-invoked; only the
+  plugin's copy is model-triggered. The SKILL.md files are the single source of
+  truth — never duplicate their content into the server; parsing is
+  `python-frontmatter`'s (the `mcp` extra), with `skills.py` only enforcing that
+  `name`/`description` are present (missing fields fail loudly at server start).
 - **No e-Factura filing tools** (removed 2026-07-03): outbound invoices come from
   third-party invoicing software, which files with ANAF directly — there is no MCP
   use case, so the e-Factura surface is **read-only** (inbox, download,

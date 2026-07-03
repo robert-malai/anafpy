@@ -34,7 +34,8 @@ dependencies = [
 [project.optional-dependencies]
 # MCP server exposing the clients as Cowork skills.
 # mcp>=1.10: display `title` on tools (spec 2025-06-18).
-mcp = ["mcp>=1.10", "pydantic-settings>=2.4"]
+# python-frontmatter>=1.3: skills/*/SKILL.md -> MCP prompts (1.3 ships py.typed).
+mcp = ["mcp>=1.10", "pydantic-settings>=2.4", "python-frontmatter>=1.3"]
 
 [project.scripts]
 anafpy = "anafpy.cli.main:main"
