@@ -3,8 +3,10 @@
 The composing ``etransport_prepare_*`` tools accept enum members by name or ANAF
 code; this module lets the model discover those names/codes without guessing. The
 entries come straight from the generated XSD enums (regeneration keeps them in
-sync); only the operation-type labels are hand-carried here, because the codegen
-keeps the XSD's ``xs:documentation`` text as source comments, not runtime data.
+sync); the human labels of the small nomenclatures (operation types, scopes,
+document and confirmation types) are hand-carried here verbatim from the XSD's
+``xs:documentation``, because the codegen keeps that text as source comments, not
+runtime data.
 """
 
 from __future__ import annotations
@@ -52,6 +54,45 @@ _OPERATION_TYPE_LABELS = {
     "DIE": "Tranzacţie intracomunitară - Ieşire după depozitare/formare nou transport",
 }
 
+_OPERATION_SCOPE_LABELS = {
+    "COMERCIALIZARE": "Comercializare",
+    "PRODUCTIE": "Producție",
+    "GRATUITATI": "Gratuități",
+    "ECHIPAMENT_COMERCIAL": "Echipament comercial",
+    "MIJLOACE_FIXE": "Mijloace fixe",
+    "CONSUM_PROPRIU": "Consum propriu",
+    "OPERATIUNI_DE_LIVRARE_CU_INSTALARE": "Operațiuni de livrare cu instalare",
+    "TRANSFER_INTRE_GESTIUNI": "Transfer între gestiuni",
+    "BUNURI_PUSE_LA_DISPOZITIA_CLIENTULUI": "Bunuri puse la dispoziția clientului",
+    "LEASING_FINANCIAR_OPERATIONAL": "Leasing financiar/operațional",
+    "BUNURI_IN_GARANTIE": "Bunuri în garanție",
+    "OPERATIUNI_SCUTITE": "Operațiuni scutite",
+    "INVESTITIE_IN_CURS": "Investiție in curs",
+    "DONATII_AJUTOARE": "Donații, ajutoare",
+    "ALTELE": "Altele",
+    "ACELASI_CU_OPERATIUNEA": "Același cu operațiunea",
+}
+
+_DOCUMENT_TYPE_LABELS = {
+    "CMR": "CMR",
+    "FACTURA": "Factura",
+    "AVIZ_DE_INSOTIRE_A_MARFII": "Aviz de însoțire a mărfii",
+    "ALTELE": "Altele",
+}
+
+_CONFIRMATION_TYPE_LABELS = {
+    "CONFIRMAT": "Confirmat",
+    "CONFIRMAT_PARTIAL": "Confirmat parţial",
+    "INFIRMAT": "Infirmat",
+}
+
+_LABELS: dict[type[Enum], dict[str, str]] = {
+    CodTipOperatiuneType: _OPERATION_TYPE_LABELS,
+    CodScopOperatiuneType: _OPERATION_SCOPE_LABELS,
+    TipDocumentType: _DOCUMENT_TYPE_LABELS,
+    TipConfirmareType: _CONFIRMATION_TYPE_LABELS,
+}
+
 
 def nomenclature_entries(kind: str) -> list[dict[str, object]]:
     """The ``{name, code[, label]}`` entries of one nomenclature.
@@ -63,7 +104,7 @@ def nomenclature_entries(kind: str) -> list[dict[str, object]]:
         raise AnafConfigError(
             f"unknown nomenclature {kind!r}; one of: {', '.join(sorted(_KINDS))}"
         )
-    labels = _OPERATION_TYPE_LABELS if enum_cls is CodTipOperatiuneType else {}
+    labels = _LABELS.get(enum_cls, {})
     return [
         {"name": member.name, "code": member.value}
         | ({"label": label} if (label := labels.get(member.name)) else {})

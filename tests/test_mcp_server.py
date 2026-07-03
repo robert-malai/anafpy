@@ -534,6 +534,12 @@ async def test_etransport_nomenclature_lists_names_and_codes(tmp_path: Path) -> 
     ttn = next(e for e in ops["entries"] if e["name"] == "TTN")
     assert ttn["code"] == 30
     assert "teritoriul" in ttn["label"]
+    docs = await _call(server, "etransport_nomenclature", kind="document_types")
+    aviz = next(e for e in docs["entries"] if e["code"] == 30)
+    assert aviz["label"] == "Aviz de însoțire a mărfii"
+    scopes = await _call(server, "etransport_nomenclature", kind="operation_scopes")
+    same_as_op = next(e for e in scopes["entries"] if e["code"] == 9999)
+    assert same_as_op["label"] == "Același cu operațiunea"
 
 
 # --- public no-auth lookups -----------------------------------------------------------

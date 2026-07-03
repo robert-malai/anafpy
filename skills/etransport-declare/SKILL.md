@@ -105,11 +105,72 @@ there is no standalone validator; ANAF validates on upload.
 
 ## Step 4 — human approval (hard gate)
 
-Present the preview to the user: operation type, partner, carrier + plate, transport
-date, route, each goods line with weight/value, totals, the documents, and **which
-environment** (test/prod) it will be filed to. Then ask for explicit approval. Do not
-proceed on silence, on a vague "looks good" about something else, or by inferring
-consent from the original request.
+Present the declaration with the fixed template below, filled **from
+`transport_preview`** — the declaration parsed back from the XML that will actually
+be filed — never from your own extraction notes, so the user reviews what ANAF will
+receive. Then ask for explicit approval. Do not proceed on silence, on a vague
+"looks good" about something else, or by inferring consent from the original
+request.
+
+```markdown
+---
+
+### 📋 e-Transport declaration `REVIEW BEFORE FILING`
+
+<🟢 | 🔴> **Environment: <TEST — no real filing | PROD — this files a real declaration with ANAF>**
+Filing CIF `<cif>` · Operation **<SIGLA> — <label from etransport_nomenclature>**
+Correction of UIT `<uit>`
+
+#### Transport
+
+| | |
+|---|---|
+| Partner | <name> — <country>, <fiscal code> |
+| Carrier | <carrier_name> — <carrier_country>, <carrier_code> |
+| Vehicle | <plate> + trailer(s) <trailer1>, <trailer2> |
+| Transport date | <YYYY-MM-DD> |
+| From | <locality, county — street number | border point | customs office> |
+| To | <locality, county — street number | border point | customs office> |
+| Reference | <declarant_ref> |
+
+#### Goods — <goods_count> line(s) · <total_gross_weight> kg gross · <total value> RON
+
+| # | Goods | Quantity | Gross kg | Net kg | NC code | Value (RON) |
+|---|---|---|---|---|---|---|
+| 1 | <name> | <quantity> <unit_code> | <gross_weight> | <net_weight> | <tariff_code> | <value_ron> |
+
+#### Documents
+
+<document-type label> no. <number> / <date>; …
+
+⚠️ <flags carried over from step 2, if any>
+
+---
+
+File this declaration with ANAF (<test | prod>)?
+```
+
+Template rules:
+
+- **Drop, don't blank**: omit the *Correction of UIT* line, the *Reference* row, the
+  trailer suffix, and the ⚠️ line entirely when unset; inside the goods table an
+  unset optional cell is `—`.
+- **Totals**: total value is the sum of `value_ron` over the lines that carry one —
+  if some lines don't, write `<sum> RON (<n> of <goods_count> lines)`.
+- **Frame**: the horizontal rules and the two-emoji vocabulary (📋 title, 🟢 test /
+  🔴 prod) are the visual frame that sets the declaration apart from conversation —
+  keep them exactly as templated, and keep the approval question *outside* the
+  closing rule.
+- **Scope**: when every goods line has the same `operation_scope`, append it once to
+  the Goods heading (`… RON · scope Comercializare`); otherwise add a *Scope* column.
+- **Post-incident**: if `post_incident` is true, add a bold
+  `**Post-incident declaration (declPostAvarie)**` line under the environment line.
+- **Human labels, not member names**: render enum-coded values with ANAF's labels
+  from `etransport_nomenclature` — the operation sigla with its label, goods scopes
+  (`Comercializare`, `Același cu operațiunea`), document types (`Factura`, `Aviz de
+  însoțire a mărfii`), and border points / customs offices by name.
+- Keep everything else verbatim from the preview (plates already normalized,
+  dates ISO).
 
 ## Step 5 — submit and poll
 
