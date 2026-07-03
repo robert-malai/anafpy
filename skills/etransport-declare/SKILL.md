@@ -109,6 +109,12 @@ Helpers while mapping:
   transcribing names from a scan.
 - If values are in EUR or another currency, ask the user for the RON value — do not
   apply an exchange rate yourself.
+- **Which weight a document states**: unless a document explicitly labels its
+  figure otherwise, a weight on an *invoice* is the **net weight** of the goods,
+  while a weight on a *transport document* (CMR, Aviz de însoțire a mărfii) is the
+  **gross weight**. So an invoice-only source gives you `net_weight` — ask for the
+  gross rather than reusing the figure, and treat identical gross and net copied
+  from a single document as a red flag to raise in the summary.
 
 Before preparing, show the user a short summary of what you extracted and which
 fields came from where, flagging anything you had to ask about or that looks off
