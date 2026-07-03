@@ -280,4 +280,5 @@ results.
   `docs/anaf-reference/` (only when ANAF API facts change — keep its provenance
   frontmatter intact). Don't let docs drift behind the code.
 - Don't commit, push, or create branches/PRs unless asked.
-- There is no git remote yet and no CI workflow yet (both are planned, not done).
+- The remote is `github.com/robert-malai/anafpy`. There is no CI workflow yet
+  (planned, not done).
