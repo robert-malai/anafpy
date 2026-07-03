@@ -18,7 +18,8 @@ sources:
   - url: https://mfinante.gov.ro/static/10/eTransport/eTransport-validation_v.2.0.2_12082024.sch
     title: "e-Transport Schematron"
     source_revision: "v2.0.2, 12.08.2024"
-    retrieved: 2026-06-28
+    retrieved: 2026-07-03
+    local_copy: ../_sources/eTransport-validation_v.2.0.2_12082024.sch
   - title: "Swagger presentations (per-endpoint OpenAPI specs, 4 pages)"
     url: https://mfinante.gov.ro/static/10/eTransport/upload_param.html
     source_revision: "upload_param/lista/stare 02.07.2024; info_transportatori 01.07.2024"
@@ -35,8 +36,11 @@ status: draft
 Operations for the RO e-Transport system (declaring road transport of goods).
 Authentication is the shared [OAuth2 flow](../oauth/authentication.md). The declaration
 **schema** is ANAF-proprietary XSD v2 (not UBL; vendored under `/schemas/etransport/`
-for codegen). There is **no standalone validator** — ANAF validates on upload. This doc
-is the **transport/API surface**.
+for codegen). There is **no standalone validator** — ANAF validates on upload; the
+business rules it enforces there are ANAF's official **Schematron** (vendored:
+[`_sources/eTransport-validation_v.2.0.2_12082024.sch`](../_sources/eTransport-validation_v.2.0.2_12082024.sch),
+v2.0.2 — reference only, `anafpy` runs no local validation). This doc is the
+**transport/API surface**.
 
 > **Status:** draft, from the official **29.07.2024** API PDF — the current version,
 > which **supersedes** older 2023 specs — plus the official per-endpoint **swagger

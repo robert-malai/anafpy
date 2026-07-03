@@ -10,6 +10,7 @@ frontmatter.
 | `efactura_prezentare_api.pdf` | https://mfinante.gov.ro/static/10/eFactura/prezentare%20api%20efactura.pdf | (undated; current as linked from informații-tehnice) | 2026-06-28 |
 | `etransport_29072024.pdf` | https://mfinante.gov.ro/static/10/eTransport/etransport_29072024.pdf | 29.07.2024 | 2026-06-28 |
 | `limiteApeluriAPI.txt` | https://mfinante.gov.ro/static/10/eFactura/limiteApeluriAPI.txt | (undated) | 2026-07-02 |
+| `eTransport-validation_v.2.0.2_12082024.sch` | https://mfinante.gov.ro/static/10/eTransport/eTransport-validation_v.2.0.2_12082024.sch | v2.0.2, 12.08.2024 | 2026-07-03 |
 
 ## Swagger presentations (per-endpoint OpenAPI specs)
 
@@ -65,10 +66,18 @@ retrieved 2026-07-02.
 
 ## Related ANAF artifacts, deliberately not vendored here
 
-- **Validation artifacts** — `ro16931-ubl-1.0.9.zip` (Schematron + XSD, CIUS-RO) and
-  `eTransport-validation_v.2.0.2_12082024.sch`: `anafpy` has **no local validator**
-  (validation is ANAF's server side; see `/DESIGN.md` §4), so these have no consumer
-  in this repo. Listed for completeness only.
+- **CIUS-RO validation artifacts** — `ro16931-ubl-1.0.9.zip` (Schematron + XSD):
+  `anafpy` has **no local validator** (validation is ANAF's server side; see
+  `/DESIGN.md` §4), so these have no consumer in this repo. Listed for completeness
+  only. The e-Transport Schematron (`eTransport-validation_v.2.0.2_12082024.sch`)
+  *is* vendored above — not as a validator input, but as the only official statement
+  of the business rules (`BR-*`) ANAF enforces on e-Transport upload. It is stricter
+  than the XSD in places (no leading zero in `codDeclarant`, min 2 chars for
+  locality/street names, enumerated UN/ECE unit codes, country list without `AN`);
+  its *unconditional* rules are mirrored as flat-model field constraints in
+  `src/anafpy/etransport/models.py`, and its BR-CL-003 unit-code list is carried
+  verbatim in `src/anafpy/mcp/unitcodes.py` (see `/DESIGN.md` §5) — re-check both
+  when ANAF revises the Schematron.
 - `schema_ETR_v2_20230126.xsd` — already vendored at the repo top level under
   `/schemas/etransport/` (codegen input), not duplicated here.
 - UBL example invoices: `exemple_Invoice_CreditNote.zip` (potential test fixtures).
