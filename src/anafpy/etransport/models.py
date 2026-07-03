@@ -6,8 +6,9 @@ Key differences from e-Factura:
 - ``UploadResult`` carries both ``upload_id`` (``index_incarcare``) **and** ``uit``
   (the transport declaration code returned at upload time — no separate download step).
 - ``MessageStatus`` has no ``download_id``; the UIT is already in ``UploadResult``.
-- ``Notification`` mirrors the richer JSON returned by ``lista/{zile}/{cif}``.
-- ``InfoList`` / ``InfoItem`` cover the transporter-lookup endpoint.
+- ``Notification`` mirrors the richer JSON returned by ``lista/{zile}/{cif}``, and
+  ``InfoList`` / ``InfoItem`` cover the transporter-lookup endpoint; both read ANAF's
+  terse wire names via aliases and expose descriptive field names instead.
 - **The flat models are bidirectional** — unlike e-Factura's read-only ``FlatInvoice``,
   the ``Flat*`` shapes here both *view* a parsed declaration
   (:func:`read_flat_transport`) and *author* one (:func:`build_etransport` /
@@ -28,6 +29,7 @@ from typing import Annotated, Any, assert_never
 from pydantic import (
     BaseModel,
     BeforeValidator,
+    ConfigDict,
     Field,
     PlainSerializer,
     computed_field,
@@ -144,73 +146,87 @@ class MessageStatus(BaseModel):
         return self.state is not MessageState.PROCESSING
 
 
-class NotificationMessage(BaseModel):
-    """One entry in a notification's ``mesaje`` array (tip ERR|WARN|INFO)."""
+class _AliasedReadModel(BaseModel):
+    """Read view over ANAF's terse JSON: descriptive field names, with ANAF's wire
+    names kept as validation aliases (``nr_veh`` -> ``plate``, ...). Values are read
+    verbatim; ``populate_by_name`` lets callers also construct by the field names."""
 
-    tip: _StrNone = None
-    mesaj: _StrNone = None
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class Notification(BaseModel):
-    """One entry from ``GET lista/{zile}/{cif}``."""
+class NotificationMessage(_AliasedReadModel):
+    """One entry in a notification's ``mesaje`` array."""
 
-    tip: _StrNone = None  # NOT / COR / DEL / CON / MVH
-    stare: _StrNone = None  # OK / ERR
+    severity: _StrNone = Field(default=None, alias="tip")  # ERR / WARN / INFO
+    message: _StrNone = Field(default=None, alias="mesaj")
+
+
+class Notification(_AliasedReadModel):
+    """One entry from ``GET lista/{zile}/{cif}``.
+
+    Field names follow the flat-model vocabulary (``operation_type``, ``carrier_*``,
+    ``plate``, ...); ANAF's wire names remain as aliases.
+    """
+
+    # NOT / COR / DEL / CON / MVH
+    notification_type: _StrNone = Field(default=None, alias="tip")
+    state: _StrNone = Field(default=None, alias="stare")  # OK / ERR
     uit: _StrNone = None
-    cod_decl: _StrNone = None
-    ref_decl: _StrNone = None
-    post_avarie: _StrNone = None
-    sursa: _StrNone = None  # A = API, I = web app
-    id_incarcare: _StrNone = None
-    data_creare: _StrNone = None
-    data_modif: _StrNone = None
-    tip_op: _StrNone = None  # 10/12/14/20/22/24/30/40/50/60/70
-    data_transp: _StrNone = None
-    pc_tara: _StrNone = None
-    pc_cod: _StrNone = None
-    pc_den: _StrNone = None
-    tr_tara: _StrNone = None
-    tr_cod: _StrNone = None
-    tr_den: _StrNone = None
-    nr_veh: _StrNone = None
-    nr_rem1: _StrNone = None
-    nr_rem2: _StrNone = None
-    nr_linii: _StrNone = None
-    gr_tot_neta: _StrNone = None
-    gr_tot_bruta: _StrNone = None
-    val_tot: _StrNone = None
-    mesaje: list[NotificationMessage] = []
+    declarant_code: _StrNone = Field(default=None, alias="cod_decl")
+    declarant_ref: _StrNone = Field(default=None, alias="ref_decl")
+    post_incident: _StrNone = Field(default=None, alias="post_avarie")  # D / N
+    source: _StrNone = Field(default=None, alias="sursa")  # A = API, I = web app
+    upload_id: _StrNone = Field(default=None, alias="id_incarcare")
+    created_at: _StrNone = Field(default=None, alias="data_creare")
+    modified_at: _StrNone = Field(default=None, alias="data_modif")
+    operation_type: _StrNone = Field(default=None, alias="tip_op")  # 10/12/../70
+    transport_date: _StrNone = Field(default=None, alias="data_transp")
+    partner_country: _StrNone = Field(default=None, alias="pc_tara")
+    partner_code: _StrNone = Field(default=None, alias="pc_cod")
+    partner_name: _StrNone = Field(default=None, alias="pc_den")
+    carrier_country: _StrNone = Field(default=None, alias="tr_tara")
+    carrier_code: _StrNone = Field(default=None, alias="tr_cod")
+    carrier_name: _StrNone = Field(default=None, alias="tr_den")
+    plate: _StrNone = Field(default=None, alias="nr_veh")
+    trailer1: _StrNone = Field(default=None, alias="nr_rem1")
+    trailer2: _StrNone = Field(default=None, alias="nr_rem2")
+    goods_count: _StrNone = Field(default=None, alias="nr_linii")
+    total_net_weight: _StrNone = Field(default=None, alias="gr_tot_neta")
+    total_gross_weight: _StrNone = Field(default=None, alias="gr_tot_bruta")
+    total_value: _StrNone = Field(default=None, alias="val_tot")
+    messages: list[NotificationMessage] = Field(default_factory=list, alias="mesaje")
 
 
-class Location(BaseModel):
+class Location(_AliasedReadModel):
     """A ``loc_start`` or ``loc_final`` from an ``info`` record."""
 
-    tip_loc: _StrNone = None  # PTF = border / BV = customs / ADR = national address
-    adresa_completa: _StrNone = None
-    judet: _StrNone = None
-    localitate: _StrNone = None
-    strada: _StrNone = None
-    numar: _StrNone = None
+    # PTF = border / BV = customs / ADR = national address
+    location_type: _StrNone = Field(default=None, alias="tip_loc")
+    full_address: _StrNone = Field(default=None, alias="adresa_completa")
+    county: _StrNone = Field(default=None, alias="judet")
+    locality: _StrNone = Field(default=None, alias="localitate")
+    street: _StrNone = Field(default=None, alias="strada")
+    number: _StrNone = Field(default=None, alias="numar")
 
 
-class InfoItem(BaseModel):
+class InfoItem(_AliasedReadModel):
     """One record from ``GET info?cui_op=...``."""
 
     id: _StrNone = None
     uit: _StrNone = None
-    cod_decl: _StrNone = None
-    den_decl: _StrNone = None
-    ref_decl: _StrNone = None
-    data_transp: _StrNone = None
-    data_exp_uit: _StrNone = None
-    tr_tara: _StrNone = None
-    tr_cod: _StrNone = None
-    tr_den: _StrNone = None
-    nr_veh: _StrNone = None
-    nr_rem1: _StrNone = None
-    nr_rem2: _StrNone = None
-    loc_start: Location | None = None
-    loc_final: Location | None = None
+    declarant_code: _StrNone = Field(default=None, alias="cod_decl")
+    declarant_name: _StrNone = Field(default=None, alias="den_decl")
+    declarant_ref: _StrNone = Field(default=None, alias="ref_decl")
+    transport_date: _StrNone = Field(default=None, alias="data_transp")
+    uit_expiry: _StrNone = Field(default=None, alias="data_exp_uit")
+    carrier_country: _StrNone = Field(default=None, alias="tr_tara")
+    carrier_code: _StrNone = Field(default=None, alias="tr_cod")
+    carrier_name: _StrNone = Field(default=None, alias="tr_den")
+    plate: _StrNone = Field(default=None, alias="nr_veh")
+    trailer1: _StrNone = Field(default=None, alias="nr_rem1")
+    trailer2: _StrNone = Field(default=None, alias="nr_rem2")
+    start_location: Location | None = Field(default=None, alias="loc_start")
+    end_location: Location | None = Field(default=None, alias="loc_final")
 
 
 class InfoList(BaseModel):

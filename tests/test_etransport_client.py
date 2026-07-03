@@ -346,11 +346,11 @@ async def test_list_notifications_parses_mesaje_envelope() -> None:
     assert route.called
     assert len(items) == 1
     n = items[0]
-    assert n.tip == "NOT"
-    assert n.stare == "OK"
+    assert n.notification_type == "NOT"
+    assert n.state == "OK"
     assert n.uit == "UITABC"
-    assert n.tip_op == "10"
-    assert n.nr_veh == "B01ABC"
+    assert n.operation_type == "10"
+    assert n.plate == "B01ABC"
 
 
 @respx.mock
@@ -425,11 +425,11 @@ async def test_list_notification_with_error_messages() -> None:
     async with _client() as client:
         items = [n async for n in client.list_notifications(days=1, cif="42")]
     n = items[0]
-    assert n.stare == "ERR"
-    assert len(n.mesaje) == 2
-    assert n.mesaje[0].tip == "ERR"
-    assert n.mesaje[0].mesaj == "Vehicul neidentificat"
-    assert n.mesaje[1].tip == "WARN"
+    assert n.state == "ERR"
+    assert len(n.messages) == 2
+    assert n.messages[0].severity == "ERR"
+    assert n.messages[0].message == "Vehicul neidentificat"
+    assert n.messages[1].severity == "WARN"
 
 
 # --- info -----------------------------------------------------------------------------
@@ -481,12 +481,12 @@ async def test_info_required_param_only() -> None:
     assert len(result.items) == 1
     item = result.items[0]
     assert item.uit == "UITXYZ"
-    assert item.data_exp_uit == "20260703"
-    assert item.loc_start is not None
-    assert item.loc_start.tip_loc == "ADR"
-    assert item.loc_start.judet == "Cluj"
-    assert item.loc_final is not None
-    assert item.loc_final.tip_loc == "PTF"
+    assert item.uit_expiry == "20260703"
+    assert item.start_location is not None
+    assert item.start_location.location_type == "ADR"
+    assert item.start_location.county == "Cluj"
+    assert item.end_location is not None
+    assert item.end_location.location_type == "PTF"
 
 
 @respx.mock

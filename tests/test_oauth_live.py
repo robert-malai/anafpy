@@ -104,4 +104,4 @@ async def test_etransport_test_list_notifications_shape(
     async with ETransportClient(provider, environment=Environment.TEST) as client:
         notifications = [n async for n in client.list_notifications(days=60, cif=cif)]
     for notification in notifications:
-        assert notification.uit or notification.tip
+        assert notification.uit or notification.notification_type
