@@ -41,7 +41,7 @@ class ServerConfig(BaseSettings):
         docs_dir: directory of the compiled ANAF reference exposed as MCP resources
             (``ANAFPY_DOCS_DIR``); defaults to the repo's ``docs/anaf-reference/``
             when present.
-        skills_dir: directory of plugin workflow skills re-exposed as MCP prompts
+        skills_dir: directory of workflow skills exposed as MCP prompts
             (``ANAFPY_SKILLS_DIR``); defaults to the repo's ``skills/`` when
             present.
         signing_key: per-process secret backing the confirmation tokens issued by the

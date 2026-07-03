@@ -20,10 +20,10 @@ context: ``save_zip_as`` / ``save_pdf_as`` write the signed ZIP and ANAF's
 its filesystem is the user's), and the PDF is also a resource template
 (``anafmsg://{message_id}/pdf``) for hosts with resource UX. The compiled ANAF
 reference is surfaced as read-only MCP
-resources so the model can ground BR-RO explanations and code lists. The plugin's
-workflow skills (``skills/*/SKILL.md``) are re-served as MCP **prompts** of the same
-name, so clients without the plugin (Claude Desktop, a bare ``claude mcp add``) get
-the same playbooks as a user-invoked entry point.
+resources so the model can ground BR-RO explanations and code lists. The workflow
+skills (``skills/*/SKILL.md``) are served as MCP **prompts** of the same name, so
+prompt-capable clients (Claude Desktop, ``claude mcp add``) get the playbooks as a
+user-invoked entry point.
 """
 
 from __future__ import annotations
@@ -759,13 +759,12 @@ def _skills_dir(cfg: ServerConfig) -> Path | None:
 
 
 def _register_prompts(mcp: FastMCP, cfg: ServerConfig) -> None:
-    """Expose the plugin workflow skills as user-invoked MCP prompts.
+    """Expose the workflow skills as user-invoked MCP prompts.
 
-    The plugin ships the ``skills/`` playbooks model-triggered; for MCP clients
-    without the plugin (a bare ``claude mcp add``, Claude Desktop, ...) each skill
-    is also served as a prompt of the same name, carrying the same Markdown —
-    prompts are the closest MCP primitive to a skill, invoked by the *user* (a
-    slash command in Claude Code, the "+" attachment menu in Claude Desktop).
+    Each ``skills/`` playbook is served as a prompt of the same name, carrying the
+    same Markdown — prompts are the closest MCP primitive to a skill, invoked by
+    the *user* (a slash command in Claude Code, the "+" attachment menu in Claude
+    Desktop).
     """
     if (skills := _skills_dir(cfg)) is None:
         return

@@ -60,23 +60,28 @@ Phases & requirements:
 Out of scope: invoice composition / structured authoring **of e-Factura UBL**
 (e-Transport authoring is in scope — see above); local persistence of documents;
 reconciliation / accounting logic; inbound e-Transport; SPV; e-TVA; CII syntax;
-e-Transport API v1.
+e-Transport API v1; a sync facade *(dropped as a goal 2026-07-03; was: generated
+via `unasync` — the consumers that exist are async: the MCP server and
+`asyncio.run` scripts)*.
 
 ## 2. Cross-cutting architecture
 
-- **Async is the source of truth; a sync facade is generated via `unasync`.**
-  The MCP server (async) drives the async core; batch/script users get sync.
+- **Async only.** The MCP server (async) drives the async core; script users run
+  `asyncio.run`. *(A sync facade generated via `unasync` was a goal until
+  2026-07-03 — dropped, see §1 Out of scope.)*
 - **Single distribution** `anafpy` with optional extras (not a multi-package repo):
   - runtime: `httpx`, `pydantic`, `xsdata-pydantic`, `tenacity`, `pyjwt`
     (unverified `exp` reads only, to schedule token refresh — verification is
     ANAF's job)
-  - `anafpy[mcp]` → MCP SDK
+  - `anafpy[mcp]` → the MCP SDK + `pydantic-settings` (env config) +
+    `python-frontmatter` (SKILL.md → prompts)
   *(an `anafpy[validation]` → `saxonche` extra existed and was removed — see §4
   Validation)*
 - **`src/` layout** (ships generated code as package source).
 
 ```
 src/anafpy/
+  exceptions.py    # AnafError hierarchy
   _transport/      # shared httpx layer; per-service base URL; env (test/prod)
   auth/            # TokenProvider, TokenStore, OAuth bootstrap, callback listener
   efactura/
@@ -87,12 +92,16 @@ src/anafpy/
     schema/        # generated models from ANAF e-Transport XSD (v2)
     client.py      # incl. upload_document (flat -> XML -> upload)
     models.py      # value types + bidirectional flat models (4 ops) + read/build/render
+  public/          # PublicClient: no-auth registry lookups + financial statements (§6)
   cli/             # `anafpy auth login`, etc.
   mcp/             # MCP server (extra: anafpy[mcp])
     models.py      # UBL XML pass-through inputs + prepared-submission gate
     documents.py   # resolve XML input -> bytes; parse bytes -> client flat models
     nomenclatures.py  # e-Transport code lists from the XSD enums
-    server.py      # FastMCP tools + resources; config.py / context.py / tokens.py
+    unitcodes.py   # UN/ECE Rec 20/21 unit codes (Schematron-enforced on goods lines)
+    skills.py      # skills/*/SKILL.md loader (frontmatter + body) for MCP prompts
+    server.py      # FastMCP tools + resources + prompts; config.py / context.py / tokens.py
+skills/            # workflow skills, served by the MCP server as same-name prompts
 docs/anaf-reference/   # agent-compiled local reference (+ _sources/)
 ```
 
@@ -192,8 +201,8 @@ Design (layered):
   `stop_after_delay(timeout)`).
 - **Hybrid error model**: exceptions for transport/auth/programming errors
   (`AnafError` base → `AnafAuthError`, `AnafRateLimitError`, `AnafTransportError`, …);
-  **business outcomes** (`nok` + BR-RO findings) are **typed return values**, sharing
-  one `ValidationFinding` shape with the local validator.
+  **business outcomes** (`nok` + BR-RO findings) are **typed return values**
+  (`MessageStatus`, `RemoteValidationResult`, …), never exceptions.
 
 ### Download
 
@@ -404,13 +413,12 @@ reference as resources.)*
   here.
 - **ANAF reference exposed as MCP resources** (with draft/Romanian notes) so the skill can
   ground BR-RO explanations and code lists.
-- **Workflow skills re-served as MCP prompts** (2026-07-03): each `skills/*/SKILL.md`
+- **Workflow skills served as MCP prompts** (2026-07-03): each `skills/*/SKILL.md`
   becomes a prompt of the same name — frontmatter `description` as the prompt
   description, the Markdown body as the prompt text, plus an optional `source`
   argument. Prompts are the closest MCP primitive to a skill but **user-invoked**
-  (a slash command in Claude Code, the "+" menu in Claude Desktop), so this is
-  parity for consumers without the plugin, not a replacement for it: only the
-  plugin's skill copy is model-triggered. The SKILL.md files stay the single source
+  (a slash command in Claude Code, the "+" menu in Claude Desktop) — this is how
+  the playbooks reach every MCP consumer. The SKILL.md files stay the single source
   of truth (`anafpy.mcp.skills` reads them at server start via
   `python-frontmatter`, failing loudly when `name`/`description` are missing).
 - **Auth handling**: server reads the token store + transparent refresh; interactive login
@@ -447,10 +455,10 @@ reference as resources.)*
    directly in Cowork vs only Claude Desktop. ANAF's cert forces local execution
    regardless; affects only which surface hosts it. Verify at build time.
 5. ~~Phase-2 MCP prompts~~ **DONE 2026-07-03**: the `skills/*/SKILL.md` playbooks
-   are re-served as MCP prompts of the same name (single source of truth, read from
-   `ANAFPY_SKILLS_DIR`, default the repo's `skills/`) — plugin installs get them
-   model-triggered, prompt-capable clients (Claude Desktop, bare `claude mcp add`)
-   get them user-invoked, with an optional `source` argument to seed the workflow.
+   are served as MCP prompts of the same name (single source of truth, read from
+   `ANAFPY_SKILLS_DIR`, default the repo's `skills/`) — prompt-capable clients
+   (Claude Desktop, `claude mcp add`) get them user-invoked, with an optional
+   `source` argument to seed the workflow.
    In-session `begin_login` remains deferred by design.
 6. ~~Public CUI/VAT lookup~~ **DONE 2026-07-02** (`anafpy.public.PublicClient`, §6;
    exposed as the MCP `anaf_*` lookup tools, §8). **SPV, e-TVA, CII, e-Transport v1**

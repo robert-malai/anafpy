@@ -1,10 +1,9 @@
-"""Plugin workflow skills, loaded for re-exposure as MCP prompts.
+"""Workflow skills, loaded for exposure as MCP prompts.
 
-The repo's ``skills/`` directory holds Claude Code plugin skills — Markdown
-playbooks with YAML frontmatter (``skills/<name>/SKILL.md``). Plugin installs get
-them model-triggered; every other MCP consumer (a bare ``claude mcp add``, Claude
-Desktop, any prompt-capable client) gets the same playbooks as user-invoked MCP
-**prompts** (see :func:`anafpy.mcp.server.create_server`). The SKILL.md files are
+The repo's ``skills/`` directory holds workflow skills — Markdown playbooks with
+YAML frontmatter (``skills/<name>/SKILL.md``). Every prompt-capable MCP consumer
+(``claude mcp add``, Claude Desktop, ...) gets them as user-invoked MCP **prompts**
+(see :func:`anafpy.mcp.server.create_server`). The SKILL.md files are
 the single source of truth: this module reads them, it never duplicates them.
 
 Parsing is ``python-frontmatter``'s job (PyYAML underneath); this module only

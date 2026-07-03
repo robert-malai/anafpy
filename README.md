@@ -63,7 +63,8 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   Cowork skills, with read-first, two-step gated e-Transport filing and a read-only
   e-Factura surface (see below).
 
-Not yet built: a sync facade, CI, and PyPI publishing.
+Not yet built: CI and PyPI publishing. (A sync facade was dropped as a goal — the
+clients are async-only.)
 
 ## Install
 
@@ -250,40 +251,32 @@ compose the declaration XML, and return it alongside the preview and token;
 e-Transport `prepare`
 previews present documents as friendly **flat models** parsed from the XML (for
 invoices, easy to read and lossy by design — the raw bytes stay authoritative). The
-compiled ANAF reference is surfaced as read-only resources, and the plugin's
-workflow skills double as MCP **prompts** of the same name — a user-invoked entry
-point for clients without the plugin (Claude Desktop's "+" menu, or
-`/mcp__anafpy__etransport-declare` after a bare `claude mcp add`). Auth stays
+compiled ANAF reference is surfaced as read-only resources. Auth stays
 the host-side CLI — the server only reads and refreshes the token store. Configuration is
 environment-only; see [`CLAUDE.md`](CLAUDE.md).
 
-### Claude Code plugin
-
-The repo doubles as a **Claude Code plugin**
-([`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)): installing it from the
-git repo registers the MCP server automatically, run via `uv` from the plugin's own
+Register the server with any MCP client — e.g. with Claude Code, from a source
 checkout (locked deps, no PyPI needed):
 
 ```bash
-claude plugin marketplace add robert-malai/anafpy
-claude plugin install anafpy@anafpy
+claude mcp add anafpy \
+  -e ANAFPY_CLIENT_ID=... -e ANAFPY_CLIENT_SECRET=... -e ANAFPY_CIF=... \
+  -- uv run --directory /path/to/anafpy --frozen --extra mcp anafpy-mcp
 ```
 
-The server reads `ANAFPY_CLIENT_ID` / `ANAFPY_CLIENT_SECRET` (and optionally
-`ANAFPY_CIF`, `ANAFPY_ENV`) from your environment — set them in your shell or in
-Claude Code's `settings.json` `env` block. **No credentials yet?** The plugin still
-works: the server starts without them and the public `anaf_*` lookups (registries,
-financial statements) are fully usable. The e-Factura / e-Transport tools unlock
-once you set the credentials and run the one-time `anafpy auth login` in a
-terminal.
+**No credentials yet?** The server still starts and the public `anaf_*` lookups
+(registries, financial statements) are fully usable. The e-Factura / e-Transport
+tools unlock once you set the credentials and run the one-time `anafpy auth login`
+in a terminal.
 
-The plugin also ships workflow skills: `/anafpy:etransport-declare` walks Claude
-through filing an e-Transport declaration from whatever source the data lives in
-(an email, a PDF invoice, a CMR, a spreadsheet) — extract, map to the structured
-declaration, prepare, show the preview for your approval, submit, then poll until
-ANAF issues a valid UIT. The same playbooks are served by the MCP server itself as
-prompts (see above), so they travel with any connection method, not just the
-plugin.
+The server also ships workflow playbooks as MCP **prompts** — a user-invoked entry
+point (Claude Desktop's "+" menu, or `/mcp__anafpy__etransport-declare` in Claude
+Code). `etransport-declare` walks Claude through filing an e-Transport declaration
+from whatever source the data lives in (an email, a PDF invoice, a CMR, a
+spreadsheet) — extract, map to the structured declaration, prepare, show the
+preview for your approval, submit, then poll until ANAF issues a valid UIT. The
+playbooks live under [`skills/`](skills/) (`SKILL.md` files, the single source of
+truth) and travel with any connection method.
 
 ## Development
 
