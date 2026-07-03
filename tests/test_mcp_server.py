@@ -595,6 +595,21 @@ async def test_prepare_vehicle_change_composes_modif_vehicul(tmp_path: Path) -> 
     assert prepared["transport_preview"]["plate"] == "CJ99AAA"
 
 
+async def test_scalar_prepare_tools_all_take_declarant_ref(tmp_path: Path) -> None:
+    # The three scalar prepare tools expose the same root fields — an agent that
+    # used declarant_ref on a deletion must not find it missing on the others.
+    server = create_server(_config(tmp_path))
+    for name, extra in (
+        ("etransport_prepare_deletion", {}),
+        ("etransport_prepare_confirmation", {"confirmation_type": "CONFIRMAT"}),
+        ("etransport_prepare_vehicle_change", {"plate": "CJ99AAA"}),
+    ):
+        prepared = await _call(server, name, uit=_UIT, declarant_ref="REF-42", **extra)
+        assert prepared["valid"] is True, name
+        assert prepared["transport_preview"]["declarant_ref"] == "REF-42", name
+        assert 'refDeclarant="REF-42"' in prepared["xml"], name
+
+
 async def test_etransport_nomenclature_lists_names_and_codes(tmp_path: Path) -> None:
     server = create_server(_config(tmp_path))
     counties = await _call(server, "etransport_nomenclature", kind="counties")

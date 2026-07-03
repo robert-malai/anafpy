@@ -476,6 +476,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         confirmation_type: str,
         note: str | None = None,
         cif: str | None = None,
+        declarant_ref: str | None = None,
     ) -> PreparedSubmission:
         return _prepare_composed_transport(
             cfg,
@@ -484,6 +485,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
             uit=uit,
             confirmation_type=confirmation_type,
             note=note,
+            declarant_ref=declarant_ref,
         )
 
     @mcp.tool(
@@ -501,6 +503,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         trailer2: str | None = None,
         note: str | None = None,
         cif: str | None = None,
+        declarant_ref: str | None = None,
     ) -> PreparedSubmission:
         return _prepare_composed_transport(
             cfg,
@@ -511,6 +514,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
             trailer1=trailer1,
             trailer2=trailer2,
             note=note,
+            declarant_ref=declarant_ref,
         )
 
     @mcp.tool(

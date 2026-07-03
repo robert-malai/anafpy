@@ -33,6 +33,18 @@ def test_status_reports_token_validity(
     assert "~365 days left" in out
 
 
+def test_store_env_is_read_at_parse_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # ANAFPY_TOKEN_STORE must be honoured even when set after module import
+    # (like ANAFPY_TOKEN_STORE_BACKEND), so wrappers and tests can configure it.
+    store = tmp_path / "tokens.json"
+    FileTokenStore(store).save(TokenSet(access_token="a", refresh_token="r"))
+    monkeypatch.setenv("ANAFPY_TOKEN_STORE", str(store))
+    assert main(["auth", "status"]) == 0
+    assert "authenticated" in capsys.readouterr().out
+
+
 def test_status_ignores_stored_expiry_keys(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

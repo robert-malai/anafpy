@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import secrets
 import ssl
 import sys
 import time
@@ -29,7 +30,7 @@ from ..auth import (
 )
 from ..exceptions import AnafConfigError, AnafError
 
-DEFAULT_STORE = Path(os.environ.get("ANAFPY_TOKEN_STORE", "~/.anafpy/tokens.json"))
+DEFAULT_STORE = "~/.anafpy/tokens.json"
 
 #: How long the callback listener waits for the redirect before offering paste mode.
 _CALLBACK_TIMEOUT = 180.0
@@ -55,9 +56,11 @@ def _load_ssl_context(cert: str, key: str | None) -> ssl.SSLContext:
     return context
 
 
-def _paste_code() -> str:
+def _paste_code(expected_state: str | None = None) -> str:
     print(f"\n{_PASTE_HINT}")
-    return parse_redirect_url(input("Redirect URL (or code): "))
+    return parse_redirect_url(
+        input("Redirect URL (or code): "), expected_state=expected_state
+    )
 
 
 def _token_store(args: argparse.Namespace) -> tuple[TokenStore, str]:
@@ -88,7 +91,10 @@ async def _do_login(
     paste: bool = False,
     ssl_context: ssl.SSLContext | None = None,
 ) -> int:
-    url = build_authorize_url(client_id, redirect_uri)
+    # A per-attempt OAuth `state`: the redirect must echo it back, so a forged
+    # redirect cannot inject someone else's authorization code (login CSRF).
+    state = secrets.token_urlsafe(16)
+    url = build_authorize_url(client_id, redirect_uri, state=state)
 
     # Bind the listener BEFORE the browser opens: with a cached certificate/session
     # the redirect can arrive within a second, and a not-yet-listening port would
@@ -96,7 +102,9 @@ async def _do_login(
     listener: CallbackListener | None = None
     if not paste:
         try:
-            listener = CallbackListener(redirect_uri, ssl_context=ssl_context)
+            listener = CallbackListener(
+                redirect_uri, ssl_context=ssl_context, expected_state=state
+            )
         except AnafConfigError as exc:
             print(f"Callback listener unavailable: {exc}", file=sys.stderr)
 
@@ -105,7 +113,7 @@ async def _do_login(
     webbrowser.open(url)
 
     if listener is None:
-        code = _paste_code()
+        code = _paste_code(state)
     else:
         with listener:
             print(f"Waiting for the callback on {redirect_uri} ...")
@@ -115,7 +123,7 @@ async def _do_login(
                 f"No callback received within {_CALLBACK_TIMEOUT:.0f}s.",
                 file=sys.stderr,
             )
-            code = _paste_code()
+            code = _paste_code(state)
         else:
             code = captured
 
@@ -232,7 +240,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_store_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--store", default=str(DEFAULT_STORE))
+    parser.add_argument(
+        "--store",
+        # Read at parse time (not import) so tests and wrappers can set the env.
+        default=os.environ.get("ANAFPY_TOKEN_STORE", DEFAULT_STORE),
+    )
     parser.add_argument(
         "--store-backend",
         choices=("file", "keyring"),

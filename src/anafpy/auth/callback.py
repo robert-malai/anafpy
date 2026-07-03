@@ -14,10 +14,16 @@ and there are two ways to capture the code:
 - **Paste mode** (``parse_redirect_url``): run no listener at all. The browser lands on
   a connection error, but the address bar still holds the full redirect URL; the user
   pastes it (or just the code) into the CLI. Works everywhere, needs no certificate.
+
+Both capture paths take an ``expected_state``: the CLI binds a random OAuth ``state``
+to each login attempt, and a redirect that does not echo it back is rejected (the
+listener answers 400 and keeps waiting) — so a forged redirect cannot inject an
+attacker's authorization code into the flow (login CSRF).
 """
 
 from __future__ import annotations
 
+import hmac
 import ssl
 import threading
 import urllib.parse
@@ -34,13 +40,16 @@ _PAGE = (
 )
 
 
-def parse_redirect_url(pasted: str) -> str:
+def parse_redirect_url(pasted: str, *, expected_state: str | None = None) -> str:
     """Extract the authorization code from a pasted redirect URL (paste mode).
 
     Accepts the full redirect URL from the browser address bar, a bare
-    ``code=...&...`` query string, or the code value alone.
+    ``code=...&...`` query string, or the code value alone. When
+    ``expected_state`` is given, a pasted URL must echo it back (a bare code —
+    a deliberate manual extraction — is exempt).
 
-    Raises ``AnafAuthError`` on an OAuth error redirect or unrecognizable input.
+    Raises ``AnafAuthError`` on an OAuth error redirect, a ``state`` mismatch,
+    or unrecognizable input.
     """
     text = pasted.strip().strip("'\"")
     if not text:
@@ -51,6 +60,14 @@ def parse_redirect_url(pasted: str) -> str:
         query = text.lstrip("?")
     if query:
         params = urllib.parse.parse_qs(query)
+        if expected_state is not None and not hmac.compare_digest(
+            params.get("state", [""])[0], expected_state
+        ):
+            raise AnafAuthError(
+                "state mismatch: the pasted URL is not from this login attempt — "
+                "restart `anafpy auth login` and paste the redirect it produces "
+                "(or paste just the code value)"
+            )
         if "code" in params:
             return params["code"][0]
         if "error" in params:
@@ -69,10 +86,18 @@ class CallbackListener:
     host/port cannot be bound), so callers can open the browser only *after* the
     listener is provably up, then :meth:`wait` for the redirect. Use as a context
     manager (or call :meth:`close`) to stop the server.
+
+    When ``expected_state`` is given, only a redirect echoing that OAuth ``state``
+    completes the wait; anything else (a forged redirect trying to inject a code,
+    login CSRF) is answered 400 and the listener keeps waiting for the real one.
     """
 
     def __init__(
-        self, redirect_uri: str, *, ssl_context: ssl.SSLContext | None = None
+        self,
+        redirect_uri: str,
+        *,
+        ssl_context: ssl.SSLContext | None = None,
+        expected_state: str | None = None,
     ) -> None:
         parsed = urllib.parse.urlparse(redirect_uri)
         host = parsed.hostname or "localhost"
@@ -95,6 +120,14 @@ class CallbackListener:
                     self.end_headers()
                     return
                 query = urllib.parse.parse_qs(url.query)
+                if expected_state is not None and not hmac.compare_digest(
+                    query.get("state", [""])[0], expected_state
+                ):
+                    # Not this login attempt's redirect: refuse it and keep
+                    # waiting for the one carrying our state.
+                    self.send_response(400)
+                    self.end_headers()
+                    return
                 if "code" in query:
                     result["code"] = query["code"][0]
                     msg = b"Authorization received."
@@ -147,6 +180,7 @@ def capture_authorization_code(
     *,
     timeout: float = 180.0,
     ssl_context: ssl.SSLContext | None = None,
+    expected_state: str | None = None,
 ) -> str:
     """Block until ANAF redirects to ``redirect_uri`` with a code; return that code.
 
@@ -154,11 +188,14 @@ def capture_authorization_code(
     :class:`CallbackListener` to bind *before* opening it). Plain HTTP unless
     ``ssl_context`` is given, in which case it serves TLS with that context (use
     this when the browser must reach the callback over ``https://`` and no
-    external TLS terminator is in front).
+    external TLS terminator is in front). ``expected_state`` is enforced as in
+    :class:`CallbackListener`.
 
     Raises ``AnafAuthError`` on an OAuth error redirect or on timeout.
     """
-    with CallbackListener(redirect_uri, ssl_context=ssl_context) as listener:
+    with CallbackListener(
+        redirect_uri, ssl_context=ssl_context, expected_state=expected_state
+    ) as listener:
         code = listener.wait(timeout)
     if code is None:
         raise AnafAuthError(

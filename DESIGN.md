@@ -142,6 +142,15 @@ Design (layered):
   (`parse_redirect_url`), code→token exchange, file-backed **`TokenStore`**,
   **transparent refresh** (incl. refresh-on-401 — this stays in the client; it's
   credential management, not network retry).
+- **Login CSRF: a per-attempt OAuth `state`** (added 2026-07-04). `auth login`
+  binds a random `state` into the authorize URL; the listener answers 400 (and
+  keeps waiting) for any redirect that doesn't echo it, and the paste parser
+  rejects a full URL whose `state` is missing or different — so a forged redirect
+  cannot inject an attacker's authorization code. A pasted **bare code** is exempt
+  (a deliberate manual extraction, and the escape hatch if ANAF ever stops echoing
+  `state` — its reference flow leaves `state` empty but echoes the parameter back,
+  per the recorded redirects). No PKCE: ANAF's documented flow doesn't offer it;
+  the client is confidential (secret-authenticated) anyway.
 - **OS-credential-store backend** (added 2026-07-03): `KeyringTokenStore` over the
   `keyring` library (optional `anafpy[keyring]` extra), selected via
   `ANAFPY_TOKEN_STORE_BACKEND=keyring` / `--store-backend keyring`. One

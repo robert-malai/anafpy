@@ -140,6 +140,9 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   baseline), a TLS listener (`--tls-cert/--tls-key`), or plain HTTP behind an external
   TLS terminator — the listener binds *before* the browser opens (a fast redirect must
   not outrun it) and the CLI falls back to paste if it can't start or times out.
+  Every login binds a random OAuth `state` (login-CSRF protection, 2026-07-04):
+  the listener 400s (and keeps waiting on) redirects that don't echo it, and the
+  paste parser rejects a mismatching URL — a pasted bare code is exempt.
   Token persistence is the `TokenStore` protocol: `FileTokenStore` (default JSON
   file) or `KeyringTokenStore` (OS credential store, `anafpy[keyring]` extra —
   splits the set across vault entries on Windows, whose 2560-byte blob cap is

@@ -225,7 +225,9 @@ class EFacturaClient:
     @staticmethod
     def _parse_upload(body: bytes) -> UploadResult:
         root = _parse_xml_header(body, "upload")
-        upload_id = root.get("index_incarcare") or root.get("index_descarcare")
+        # `index_incarcare` is the only success attribute the upload swagger
+        # documents; anything else falls through to the explicit-error path below.
+        upload_id = root.get("index_incarcare")
         errors = _header_errors(root)
         if upload_id is None and not errors:
             # Be explicit rather than silently returning an empty result.

@@ -370,6 +370,22 @@ def test_parse_redirect_url_error_redirect_raises() -> None:
         parse_redirect_url("https://localhost:9002/callback?error=access_denied")
 
 
+def test_parse_redirect_url_enforces_expected_state() -> None:
+    url = "https://localhost:9002/callback?code=abc&state=s3cret"
+    assert parse_redirect_url(url, expected_state="s3cret") == "abc"
+    with pytest.raises(AnafAuthError, match="state mismatch"):
+        parse_redirect_url(
+            "https://localhost:9002/callback?code=abc&state=wrong",
+            expected_state="s3cret",
+        )
+    with pytest.raises(AnafAuthError, match="state mismatch"):  # missing state
+        parse_redirect_url(
+            "https://localhost:9002/callback?code=abc", expected_state="s3cret"
+        )
+    # A bare code is a deliberate manual extraction — exempt from the check.
+    assert parse_redirect_url("abc", expected_state="s3cret") == "abc"
+
+
 def test_parse_redirect_url_rejects_garbage() -> None:
     with pytest.raises(AnafAuthError, match="empty input"):
         parse_redirect_url("   ")
@@ -407,6 +423,21 @@ def test_listener_binds_before_wait() -> None:
     with CallbackListener(uri) as listener:
         httpx.get(f"{uri}?code=early-ok")  # redirect lands before wait()
         assert listener.wait(timeout=10.0) == "early-ok"
+
+
+def test_listener_rejects_forged_state_and_keeps_waiting() -> None:
+    # Login CSRF: a redirect that does not echo this attempt's `state` must not
+    # complete the flow (answered 400), and the legitimate redirect must still
+    # be captured afterwards.
+    port = _free_port()
+    uri = f"http://127.0.0.1:{port}/callback"
+    with CallbackListener(uri, expected_state="s3cret") as listener:
+        forged = httpx.get(f"{uri}?code=attacker-code")  # no state at all
+        assert forged.status_code == 400
+        forged = httpx.get(f"{uri}?code=attacker-code&state=wrong")
+        assert forged.status_code == 400
+        httpx.get(f"{uri}?code=legit-code&state=s3cret")
+        assert listener.wait(timeout=10.0) == "legit-code"
 
 
 def test_listener_wait_timeout_returns_none() -> None:
