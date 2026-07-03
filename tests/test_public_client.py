@@ -18,7 +18,7 @@ from anafpy.exceptions import (
     AnafRateLimitError,
     AnafResponseError,
 )
-from anafpy.public import PublicClient
+from anafpy.public import PublicClient, TransformStandard
 
 BASE = "https://webservicesp.anaf.ro"
 
@@ -470,3 +470,78 @@ async def test_financial_statement_null_indicators_tolerated() -> None:
         statement = await client.get_financial_statement(123, 2023)
     assert statement.indicators == []
     assert statement.name is None
+
+
+# --- validate_invoice / render_invoice_pdf --------------------------------------------
+
+# `validare`/`transformare` are stateless e-Factura document services: public,
+# no-auth, and prod-only (their `test` paths answer HTTP 404), under the FCTEL/rest
+# prefix on the public host.
+EFACTURA_DOC_BASE = f"{BASE}/prod/FCTEL/rest"
+
+
+@respx.mock
+async def test_validate_invoice_ok() -> None:
+    route = respx.post(f"{EFACTURA_DOC_BASE}/validare/FACT1").mock(
+        return_value=httpx.Response(200, json={"stare": "ok", "trace_id": "abc-123"})
+    )
+    async with _client() as client:
+        result = await client.validate_invoice(b"<Invoice/>")
+    assert result.valid
+    assert result.messages == []
+    assert result.trace_id == "abc-123"
+    assert route.calls.last.request.headers["content-type"] == "text/plain"
+    assert "authorization" not in route.calls.last.request.headers
+
+
+@respx.mock
+async def test_validate_invoice_nok_returns_findings_not_exception() -> None:
+    respx.post(f"{EFACTURA_DOC_BASE}/validare/FCN").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "stare": "nok",
+                "Messages": [{"message": "BR-RO-030 error"}],
+                "trace_id": "t",
+            },
+        )
+    )
+    async with _client() as client:
+        result = await client.validate_invoice(
+            b"<CreditNote/>", standard=TransformStandard.CREDIT_NOTE
+        )
+    assert not result.valid
+    assert result.messages == ["BR-RO-030 error"]
+
+
+@respx.mock
+async def test_validate_invoice_unknown_shape_raises() -> None:
+    respx.post(f"{EFACTURA_DOC_BASE}/validare/FACT1").mock(
+        return_value=httpx.Response(200, text="<html>maintenance</html>")
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="unrecognised validare"):
+            await client.validate_invoice(b"<Invoice/>")
+
+
+@respx.mock
+async def test_render_invoice_pdf_posts_to_prod_and_returns_bytes() -> None:
+    route = respx.post(f"{EFACTURA_DOC_BASE}/transformare/FACT1").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7 ...")
+    )
+    async with _client() as client:
+        pdf = await client.render_invoice_pdf(b"<Invoice/>")
+    assert pdf.startswith(b"%PDF")
+    assert "authorization" not in route.calls.last.request.headers
+
+
+@respx.mock
+async def test_render_invoice_pdf_novalidation_appends_da_segment() -> None:
+    route = respx.post(f"{EFACTURA_DOC_BASE}/transformare/FCN/DA").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7 ...")
+    )
+    async with _client() as client:
+        await client.render_invoice_pdf(
+            b"<CreditNote/>", standard=TransformStandard.CREDIT_NOTE, validate=False
+        )
+    assert route.called

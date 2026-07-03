@@ -30,9 +30,7 @@ __all__ = [
     "MessageListItem",
     "MessageState",
     "MessageStatus",
-    "RemoteValidationResult",
     "SignatureValidationResult",
-    "TransformStandard",
     "UploadResult",
     "UploadStandard",
     "parse_ubl_document",
@@ -53,13 +51,6 @@ class UploadStandard(StrEnum):
     CN = "CN"  # credit note
     CII = "CII"
     RASP = "RASP"  # buyer -> issuer message
-
-
-class TransformStandard(StrEnum):
-    """``std`` path segment for ``/validare`` and ``/transformare``."""
-
-    INVOICE = "FACT1"
-    CREDIT_NOTE = "FCN"
 
 
 class Filter(StrEnum):
@@ -119,19 +110,6 @@ class MessageStatus(BaseModel):
     @property
     def is_terminal(self) -> bool:
         return self.state is not MessageState.PROCESSING
-
-
-class RemoteValidationResult(BaseModel):
-    """Outcome of ANAF's server-side ``validare`` endpoint.
-
-    An invalid document is a *business* outcome: ``valid`` is ``False`` and
-    ``messages`` carries ANAF's findings — never an exception.
-    """
-
-    valid: bool
-    messages: list[str] = []
-    trace_id: str | None = None
-    raw: bytes = b""
 
 
 class SignatureValidationResult(BaseModel):

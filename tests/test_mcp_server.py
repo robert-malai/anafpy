@@ -177,6 +177,8 @@ async def test_efactura_list_messages_date_range(tmp_path: Path) -> None:
 
 
 def _download_zip() -> bytes:
+    # Built once: ZIP entries embed a 2-second-resolution timestamp, so two builds
+    # straddling a boundary differ byte-wise and must not be compared to each other.
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("3828.xml", invoice_xml())
@@ -184,10 +186,13 @@ def _download_zip() -> bytes:
     return buf.getvalue()
 
 
+_DOWNLOAD_ZIP = _download_zip()
+
+
 @respx.mock
 async def test_efactura_download_saves_zip_and_pdf(tmp_path: Path) -> None:
     respx.get(f"{EFACTURA}/descarcare").mock(
-        return_value=httpx.Response(200, content=_download_zip())
+        return_value=httpx.Response(200, content=_DOWNLOAD_ZIP)
     )
     # `transformare` is public/prod-only like `validare`; /DA skips re-validation
     # (the message already passed ANAF's validation when it was filed).
@@ -209,14 +214,14 @@ async def test_efactura_download_saves_zip_and_pdf(tmp_path: Path) -> None:
     assert out["pdf_path"] == str(pdf_target)
     assert out["zip_path"] == str(zip_target)
     assert pdf_target.read_bytes() == b"%PDF-1.7 fake"
-    assert zip_target.read_bytes() == _download_zip()
+    assert zip_target.read_bytes() == _DOWNLOAD_ZIP
     assert pdf_route.called
 
 
 @respx.mock
 async def test_efactura_download_pdf_failure_is_best_effort(tmp_path: Path) -> None:
     respx.get(f"{EFACTURA}/descarcare").mock(
-        return_value=httpx.Response(200, content=_download_zip())
+        return_value=httpx.Response(200, content=_DOWNLOAD_ZIP)
     )
     # transformare answers 200 with a JSON error body when it cannot render.
     respx.post(f"{EFACTURA_PUBLIC}/transformare/FACT1/DA").mock(
@@ -235,9 +240,56 @@ async def test_efactura_download_pdf_failure_is_best_effort(tmp_path: Path) -> N
 
 
 @respx.mock
+async def test_efactura_download_refuses_to_overwrite_by_default(
+    tmp_path: Path,
+) -> None:
+    # A batch flow naming files from invoice metadata must not lose an invoice to
+    # a name collision: an existing file is refused (reported per artifact), and
+    # only overwrite=True replaces it.
+    respx.get(f"{EFACTURA}/descarcare").mock(
+        return_value=httpx.Response(200, content=_DOWNLOAD_ZIP)
+    )
+    respx.post(f"{EFACTURA_PUBLIC}/transformare/FACT1/DA").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7 fake")
+    )
+    server = create_server(_config(tmp_path))
+    pdf_target = tmp_path / "2026-06-28 - ACME SRL.pdf"
+    zip_target = tmp_path / "archive.zip"
+    pdf_target.write_bytes(b"an earlier invoice")
+    zip_target.write_bytes(b"an earlier archive")
+
+    out = await _call(
+        server,
+        "efactura_download",
+        message_id="55",
+        save_pdf_as=str(pdf_target),
+        save_zip_as=str(zip_target),
+    )
+    assert out["pdf_path"] is None
+    assert "overwrite" in out["pdf_error"]
+    assert out["zip_path"] is None
+    assert "overwrite" in out["zip_error"]
+    assert pdf_target.read_bytes() == b"an earlier invoice"
+    assert zip_target.read_bytes() == b"an earlier archive"
+
+    out = await _call(
+        server,
+        "efactura_download",
+        message_id="55",
+        save_pdf_as=str(pdf_target),
+        save_zip_as=str(zip_target),
+        overwrite=True,
+    )
+    assert out["pdf_error"] is None
+    assert out["zip_error"] is None
+    assert pdf_target.read_bytes() == b"%PDF-1.7 fake"
+    assert zip_target.read_bytes() == _DOWNLOAD_ZIP
+
+
+@respx.mock
 async def test_efactura_message_pdf_resource(tmp_path: Path) -> None:
     respx.get(f"{EFACTURA}/descarcare").mock(
-        return_value=httpx.Response(200, content=_download_zip())
+        return_value=httpx.Response(200, content=_DOWNLOAD_ZIP)
     )
     respx.post(f"{EFACTURA_PUBLIC}/transformare/FACT1/DA").mock(
         return_value=httpx.Response(200, content=b"%PDF-1.7 fake")
@@ -276,6 +328,19 @@ async def test_efactura_validate_routes_credit_notes_to_fcn(tmp_path: Path) -> N
     )
     server = create_server(_config(tmp_path))
     out = await _call(server, "efactura_validate", document={"xml": credit_note_xml()})
+    assert out["valid"] is True
+    assert route.called
+
+
+@respx.mock
+async def test_efactura_validate_works_without_credentials(tmp_path: Path) -> None:
+    # `validare` is a public no-auth service (served via PublicClient), so the
+    # tool must work on a credential-free server, like the anaf_* lookups.
+    route = respx.post(f"{EFACTURA_PUBLIC}/validare/FACT1").mock(
+        return_value=httpx.Response(200, json={"stare": "ok"})
+    )
+    server = create_server(_credential_free(tmp_path))
+    out = await _call(server, "efactura_validate", document={"xml": invoice_xml()})
     assert out["valid"] is True
     assert route.called
 

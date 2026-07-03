@@ -32,10 +32,8 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
 - **OAuth2 auth layer** — Authorization-Code bootstrap (browser + qualified
   certificate), local token store, and headless refresh, exposed via the `anafpy` CLI
   and an `httpx.Auth` integration for the clients.
-- **`EFacturaClient`** (async) — `upload`, `get_status`, `download`, `to_pdf`,
-  `validate_remote` (ANAF's authoritative server-side validation, no filing — uses the
-  public no-auth production validator, so it works whatever environment the client
-  targets), `validate_signature` (checks the MF signature over a downloaded invoice), the
+- **`EFacturaClient`** (async) — `upload`, `get_status`, `download`,
+  `validate_signature` (checks the MF signature over a downloaded invoice), the
   `upload_and_wait` poll-until-terminal helper, and `list_messages` — a single async
   iterator that pages the message list under the hood (window by `days` or `start`/`end`;
   empty window → empty iterator, real ANAF errors → raise). `download` exposes three read
@@ -48,9 +46,13 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
 - **`PublicClient`** (async) — ANAF's **unauthenticated** public services on
   `webservicesp.anaf.ro`: `lookup_taxpayers` (VAT registration, VAT-on-collection,
   inactive, split-VAT, and RO e-Factura register membership in one call),
-  `lookup_efactura_register`, `lookup_farmers`, `lookup_cult_entities`, and
-  `get_financial_statement` (public bilanț indicators). No credentials, no test/prod
-  split; requests are paced client-side at ANAF's stated 1 req/s rule.
+  `lookup_efactura_register`, `lookup_farmers`, `lookup_cult_entities`,
+  `get_financial_statement` (public bilanț indicators) — plus the stateless
+  e-Factura document services: `validate_invoice` (ANAF's authoritative
+  server-side validation, no filing) and `render_invoice_pdf` (the official
+  `transformare` PDF rendering); both are prod-only on ANAF's side and need no
+  login. No credentials, no test/prod split; requests are paced client-side at
+  ANAF's stated 1 req/s rule.
 - **Flat models** — `read_flat_invoice` projects UBL into a small, easy-to-read
   `FlatInvoice` **read view** (lossy, with a `complete` flag); anafpy never composes
   UBL from it. The e-Transport flat models are **bidirectional**: `read_flat_transport`
@@ -240,13 +242,16 @@ It exposes **freely callable read tools** (`auth_status`; the e-Factura inbox vi
 can also **save artifacts for the user**: `save_zip_as` writes the signed archive
 ZIP and `save_pdf_as` writes ANAF's official PDF rendering (`transformare`,
 best-effort) to caller-given paths, which powers flows like "export last month's
-invoices as `<date> - <partner>.pdf`"; the PDF is also exposed as the MCP resource
+invoices as `<date> - <partner>.pdf`" (an existing file is never replaced unless
+`overwrite=true` — a name collision is reported instead of losing a file); the PDF
+is also exposed as the MCP resource
 `anafmsg://<message_id>/pdf`; `etransport_list`
 / `etransport_get_status` / `etransport_lookup` / `etransport_nomenclature`;
 `efactura_validate`, which runs
 ANAF's authoritative server-side validator without filing; and the `anaf_*` public
 lookups — taxpayer/VAT registry, RO e-Factura register, farmers/cult registers, and
-financial statements — which need **no login at all**) plus **two-step gated
+financial statements. `efactura_validate` and the `anaf_*` lookups ride the public
+no-auth services, so they need **no login at all**) plus **two-step gated
 filing for e-Transport**: `etransport_prepare*` returns a preview + a confirmation
 token bound to the exact document and the CIF being filed for; `etransport_submit`
 files only when
@@ -277,10 +282,10 @@ claude mcp add anafpy \
   -- uv run --directory /path/to/anafpy --frozen --extra mcp anafpy-mcp
 ```
 
-**No credentials yet?** The server still starts and the public `anaf_*` lookups
-(registries, financial statements) are fully usable. The e-Factura / e-Transport
-tools unlock once you set the credentials and run the one-time `anafpy auth login`
-in a terminal.
+**No credentials yet?** The server still starts; the public `anaf_*` lookups
+(registries, financial statements) and `efactura_validate` are fully usable. The
+remaining e-Factura / e-Transport tools unlock once you set the credentials and run
+the one-time `anafpy auth login` in a terminal.
 
 The server also ships workflow playbooks as MCP **prompts** — a user-invoked entry
 point (Claude Desktop's "+" menu, or `/mcp__anafpy__etransport-declare` in Claude

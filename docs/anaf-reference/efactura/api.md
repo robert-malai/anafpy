@@ -282,8 +282,8 @@ limit — the limits file is newer and is the authority.)
 | `get_status(index)` | `GET /FCTEL/rest/stareMesaj` |
 | `list_messages(cif, *, days \| start+end, filter=None)` → `AsyncIterator[MessageListItem]` | `GET /FCTEL/rest/listaMesajePaginatieFactura` (paged internally) |
 | `download(id)` → `DownloadedMessage` | `GET /FCTEL/rest/descarcare` |
-| `validate_remote(xml, standard)` | `POST webservicesp.anaf.ro/prod/FCTEL/rest/validare/{std}` (no auth, env-independent) |
-| `to_pdf(xml, standard, validate=True)` | `POST webservicesp.anaf.ro/prod/FCTEL/rest/transformare/{std}` (no auth, env-independent) |
+| `PublicClient.validate_invoice(xml, standard)` | `POST webservicesp.anaf.ro/prod/FCTEL/rest/validare/{std}` (no auth, prod-only) |
+| `PublicClient.render_invoice_pdf(xml, standard, validate=True)` | `POST webservicesp.anaf.ro/prod/FCTEL/rest/transformare/{std}` (no auth, prod-only) |
 | `validate_signature(file, signature)` | `POST /api/validate/signature` |
 
 **Implementation notes**
@@ -301,6 +301,6 @@ limit — the limits file is newer and is the authority.)
   the latter **raises `AnafResponseError`** (matched by wording; see
   `is_empty_result_message`; the official wordings are catalogued in §3).
 - `download` returns a **ZIP** (binary) — handle as bytes, unzip to the two XML members.
-- `validate_remote`/`to_pdf` use the public no-auth `webservicesp.anaf.ro/prod`
-  variants (stateless, prod-only — see §5/§6) and deliberately send **no Bearer
-  header**; they ignore the client's `environment`.
+- `validare`/`transformare` are stateless, public no-auth, prod-only (see §5/§6),
+  so they live on `PublicClient` (`validate_invoice`/`render_invoice_pdf`) — no
+  Bearer header, no `environment`, no OAuth credentials needed.

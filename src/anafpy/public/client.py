@@ -1,9 +1,14 @@
 """Async client for ANAF's unauthenticated public web services.
 
-These are the no-auth lookup services on ``webservicesp.anaf.ro`` (see
+These are the no-auth services on ``webservicesp.anaf.ro`` (see
 ``docs/anaf-reference/public/api.md``): the taxpayer/VAT registry, the RO e-Factura
-register, the farmers' and cult-entities registers, and public annual financial
-statements. Key differences from the OAuth clients:
+register, the farmers' and cult-entities registers, public annual financial
+statements — plus the **stateless e-Factura document services** ``validare``
+(:meth:`PublicClient.validate_invoice`) and ``transformare``
+(:meth:`PublicClient.render_invoice_pdf`), which are public, no-auth, and
+**prod-only** (their ``test`` paths answer HTTP 404, live-confirmed 2026-07-02) —
+they validate/render a document without filing anything. Key differences from the
+OAuth clients:
 
 1. **No authentication** — no ``TokenProvider``, no certificate; and **no test/prod
    split**: there is only the production host.
@@ -33,7 +38,7 @@ from typing import Any, Self
 import httpx
 from pydantic import ValidationError
 
-from .._transport.base import PUBLIC_HOST, as_text, raise_for_status
+from .._transport.base import PUBLIC_HOST, Service, as_text, raise_for_status
 from ..exceptions import (
     AnafConfigError,
     AnafResponseError,
@@ -45,7 +50,9 @@ from .models import (
     FarmerLookup,
     FinancialStatement,
     RegistryLookup,
+    RemoteValidationResult,
     TaxpayerLookup,
+    TransformStandard,
 )
 
 __all__ = ["PublicClient"]
@@ -59,6 +66,13 @@ _EFACTURA_REGISTER_PATH = "api/registruroefactura/v1/interogare"
 _BILANT_PATH = "bilant"
 _AGRIC_PATH = "RegAgric/api/v2/ws/agric"
 _CULT_PATH = "RegCult/api/v2/ws/cult"
+
+#: `validare`/`transformare` exist only under the `prod` segment (no test variant).
+_EFACTURA_DOC_PREFIX = f"prod/{Service.EFACTURA.value}"
+
+# ANAF wants the XML payload as a raw text/plain body (per the API PDF), despite it
+# being XML.
+_XML_BODY_HEADERS = {"Content-Type": "text/plain"}
 
 
 def _normalize_cui(value: int | str) -> int:
@@ -215,13 +229,20 @@ class PublicClient:
         *,
         params: dict[str, str] | None = None,
         json_body: list[dict[str, int | str]] | None = None,
+        content: bytes | None = None,
+        headers: dict[str, str] | None = None,
         tolerate: tuple[int, ...] = (),
     ) -> httpx.Response:
         url = f"{PUBLIC_HOST}/{path}"
         await self._pacer.wait()
         try:
             response = await self._http.request(
-                method, url, params=params, json=json_body
+                method,
+                url,
+                params=params,
+                json=json_body,
+                content=content,
+                headers=headers,
             )
         except httpx.HTTPError as exc:
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
@@ -337,9 +358,81 @@ class PublicClient:
         statement.raw = body
         return statement
 
+    # -- stateless e-Factura document services (validare / transformare) --------------
+
+    async def validate_invoice(
+        self,
+        xml: str | bytes,
+        *,
+        standard: TransformStandard = TransformStandard.INVOICE,
+    ) -> RemoteValidationResult:
+        """Validate e-Factura XML server-side (``validare/{std}``) without filing it.
+
+        ANAF's own validator — authoritative, unlike any local pre-check. Pass
+        ``standard=TransformStandard.CREDIT_NOTE`` for a credit note. An invalid
+        document is returned as a :class:`RemoteValidationResult` with
+        ``valid=False`` and the findings in ``messages``, not raised. Nothing is
+        filed anywhere.
+        """
+        response = await self._post_document(f"validare/{standard.value}", xml)
+        return _parse_validate(response.content)
+
+    async def render_invoice_pdf(
+        self,
+        xml: str | bytes,
+        *,
+        standard: TransformStandard = TransformStandard.INVOICE,
+        validate: bool = True,
+    ) -> bytes:
+        """Render e-Factura XML to a PDF (``transformare/{std}``).
+
+        ``validate=False`` skips ANAF's validation (it then does not guarantee the
+        PDF — use it for documents that already passed validation at filing). A
+        body that cannot be rendered still answers HTTP 200, with a JSON error
+        payload instead of PDF bytes; callers decide how strictly to check.
+        """
+        path = f"transformare/{standard.value}"
+        if not validate:
+            path += "/DA"
+        response = await self._post_document(path, xml)
+        return response.content
+
+    async def _post_document(self, path: str, xml: str | bytes) -> httpx.Response:
+        body = xml.encode("utf-8") if isinstance(xml, str) else xml
+        return await self._request(
+            "POST",
+            f"{_EFACTURA_DOC_PREFIX}/{path}",
+            content=body,
+            headers=_XML_BODY_HEADERS,
+        )
+
 
 def _json_or_none(body: bytes) -> Any:
     try:
         return json.loads(body)
     except ValueError:
         return None
+
+
+def _parse_validate(body: bytes) -> RemoteValidationResult:
+    try:
+        data = json.loads(body)
+        state = data["stare"]
+    except (ValueError, TypeError, KeyError) as exc:
+        # Be explicit rather than inventing an outcome for an unknown shape.
+        raise AnafResponseError(
+            f"unrecognised validare response: {as_text(body)[:200]}",
+            status_code=200,
+            body=as_text(body),
+        ) from exc
+    messages = [
+        str(m.get("message", m)) if isinstance(m, dict) else str(m)
+        for m in data.get("Messages") or []
+    ]
+    trace_id = data.get("trace_id")
+    return RemoteValidationResult(
+        valid=str(state).strip().lower() == "ok",
+        messages=messages,
+        trace_id=str(trace_id) if trace_id is not None else None,
+        raw=body,
+    )

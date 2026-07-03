@@ -17,8 +17,9 @@ ANAF's own upload-time validation is the arbiter of its CIUS-RO validity.
 
 This file also holds the ``validare``/``transformare`` shape checks. Those endpoints
 are **public, no-auth, and prod-only** (the ``test`` paths 404, live-confirmed
-2026-07-02), so the client routes them to ``webservicesp.anaf.ro/prod`` regardless of
-its ``environment`` — the checks are read-only and file nothing anywhere.
+2026-07-02) and live on :class:`PublicClient` (``validate_invoice`` /
+``render_invoice_pdf``) — the checks are read-only, need no credentials, and file
+nothing anywhere.
 """
 
 from __future__ import annotations
@@ -80,6 +81,7 @@ from anafpy.efactura.ubl.common.ubl_common_basic_components_2_1 import (
     TaxExclusiveAmount,
     TaxInclusiveAmount,
 )
+from anafpy.public import PublicClient
 
 pytestmark = [
     pytest.mark.live,
@@ -275,15 +277,13 @@ async def test_efactura_test_roundtrip(provider: TokenProvider, cif: str) -> Non
             assert item.message_type
 
 
-async def test_efactura_validare_public_prod_shapes(
-    provider: TokenProvider, cif: str
-) -> None:
+async def test_efactura_validare_public_prod_shapes(cif: str) -> None:
     """ANAF's public validator: ``ok`` for the minimal invoice, ``nok`` + findings
     for an incomplete one.
 
-    Read-only — ``validare`` validates without filing, and the client calls the
-    public no-auth prod variant whatever its ``environment`` (here TEST). Confirms
-    the ``{stare, Messages[], trace_id}`` shape both ways.
+    Read-only — ``validare`` validates without filing, on the public no-auth prod
+    host via :class:`PublicClient` (no credentials involved). Confirms the
+    ``{stare, Messages[], trace_id}`` shape both ways.
     """
     now = dt.datetime.now(dt.UTC)
     serializer = XmlSerializer()
@@ -305,26 +305,24 @@ async def test_efactura_validare_public_prod_shapes(
         )
     )
 
-    async with EFacturaClient(provider, environment=Environment.TEST) as client:
-        good = await client.validate_remote(valid_xml)
+    async with PublicClient() as client:
+        good = await client.validate_invoice(valid_xml)
         assert good.valid, good.messages
         assert good.messages == []
 
-        bad = await client.validate_remote(invalid_xml)
+        bad = await client.validate_invoice(invalid_xml)
         assert not bad.valid
         assert bad.messages  # rule findings, e.g. BR-* / BR-RO-*
         assert bad.trace_id
 
 
-async def test_efactura_transformare_public_prod_renders_pdf(
-    provider: TokenProvider, cif: str
-) -> None:
+async def test_efactura_transformare_public_prod_renders_pdf(cif: str) -> None:
     """``transformare`` renders the minimal invoice to PDF bytes (public prod,
     read-only)."""
     now = dt.datetime.now(dt.UTC)
     xml = XmlSerializer().render(
         _minimal_invoice(cif, f"ANAFPY-PDF-{now:%Y%m%d%H%M%S}", now.date())
     )
-    async with EFacturaClient(provider, environment=Environment.TEST) as client:
-        pdf = await client.to_pdf(xml)
+    async with PublicClient() as client:
+        pdf = await client.render_invoice_pdf(xml)
     assert pdf.startswith(b"%PDF"), pdf[:200]

@@ -1,6 +1,7 @@
-"""ANAF public (no-auth) web services: registries and financial statements.
+"""ANAF public (no-auth) web services: registries, financial statements, and the
+stateless e-Factura document services (``validare`` / ``transformare``).
 
-The zero-credential lookup surface on ``webservicesp.anaf.ro`` — a separate family
+The zero-credential surface on ``webservicesp.anaf.ro`` — a separate family
 from the OAuth-protected e-Factura / e-Transport clients. See
 ``docs/anaf-reference/public/api.md`` for the compiled API reference.
 """
@@ -21,9 +22,11 @@ from .models import (
     GeneralData,
     InactiveState,
     RegistryLookup,
+    RemoteValidationResult,
     SplitVat,
     TaxpayerLookup,
     TaxpayerRecord,
+    TransformStandard,
     VatOnCollection,
     VatPeriod,
     VatRegistration,
@@ -43,9 +46,11 @@ __all__ = [
     "InactiveState",
     "PublicClient",
     "RegistryLookup",
+    "RemoteValidationResult",
     "SplitVat",
     "TaxpayerLookup",
     "TaxpayerRecord",
+    "TransformStandard",
     "VatOnCollection",
     "VatPeriod",
     "VatRegistration",

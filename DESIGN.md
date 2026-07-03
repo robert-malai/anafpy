@@ -225,7 +225,10 @@ Design (layered):
 ### Validation
 
 **REVISED 2026-07-02: local Schematron dropped; validation is ANAF's server-side
-`validare` endpoint** (`EFacturaClient.validate_remote`, `POST /validare/{FACT1|FCN}`).
+`validare` endpoint** (`PublicClient.validate_invoice`, `POST /validare/{FACT1|FCN}`;
+moved from `EFacturaClient` 2026-07-04 — `validare`/`transformare` are public,
+no-auth, prod-only services on `webservicesp.anaf.ro`, exactly `PublicClient`'s
+host, so validation needs no OAuth credentials at all).
 
 - The original design shipped an opt-in `anafpy[validation]` extra: vendored CIUS-RO
   Schematron compiled to XSLT 2.0, run via `saxonche`. It was removed because the
@@ -236,7 +239,7 @@ Design (layered):
     inverting "local pass is never authoritative" — while silently skipping the
     check when the extra wasn't installed (gate strictness depended on an extra);
   - ANAF exposes its own validator over HTTP, authoritative by definition.
-- e-Factura: `validate_remote` returns an invalid document as a **typed value**
+- e-Factura: `validate_invoice` returns an invalid document as a **typed value**
   (`RemoteValidationResult`, findings in `messages`), never an exception.
 - e-Transport has no standalone remote validator: the pre-filing check is
   parse + human-reviewed preview; ANAF validates on upload (findings as values).
@@ -411,7 +414,12 @@ reference as resources.)*
   `validate=False` — the message was validated at filing — and **best-effort**: a
   non-PDF answer surfaces as `pdf_error`, never fails the download). Caller-given
   full paths, not a directory + naming convention: the agent composes filenames
-  from invoice metadata ("`<date> - <partner>.pdf`"). The PDF is additionally the
+  from invoice metadata ("`<date> - <partner>.pdf`"). An existing file is **never
+  silently replaced** (2026-07-04): a collision is refused and reported per
+  artifact (`pdf_error`/`zip_error`); `overwrite=true` replaces deliberately. The
+  alternatives lose either way — overwrite-and-flag notices the collision only
+  after the first file is gone, and auto-deduplicated names turn a re-export into
+  duplicates. The PDF is additionally the
   stateless resource template `anafmsg://{message_id}/pdf` (fetch + convert on
   read) for hosts that grow real resource UX; there is deliberately **no ZIP
   resource** — a base64 ZIP serves neither the model nor any host UI.

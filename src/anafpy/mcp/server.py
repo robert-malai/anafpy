@@ -38,7 +38,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field, ValidationError
 
-from ..efactura.models import Filter, TransformStandard, UploadStandard
+from ..efactura.models import Filter, UploadStandard
 from ..etransport.models import (
     FlatConfirmation,
     FlatDeletion,
@@ -48,7 +48,7 @@ from ..etransport.models import (
     render_etransport,
 )
 from ..exceptions import AnafConfigError, AnafError, AnafResponseError
-from ..public.models import RegistryLookup
+from ..public.models import RegistryLookup, TransformStandard
 from .config import ServerConfig
 from .context import AppContext, AuthStatus
 from .documents import resolve_xml, transport_view, upload_standard
@@ -93,13 +93,15 @@ pass `save_zip_as` / `save_pdf_as` (file paths) to have the server write the sig
 archive ZIP and ANAF's official PDF rendering to disk — e.g. for "export last
 month's invoices as PDFs named '<date> - <partner>.pdf'", list the messages, look
 the partner names up, then call `efactura_download` once per invoice with
-`save_pdf_as`. The PDF also exists as the resource `anafmsg://<message_id>/pdf`;
-never read it into context when a file on disk is what the user wants.
+`save_pdf_as`. An existing file is never replaced unless `overwrite=true` — a name
+collision comes back in `pdf_error`/`zip_error` instead of losing a file. The PDF
+also exists as the resource `anafmsg://<message_id>/pdf`; never read it into
+context when a file on disk is what the user wants.
 
 To pre-check an invoice, `efactura_validate` runs ANAF's own server-side validator
-without filing (authoritative). e-Transport has no standalone validator — ANAF
-validates on upload. If a tool reports "not authenticated", the user must run
-`anafpy auth login` host-side.
+without filing (authoritative; public and no-auth, so it needs no login). e-Transport
+has no standalone validator — ANAF validates on upload. If a tool reports "not
+authenticated", the user must run `anafpy auth login` host-side.
 
 The `anaf_*` lookup tools query ANAF's PUBLIC no-auth services and work even without
 a login: the taxpayer/VAT registry (`anaf_lookup_taxpayers` answers "is this CUI
@@ -152,9 +154,19 @@ def _transform_standard(xml: bytes) -> TransformStandard:
     return TransformStandard.INVOICE
 
 
-def _write_artifact(target: str, data: bytes) -> str:
-    """Write a downloaded artifact to a caller-given path, creating parent dirs."""
+def _write_artifact(target: str, data: bytes, *, overwrite: bool) -> str:
+    """Write a downloaded artifact to a caller-given path, creating parent dirs.
+
+    An existing file is never silently replaced: a batch flow naming files from
+    invoice metadata ("<date> - <partner>.pdf") must not lose one invoice to a
+    name collision. Raises :class:`AnafConfigError` unless ``overwrite`` is set.
+    """
     path = Path(target).expanduser()
+    if path.exists() and not overwrite:
+        raise AnafConfigError(
+            f"refusing to overwrite existing file {path} — pick another name, or "
+            "pass overwrite=true to replace it deliberately"
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
     return str(path)
@@ -168,7 +180,7 @@ async def _render_pdf(ctx: AppContext, xml: bytes) -> bytes:
     ``transformare`` still answers 200 with a JSON error body when it cannot render,
     so a non-PDF response is raised as :class:`AnafResponseError`, not written out.
     """
-    pdf = await ctx.efactura().to_pdf(
+    pdf = await ctx.public().render_invoice_pdf(
         xml, standard=_transform_standard(xml), validate=False
     )
     if not pdf.startswith(b"%PDF"):
@@ -257,14 +269,18 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         "the view. The binary artifacts are for the user, not the context: pass "
         "`save_zip_as` to write the signed archive ZIP and/or `save_pdf_as` to write "
         "ANAF's official PDF rendering to those file paths (name them from the "
-        "invoice metadata, e.g. '<date> - <partner>.pdf'). The PDF is best-effort: a "
-        "conversion failure is reported in `pdf_error` and never fails the download. "
-        "The PDF is also readable as the resource anafmsg://{message_id}/pdf.",
+        "invoice metadata, e.g. '<date> - <partner>.pdf'). An existing file is never "
+        "replaced unless overwrite=true: a refused write is reported in "
+        "`pdf_error`/`zip_error` — pick another name, or pass overwrite=true only "
+        "for a deliberate re-export. The PDF is best-effort: a conversion failure "
+        "is reported in `pdf_error` and never fails the download. The PDF is also "
+        "readable as the resource anafmsg://{message_id}/pdf.",
     )
     async def efactura_download(
         message_id: str,
         save_pdf_as: str | None = None,
         save_zip_as: str | None = None,
+        overwrite: bool = False,
     ) -> dict[str, object]:
         msg = await ctx.efactura().download(message_id)
         content = (
@@ -281,18 +297,28 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
             else:
                 try:
                     pdf_path = _write_artifact(
-                        save_pdf_as, await _render_pdf(ctx, msg.content_xml)
+                        save_pdf_as,
+                        await _render_pdf(ctx, msg.content_xml),
+                        overwrite=overwrite,
                     )
                 except AnafError as exc:
                     pdf_error = str(exc)
+        zip_path: str | None = None
+        zip_error: str | None = None
+        if save_zip_as is not None:
+            try:
+                zip_path = _write_artifact(
+                    save_zip_as, msg.raw_zip, overwrite=overwrite
+                )
+            except AnafError as exc:
+                zip_error = str(exc)
         return {
             "has_content": msg.content_xml is not None,
             "has_signature": msg.signature_xml is not None,
             "content_xml": content,
             "invoice": view.model_dump(mode="json") if view is not None else None,
-            "zip_path": (
-                _write_artifact(save_zip_as, msg.raw_zip) if save_zip_as else None
-            ),
+            "zip_path": zip_path,
+            "zip_error": zip_error,
             "pdf_path": pdf_path,
             "pdf_error": pdf_error,
         }
@@ -319,11 +345,12 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         "own server-side validator, without filing. Authoritative — the same rules "
         "the upload is checked against. Uses ANAF's public no-auth validator, which "
         "exists only in production, so it works (and answers identically) whatever "
-        "environment this server is configured for; nothing is filed anywhere.",
+        "environment this server is configured for — even with no OAuth "
+        "credentials configured; nothing is filed anywhere.",
     )
     async def efactura_validate(document: UblXmlInput) -> dict[str, object]:
         xml = resolve_xml(document)
-        result = await ctx.efactura().validate_remote(
+        result = await ctx.public().validate_invoice(
             xml, standard=_transform_standard(xml)
         )
         return {

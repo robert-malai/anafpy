@@ -19,6 +19,7 @@ status — read membership from the ``registered`` booleans, never from presence
 from __future__ import annotations
 
 from decimal import Decimal
+from enum import StrEnum
 from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
@@ -36,9 +37,11 @@ __all__ = [
     "GeneralData",
     "InactiveState",
     "RegistryLookup",
+    "RemoteValidationResult",
     "SplitVat",
     "TaxpayerLookup",
     "TaxpayerRecord",
+    "TransformStandard",
     "VatOnCollection",
     "VatPeriod",
     "VatRegistration",
@@ -71,6 +74,29 @@ class _WireModel(BaseModel):
     """Base for wire-facing models: alias-populated, constructible by field name."""
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+# --- stateless e-Factura document services (validare / transformare) -----------------
+
+
+class TransformStandard(StrEnum):
+    """``std`` path segment for ``/validare`` and ``/transformare``."""
+
+    INVOICE = "FACT1"
+    CREDIT_NOTE = "FCN"
+
+
+class RemoteValidationResult(BaseModel):
+    """Outcome of ANAF's server-side ``validare`` endpoint.
+
+    An invalid document is a *business* outcome: ``valid`` is ``False`` and
+    ``messages`` carries ANAF's findings — never an exception.
+    """
+
+    valid: bool
+    messages: list[str] = []
+    trace_id: str | None = None
+    raw: bytes = b""
 
 
 # --- taxpayer / VAT registry (§1 of the reference) -----------------------------------
