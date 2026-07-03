@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from anafpy.auth import FileTokenStore, TokenSet
+from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenSet
 from anafpy.cli.main import main
+from conftest import FakeKeyring
 
 
 def test_status_not_authenticated(
@@ -61,3 +62,31 @@ def test_status_corrupt_store_is_a_cli_error(
     store.write_text("{not json", encoding="utf-8")
     assert main(["auth", "status", "--store", str(store)]) == 1
     assert "token store" in capsys.readouterr().err
+
+
+def test_status_reads_the_keyring_backend(
+    fake_keyring: FakeKeyring, capsys: pytest.CaptureFixture[str]
+) -> None:
+    KeyringTokenStore().save(TokenSet(access_token="a", refresh_token="r"))
+    assert main(["auth", "status", "--store-backend", "keyring"]) == 0
+    assert "authenticated" in capsys.readouterr().out
+
+
+def test_status_env_selects_the_keyring_backend(
+    fake_keyring: FakeKeyring,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "keyring")
+    KeyringTokenStore().save(TokenSet(access_token="a", refresh_token="r"))
+    assert main(["auth", "status"]) == 0
+    assert "authenticated" in capsys.readouterr().out
+
+
+def test_unknown_store_backend_from_env_is_a_cli_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # argparse never validates defaults, so a bad env value must be caught later.
+    monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "vault")
+    assert main(["auth", "status"]) == 1
+    assert "backend" in capsys.readouterr().err

@@ -6,12 +6,13 @@ from .callback import CallbackListener, capture_authorization_code, parse_redire
 from .models import TokenSet
 from .oauth import build_authorize_url, exchange_code, refresh_tokens
 from .provider import AnafAuth, TokenProvider
-from .store import FileTokenStore, MemoryTokenStore, TokenStore
+from .store import FileTokenStore, KeyringTokenStore, MemoryTokenStore, TokenStore
 
 __all__ = [
     "AnafAuth",
     "CallbackListener",
     "FileTokenStore",
+    "KeyringTokenStore",
     "MemoryTokenStore",
     "TokenProvider",
     "TokenSet",

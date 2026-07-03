@@ -142,6 +142,16 @@ Design (layered):
   (`parse_redirect_url`), code→token exchange, file-backed **`TokenStore`**,
   **transparent refresh** (incl. refresh-on-401 — this stays in the client; it's
   credential management, not network retry).
+- **OS-credential-store backend** (added 2026-07-03): `KeyringTokenStore` over the
+  `keyring` library (optional `anafpy[keyring]` extra), selected via
+  `ANAFPY_TOKEN_STORE_BACKEND=keyring` / `--store-backend keyring`. One
+  implementation covers macOS Keychain, Windows Credential Manager, and Linux
+  Secret Service/KWallet. Windows caps a credential blob at 2560 bytes (UTF-16,
+  so ~1280 chars) — smaller than one ANAF JWT — so the store splits the JSON
+  token set across continuation entries (`tokens#1`, `#2`, ...) there and prunes
+  stale ones on rewrite; the fallback considered was an MSAL-style DPAPI-encrypted
+  file, rejected as a second platform-specific code path. The file store stays
+  the default (Docker-mountable, no OS daemon needed).
 - **`anafpy auth login`** runs host-side (browser + cert). The MCP server consumes
   the token store and auto-refreshes.
 

@@ -79,7 +79,8 @@ git clone https://github.com/robert-malai/anafpy && cd anafpy
 uv sync --all-extras
 ```
 
-The distribution offers one extra: `anafpy[mcp]` (the MCP server).
+The distribution offers two extras: `anafpy[mcp]` (the MCP server) and
+`anafpy[keyring]` (keep tokens in the OS credential store instead of a file).
 
 ## Authentication
 
@@ -127,6 +128,13 @@ exchanges it for tokens, and stores them under
 90 days, refresh token 365 days), so the cert is needed only about once a year. See
 [`docs/anaf-reference/oauth/authentication.md`](docs/anaf-reference/oauth/authentication.md).
 
+Prefer the **OS credential store** (macOS Keychain, Windows Credential Manager,
+Linux Secret Service/KWallet) over a JSON file? Install the `anafpy[keyring]`
+extra and pass `--store-backend keyring` to `auth login` / `auth status` — or set
+`ANAFPY_TOKEN_STORE_BACKEND=keyring`, which the MCP server reads too. On Windows
+the token set is transparently split across vault entries (Credential Manager
+caps one entry at 2560 bytes, smaller than an ANAF JWT).
+
 ## Usage
 
 The clients are async and used as context managers. Build a `TokenProvider` over your
@@ -140,6 +148,7 @@ provider = TokenProvider(
     client_id="<ID>",
     client_secret="<SECRET>",
     store=FileTokenStore("~/.anafpy/tokens.json"),
+    # or KeyringTokenStore() for the OS credential store (anafpy[keyring])
 )
 
 async with EFacturaClient(provider) as efactura:

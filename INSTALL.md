@@ -260,6 +260,12 @@ transport from an invoice or CMR you have at hand.
 - **Your credentials stay on this computer**: the Client Secret sits in the config
   file above and the tokens in `~/.anafpy/tokens.json` — protect the computer
   account like you protect SPV access, and don't share the folder.
+- **Tokens in the system keychain instead of a file**: optionally, the ANAF tokens
+  can live in the macOS Keychain / Windows Credential Manager rather than
+  `~/.anafpy/tokens.json`. Install with the extra
+  (`uv sync --frozen --extra mcp --extra keyring`), run the step-4 login with
+  `--store-backend keyring` added, and put `"ANAFPY_TOKEN_STORE_BACKEND": "keyring"`
+  next to the other `env` entries in the Claude config.
 - **Yearly renewal**: when tools start failing with a "run `anafpy auth login`"
   message after ~a year, repeat step 4. Nothing else needs to change.
 

@@ -21,10 +21,12 @@ from mcp.types import GetPromptResult, TextContent
 
 from _wire import build_flat_transport, credit_note_xml, invoice_xml, transport_xml
 from anafpy._transport.base import Environment
-from anafpy.auth import FileTokenStore, TokenSet
+from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenSet
 from anafpy.exceptions import AnafConfigError
 from anafpy.mcp.config import ServerConfig
+from anafpy.mcp.context import AppContext
 from anafpy.mcp.server import create_server
+from conftest import FakeKeyring
 
 EFACTURA = "https://api.anaf.ro/test/FCTEL/rest"
 ETRANSPORT = "https://api.anaf.ro/test/ETRANSPORT/ws/v1"
@@ -786,3 +788,24 @@ def test_signing_key_unique_per_config() -> None:
     a = ServerConfig(client_id="CID", client_secret="S")
     b = ServerConfig(client_id="CID", client_secret="S")
     assert a.signing_key != b.signing_key
+
+
+def test_store_backend_read_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "keyring")
+    assert ServerConfig.from_env().store_backend == "keyring"
+    monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "")
+    assert ServerConfig.from_env().store_backend == "file"
+
+
+def test_invalid_store_backend_raises_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "vault")
+    with pytest.raises(AnafConfigError, match="ANAFPY_TOKEN_STORE_BACKEND"):
+        ServerConfig.from_env()
+
+
+def test_keyring_backend_builds_a_keyring_store(fake_keyring: FakeKeyring) -> None:
+    config = ServerConfig(client_id="CID", client_secret="S", store_backend="keyring")
+    context = AppContext(config)
+    assert isinstance(context.provider._store, KeyringTokenStore)

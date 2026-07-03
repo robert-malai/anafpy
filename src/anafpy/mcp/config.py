@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import secrets
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, PrivateAttr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,7 +36,11 @@ class ServerConfig(BaseSettings):
             lookups; the authenticated e-Factura / e-Transport tools report how to
             enable themselves instead of working.
         client_secret: ANAF OAuth client secret (``ANAFPY_CLIENT_SECRET``).
-        store_path: token-store JSON file (``ANAFPY_TOKEN_STORE``).
+        store_path: token-store JSON file (``ANAFPY_TOKEN_STORE``); used only by
+            the ``file`` backend.
+        store_backend: ``file`` (JSON at ``store_path``) or ``keyring`` (the OS
+            credential store; needs the ``anafpy[keyring]`` extra)
+            (``ANAFPY_TOKEN_STORE_BACKEND``).
         environment: ``test`` or ``prod`` (``ANAFPY_ENV``).
         default_cif: fiscal code used when a tool call omits ``cif`` (``ANAFPY_CIF``).
         docs_dir: directory of the compiled ANAF reference exposed as MCP resources
@@ -57,6 +62,9 @@ class ServerConfig(BaseSettings):
     )
     store_path: Path = Field(
         default=Path(_DEFAULT_STORE), validation_alias="ANAFPY_TOKEN_STORE"
+    )
+    store_backend: Literal["file", "keyring"] = Field(
+        default="file", validation_alias="ANAFPY_TOKEN_STORE_BACKEND"
     )
     environment: Environment = Field(
         default=Environment.PROD, validation_alias="ANAFPY_ENV"
@@ -91,6 +99,11 @@ class ServerConfig(BaseSettings):
     def _blank_is_none(cls, value: object) -> object:
         return value or None
 
+    @field_validator("store_backend", mode="before")
+    @classmethod
+    def _blank_backend_is_default(cls, value: object) -> object:
+        return value or "file"
+
     @property
     def has_credentials(self) -> bool:
         """Whether an OAuth client id + secret pair is configured."""
@@ -112,7 +125,8 @@ class ServerConfig(BaseSettings):
         except ValidationError as exc:
             raise AnafConfigError(
                 "invalid MCP server configuration "
-                "(ANAFPY_ENV must be 'test' or 'prod'): "
+                "(ANAFPY_ENV must be 'test' or 'prod'; "
+                "ANAFPY_TOKEN_STORE_BACKEND 'file' or 'keyring'): "
                 f"{exc.errors(include_url=False)}"
             ) from exc
 

@@ -54,6 +54,9 @@ Config is env-only — `anafpy.mcp.config.ServerConfig` is a `pydantic-settings`
 `ANAFPY_CLIENT_SECRET` (optional — without them the server still starts and serves
 the public `anaf_*` lookups; the authenticated tools raise a how-to-enable
 `AnafConfigError`), `ANAFPY_TOKEN_STORE` (default `~/.anafpy/tokens.json`),
+`ANAFPY_TOKEN_STORE_BACKEND` (`file`/`keyring`, default `file` — `keyring` keeps
+tokens in the OS credential store via `KeyringTokenStore` and the `anafpy[keyring]`
+extra; the CLI honours the same variable and `--store-backend`),
 `ANAFPY_ENV` (`test`/`prod`, default `prod`), `ANAFPY_CIF` (default fiscal code), `ANAFPY_DOCS_DIR`
 (reference resources, defaults to the repo `docs/anaf-reference/`),
 `ANAFPY_SKILLS_DIR` (workflow skills re-served as MCP prompts, defaults to the repo
@@ -129,6 +132,11 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   baseline), a TLS listener (`--tls-cert/--tls-key`), or plain HTTP behind an external
   TLS terminator — the listener binds *before* the browser opens (a fast redirect must
   not outrun it) and the CLI falls back to paste if it can't start or times out.
+  Token persistence is the `TokenStore` protocol: `FileTokenStore` (default JSON
+  file) or `KeyringTokenStore` (OS credential store, `anafpy[keyring]` extra —
+  splits the set across vault entries on Windows, whose 2560-byte blob cap is
+  smaller than one ANAF JWT); selected by `ANAFPY_TOKEN_STORE_BACKEND` /
+  `--store-backend`.
 - **Clients are async**, own their `httpx.AsyncClient` (unless one is injected), and are
   async context managers (`async with EFacturaClient(...) as c:`).
 - **Discrete methods do NO transport retry** — one call, one result-or-raise — so the

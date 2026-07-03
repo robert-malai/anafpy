@@ -14,7 +14,7 @@ import time
 
 from pydantic import BaseModel
 
-from ..auth import FileTokenStore, TokenProvider
+from ..auth import FileTokenStore, KeyringTokenStore, TokenProvider, TokenStore
 from ..efactura.client import EFacturaClient
 from ..etransport.client import ETransportClient
 from ..exceptions import AnafConfigError
@@ -51,10 +51,17 @@ class AppContext:
         self.config = config
         self._provider: TokenProvider | None = None
         if config.client_id is not None and config.client_secret is not None:
+            # A keyring backend without the extra installed fails loudly here,
+            # at server start, rather than on the first authenticated call.
+            store: TokenStore = (
+                KeyringTokenStore()
+                if config.store_backend == "keyring"
+                else FileTokenStore(config.store_path)
+            )
             self._provider = TokenProvider(
                 client_id=config.client_id,
                 client_secret=config.client_secret,
-                store=FileTokenStore(config.store_path),
+                store=store,
             )
         self._efactura: EFacturaClient | None = None
         self._etransport: ETransportClient | None = None

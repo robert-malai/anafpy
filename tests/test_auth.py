@@ -11,15 +11,19 @@ import time
 from pathlib import Path
 
 import httpx
+import keyring
 import pytest
 import respx
+from keyring.backends import fail
 
 from anafpy.auth import (
     CallbackListener,
     FileTokenStore,
+    KeyringTokenStore,
     MemoryTokenStore,
     TokenProvider,
     TokenSet,
+    TokenStore,
     build_authorize_url,
     capture_authorization_code,
     exchange_code,
@@ -28,6 +32,7 @@ from anafpy.auth import (
 )
 from anafpy.auth.oauth import TOKEN_URL
 from anafpy.exceptions import AnafAuthError, AnafConfigError
+from conftest import FakeKeyring
 
 
 def _make_jwt(exp: float) -> str:
@@ -273,6 +278,70 @@ def test_file_store_corrupt_file_raises_config_error(tmp_path: Path) -> None:
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(AnafConfigError, match="token store"):
         FileTokenStore(path).load()
+
+
+# --- keyring token store ----------------------------------------------------------
+
+
+def _stored_tokens() -> TokenSet:
+    return TokenSet(
+        access_token=_make_jwt(time.time() + 90 * 86400), refresh_token="refresh-1"
+    )
+
+
+def test_keyring_store_roundtrip(fake_keyring: FakeKeyring) -> None:
+    store = KeyringTokenStore()
+    assert isinstance(store, TokenStore)
+    assert store.load() is None
+    tokens = _stored_tokens()
+    store.save(tokens)
+    loaded = store.load()
+    assert loaded is not None
+    assert loaded.access_token == tokens.access_token
+    assert loaded.refresh_token == tokens.refresh_token
+
+
+def test_keyring_store_chunks_and_reassembles(fake_keyring: FakeKeyring) -> None:
+    # Windows Credential Manager caps an entry well below one ANAF JWT; a small
+    # chunk_size exercises the same split/reassemble path on any platform.
+    store = KeyringTokenStore(chunk_size=64)
+    tokens = _stored_tokens()
+    store.save(tokens)
+    assert ("anafpy", "tokens#1") in fake_keyring.entries
+    loaded = store.load()
+    assert loaded is not None
+    assert loaded.access_token == tokens.access_token
+
+
+def test_keyring_store_save_drops_stale_chunks(fake_keyring: FakeKeyring) -> None:
+    KeyringTokenStore(chunk_size=64).save(_stored_tokens())
+    assert len(fake_keyring.entries) > 1
+    # A shorter rewrite must delete the continuation entries, or a later load
+    # would reassemble a mixed-generation token set.
+    tokens = _stored_tokens()
+    KeyringTokenStore(chunk_size=10_000).save(tokens)
+    assert list(fake_keyring.entries) == [("anafpy", "tokens")]
+    loaded = KeyringTokenStore(chunk_size=10_000).load()
+    assert loaded is not None
+    assert loaded.access_token == tokens.access_token
+
+
+def test_keyring_store_corrupt_entry_raises_config_error(
+    fake_keyring: FakeKeyring,
+) -> None:
+    fake_keyring.entries[("anafpy", "tokens")] = "{not json"
+    with pytest.raises(AnafConfigError, match="credential store"):
+        KeyringTokenStore().load()
+
+
+def test_keyring_store_fail_backend_raises_config_error() -> None:
+    previous = keyring.get_keyring()
+    keyring.set_keyring(fail.Keyring())  # type: ignore[no-untyped-call]
+    try:
+        with pytest.raises(AnafConfigError, match="credential store"):
+            KeyringTokenStore()
+    finally:
+        keyring.set_keyring(previous)
 
 
 # --- authorization-code capture (paste mode + listener) -------------------------------

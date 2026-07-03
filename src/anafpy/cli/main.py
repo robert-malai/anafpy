@@ -21,6 +21,8 @@ from .. import __version__
 from ..auth import (
     CallbackListener,
     FileTokenStore,
+    KeyringTokenStore,
+    TokenStore,
     build_authorize_url,
     exchange_code,
     parse_redirect_url,
@@ -58,11 +60,30 @@ def _paste_code() -> str:
     return parse_redirect_url(input("Redirect URL (or code): "))
 
 
+def _token_store(args: argparse.Namespace) -> tuple[TokenStore, str]:
+    """The store selected by ``--store-backend``, plus a human label for messages.
+
+    Validated here rather than by argparse ``choices``: the default comes from
+    ``ANAFPY_TOKEN_STORE_BACKEND``, and argparse never checks defaults.
+    """
+    if args.store_backend == "keyring":
+        store = KeyringTokenStore()
+        return store, f"the OS credential store (service {store.service!r})"
+    if args.store_backend != "file":
+        raise AnafConfigError(
+            f"unknown token store backend {args.store_backend!r} — "
+            "use 'file' or 'keyring'"
+        )
+    path = Path(args.store).expanduser()
+    return FileTokenStore(path), str(path)
+
+
 async def _do_login(
     client_id: str,
     client_secret: str,
     redirect_uri: str,
-    store_path: Path,
+    store: TokenStore,
+    store_label: str,
     *,
     paste: bool = False,
     ssl_context: ssl.SSLContext | None = None,
@@ -107,8 +128,8 @@ async def _do_login(
             redirect_uri=redirect_uri,
         )
 
-    FileTokenStore(store_path).save(tokens)
-    print(f"\n✓ Authenticated. Tokens saved to {store_path}.")
+    store.save(tokens)
+    print(f"\n✓ Authenticated. Tokens saved to {store_label}.")
     days = (tokens.access_expires_at - time.time()) / 86400
     print(f"  Access token valid ~{days:.0f} days; refresh is headless thereafter.")
     return 0
@@ -133,12 +154,16 @@ def _cmd_login(args: argparse.Namespace) -> int:
     ssl_context = (
         _load_ssl_context(args.tls_cert, args.tls_key) if args.tls_cert else None
     )
+    # Build the store before the browser flow so a missing keyring package or
+    # backend fails fast, not after the user has authorized with the certificate.
+    store, store_label = _token_store(args)
     return asyncio.run(
         _do_login(
             client_id,
             client_secret,
             args.redirect_uri,
-            Path(args.store).expanduser(),
+            store,
+            store_label,
             paste=args.paste,
             ssl_context=ssl_context,
         )
@@ -146,7 +171,8 @@ def _cmd_login(args: argparse.Namespace) -> int:
 
 
 def _cmd_status(args: argparse.Namespace) -> int:
-    tokens = FileTokenStore(Path(args.store).expanduser()).load()
+    store, _ = _token_store(args)
+    tokens = store.load()
     if tokens is None:
         print("not authenticated — run `anafpy auth login`")
         return 1
@@ -195,14 +221,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--tls-key",
         help="PEM private key for --tls-cert (omit if the key is in the cert file)",
     )
-    login.add_argument("--store", default=str(DEFAULT_STORE))
+    _add_store_args(login)
     login.set_defaults(func=_cmd_login)
 
     status = auth.add_parser("status", help="show stored token validity")
-    status.add_argument("--store", default=str(DEFAULT_STORE))
+    _add_store_args(status)
     status.set_defaults(func=_cmd_status)
 
     return parser
+
+
+def _add_store_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--store", default=str(DEFAULT_STORE))
+    parser.add_argument(
+        "--store-backend",
+        choices=("file", "keyring"),
+        # Read at parse time (not import) so tests and wrappers can set the env.
+        default=os.environ.get("ANAFPY_TOKEN_STORE_BACKEND", "file"),
+        help="where tokens live: a JSON file at --store, or the OS credential "
+        "store (macOS Keychain / Windows Credential Manager; needs "
+        "anafpy[keyring]); default from ANAFPY_TOKEN_STORE_BACKEND",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
