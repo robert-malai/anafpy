@@ -123,7 +123,6 @@ Correction of UIT `<uit>`
 
 #### Transport
 
-| | |
 |---|---|
 | Partner | <name> — <country>, <fiscal code> |
 | Carrier | <carrier_name> — <carrier_country>, <carrier_code> |
@@ -199,4 +198,46 @@ poll `etransport_get_status` with the returned `upload_id` until the state leave
   `CONFIRMAT` / `CONFIRMAT_PARTIAL` / `INFIRMAT`.
 
 All of these are two-step gated the same way: preview, explicit user approval, then
-submit with the token.
+submit with the token. Present them with step 4's frame, adapted:
+
+```markdown
+---
+
+### 📋 e-Transport <deletion | vehicle change | confirmation> `REVIEW BEFORE FILING`
+
+<🟢 | 🔴> **Environment: <TEST — no real filing | PROD — this files a real <action> with ANAF>**
+Filing CIF `<cif>` · UIT **<uit>**
+
+#### Declared transport
+
+|---|---|
+| Declarant | <declarant_name> (`<declarant_code>`) |
+| Carrier | <carrier_name> — <carrier_country>, <carrier_code> |
+| Vehicle | <plate> + trailer(s) |
+| Transport date | <YYYY-MM-DD> |
+| Route | <start> → <end> |
+| UIT valid until | <uit_expiry> |
+
+#### <operation-specific body — see below>
+
+---
+
+<operation-specific approval question, naming the UIT>
+```
+
+- **Declared transport** is context: fill it from a fresh `etransport_lookup` on the
+  UIT — never from conversation memory. If the lookup returns nothing, drop the
+  section and say so; do not reconstruct it.
+- **Deletion** body is `#### Effect`: a bold one-liner — deleting makes the UIT
+  invalid and the transport must not run under it. Question:
+  `Delete UIT <uit> with ANAF (<test | prod>)?`
+- **Vehicle change** body is `#### Vehicle change`: a *Current → New* table for the
+  plate and trailers (current from the lookup, `—` if unknown; new values bold),
+  plus `Changed at: <datetime | now>`. Drop the Vehicle row from the context table —
+  it is the *Current* column. Question:
+  `Change the vehicle on UIT <uit> with ANAF (<test | prod>)?`
+- **Confirmation** body is `#### Confirmation`: the type's ANAF label in bold
+  (**Confirmat**, **Confirmat parţial**, **Infirmat**), the note after a dash.
+  Question: `File this confirmation for UIT <uit> with ANAF (<test | prod>)?`
+- Step 4's rules apply unchanged: drop unset lines, human labels, frame kept
+  verbatim, approval question outside the closing rule.
