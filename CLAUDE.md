@@ -154,8 +154,10 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   refreshes headlessly — it never drives the cert/browser step (that stays the CLI).
 - **No e-Factura filing tools** (removed 2026-07-03): outbound invoices come from
   third-party invoicing software, which files with ANAF directly — there is no MCP
-  use case, so the e-Factura surface is **read-only** (inbox, status, download,
-  `efactura_validate`). `EFacturaClient.upload` stays for library users. If filing
+  use case, so the e-Factura surface is **read-only** (inbox, download,
+  `efactura_validate`); `efactura_get_status` went with the filing tools — an
+  e-Factura upload id was only ever produced by them. `EFacturaClient.upload` /
+  `get_status` stay for library users. If filing
   tools ever return, the pass-through rule still applies: the input must be the
   complete UBL XML the caller's software exported (`UblXmlInput` in
   `mcp/models.py`, now feeding only `efactura_validate`) — never composed, never

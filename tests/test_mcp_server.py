@@ -99,7 +99,7 @@ async def test_authenticated_tool_without_credentials_says_how_to_enable(
 ) -> None:
     server = create_server(_credential_free(tmp_path))
     with pytest.raises(ToolError, match="ANAFPY_CLIENT_ID"):
-        await _call(server, "efactura_get_status", upload_id="1")
+        await _call(server, "etransport_get_status", upload_id="1")
 
 
 @respx.mock
@@ -170,17 +170,6 @@ async def test_efactura_list_messages_date_range(tmp_path: Path) -> None:
     assert out["count"] == 1
     params = dict(route.calls[0].request.url.params)
     assert params["startTime"] == str(int(datetime(2026, 6, 1).timestamp() * 1000))
-
-
-@respx.mock
-async def test_efactura_get_status(tmp_path: Path) -> None:
-    respx.get(f"{EFACTURA}/stareMesaj").mock(
-        return_value=httpx.Response(200, text='<header stare="ok" id_descarcare="55"/>')
-    )
-    server = create_server(_config(tmp_path))
-    out = await _call(server, "efactura_get_status", upload_id="42")
-    assert out["state"] == "ok"
-    assert out["download_id"] == "55"
 
 
 def _download_zip() -> bytes:
@@ -293,11 +282,13 @@ async def test_efactura_validate_routes_credit_notes_to_fcn(tmp_path: Path) -> N
 async def test_efactura_filing_tools_are_not_registered(tmp_path: Path) -> None:
     # Removed 2026-07-03: outbound invoices come from third-party invoicing software
     # that files with ANAF directly — the MCP e-Factura surface is read-only
-    # (inbox, status, download, validate).
+    # (inbox, download, validate). efactura_get_status went with the filing tools:
+    # an e-Factura upload id was only ever produced by them.
     server = create_server(_config(tmp_path))
     names = {t.name for t in await server.list_tools()}
     assert "efactura_prepare_invoice" not in names
     assert "efactura_submit_invoice" not in names
+    assert "efactura_get_status" not in names
     assert {"efactura_validate", "efactura_download", "etransport_submit"} <= names
 
 

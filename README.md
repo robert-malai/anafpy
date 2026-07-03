@@ -19,7 +19,7 @@ needed, and the same models render what you read back.
 > Status: **early / alpha** (`0.x`), not yet published to PyPI. The OAuth2 auth layer,
 > both async clients (with an easy-to-read flat view of downloaded documents), and the
 > MCP server (structured e-Transport filing and a read-only e-Factura surface —
-> inbox, status, download, validate) are implemented and tested.
+> inbox, download, validate) are implemented and tested.
 > Validation is ANAF's own server-side `validare` endpoint — there is no local rule
 > engine. See [`DESIGN.md`](DESIGN.md) for the full design and
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
@@ -219,7 +219,7 @@ ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
 ```
 
 It exposes **freely callable read tools** (`auth_status`; the e-Factura inbox via
-`efactura_list_messages` / `efactura_get_status` / `efactura_download` — the latter
+`efactura_list_messages` / `efactura_download` — the latter
 can also **save artifacts for the user**: `save_zip_as` writes the signed archive
 ZIP and `save_pdf_as` writes ANAF's official PDF rendering (`transformare`,
 best-effort) to caller-given paths, which powers flows like "export last month's

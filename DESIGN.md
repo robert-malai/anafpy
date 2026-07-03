@@ -328,9 +328,11 @@ reference as resources.)*
   removed)*. There is no MCP use case: outbound UBL comes from third-party
   invoicing software, and that software files with ANAF directly — routing its
   export through a chat-driven MCP gate adds risk without adding value. The MCP
-  e-Factura surface is **read-only**: inbox, status, download, `efactura_validate`
-  (`UblXmlInput {xml|path}` now feeds only the validator). `EFacturaClient.upload`
-  remains the library filing path. If filing tools ever return, they must stay XML
+  e-Factura surface is **read-only**: inbox, download, `efactura_validate`
+  (`UblXmlInput {xml|path}` now feeds only the validator). `efactura_get_status`
+  went with the filing tools — an e-Factura upload id was only ever produced by
+  them, and processed invoices surface in the inbox. `EFacturaClient.upload` and
+  `get_status` remain the library filing path. If filing tools ever return, they must stay XML
   pass-through: no invoice composition, no flat→UBL mapping (`FlatInvoice` is only
   ever a *read* projection of UBL — never an input).
 - **e-Transport outbound = composed from structured fields** (§5; REVISED

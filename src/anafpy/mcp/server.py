@@ -8,7 +8,9 @@ an explicit ``confirm=True``. Filing tools exist for **e-Transport only**: the
 e-Factura filing pair (``efactura_prepare_invoice`` / ``efactura_submit_invoice``) was
 removed 2026-07-03 — outbound e-Factura XML comes from third-party invoicing software,
 which files with ANAF directly, so the MCP surface for e-Factura is read-only (inbox,
-status, download, validate); ``EFacturaClient.upload`` remains for library users.
+download, validate); ``efactura_get_status`` went with the filing tools (an e-Factura
+upload id only ever came from them; processed invoices surface in the inbox), while
+``EFacturaClient.upload``/``get_status`` remain for library users.
 Validation is ANAF's own: ``efactura_validate`` calls the
 server-side ``validare`` endpoint (authoritative); there is no local rule engine. The
 ``anaf_*`` lookups wrap the unauthenticated public services (``anafpy.public``) and
@@ -67,7 +69,7 @@ Filing is a two-step, human-gated flow:
   2. show the preview to the user, get explicit approval, then call the matching
      `*_submit*` tool with that token and confirm=True.
 
-Filing tools exist for e-Transport only. e-Factura is READ-ONLY here (inbox, status,
+Filing tools exist for e-Transport only. e-Factura is READ-ONLY here (inbox,
 download, validate): outbound invoices are filed by the user's invoicing software
 directly, not through these tools. e-Transport
 declarations ARE composed here, from structured fields — no XML needed:
@@ -239,22 +241,6 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         return {
             "messages": [m.model_dump() for m in messages],
             "count": len(messages),
-        }
-
-    @mcp.tool(
-        title="e-Factura: Upload status",
-        annotations=_READ_ONLY,
-        description="Get the processing state of an e-Factura upload by its upload id "
-        "(index_incarcare). Returns ok / nok / in prelucrare and a download id when "
-        "ready.",
-    )
-    async def efactura_get_status(upload_id: str) -> dict[str, object]:
-        status = await ctx.efactura().get_status(upload_id)
-        return {
-            "state": status.state.value,
-            "download_id": status.download_id,
-            "errors": status.errors,
-            "is_terminal": status.is_terminal,
         }
 
     @mcp.tool(
