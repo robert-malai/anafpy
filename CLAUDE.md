@@ -181,6 +181,10 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   XSD: `read_flat_transport` views, `build_etransport` / `render_etransport` author
   (only the schema's unused `xs:any` hooks are not carried); enum-coded fields are
   typed with the generated XSD enums, accept name or code, and serialize as names.
+- **Tool display names**: every tool has an English MCP `title` following
+  `Service: operation` — services are `E-Factura`, `E-Transport`, `ANAF Info`
+  (public no-auth lookups), plus bare `ANAF` for `auth_status`. Titles are
+  UI-only (the model sees `name` + `description`); keep them single-language.
 - **Read-first, two-step gated mutations.** Read-only tools (`*_list*`, `*_status`,
   `*_download`, `*_lookup`, `etransport_nomenclature`, `efactura_validate`,
   `auth_status`, and the no-auth

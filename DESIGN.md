@@ -339,6 +339,13 @@ reference as resources.)*
   stays for ready-made XML; `etransport_nomenclature` (read-only,
   `mcp/nomenclatures.py`) lists the XSD code lists so the model can map "vama
   Nădlac" → `NADLAC` instead of guessing codes.
+- **Display names**: every tool carries an English MCP `title` — the human-facing
+  name clients show instead of the snake_case `name` — following
+  `Service: operation` ("E-Factura: Submit invoice", "E-Transport: Prepare
+  declaration", "ANAF Info: Taxpayer lookup" for the public lookups, "ANAF:
+  Authentication status" for `auth_status`). One language only: MCP has no title
+  localization, and the model never sees titles (it works from `name` +
+  `description`), so Romanian conversation quality is unaffected.
 - **Safety: read-first, two-step gated filing.** Read-only tools (`*_list*`, `*_status`,
   `*_download`, `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
   freely callable. Filing is split `*_prepare*` → `*_submit*`: `prepare` parses (or,

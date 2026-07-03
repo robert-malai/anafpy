@@ -144,6 +144,7 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     # -- auth ------------------------------------------------------------------------
 
     @mcp.tool(
+        title="ANAF: Authentication status",
         annotations=_READ_ONLY,
         description="Report whether a usable ANAF session is present, and when the "
         "tokens expire. Call this first; if not authenticated, ask the user to run "
@@ -163,6 +164,7 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
 
 def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
+        title="E-Factura: List messages",
         annotations=_READ_ONLY,
         description="List e-Factura messages (sent/received/errors) for a fiscal code. "
         "Give a window as EITHER `days` (1-60) OR an ISO `start`+`end` date range "
@@ -193,6 +195,7 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         }
 
     @mcp.tool(
+        title="E-Factura: Upload status",
         annotations=_READ_ONLY,
         description="Get the processing state of an e-Factura upload by its upload id "
         "(index_incarcare). Returns ok / nok / in prelucrare and a download id when "
@@ -208,6 +211,7 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         }
 
     @mcp.tool(
+        title="E-Factura: Download message",
         annotations=_READ_ONLY,
         description="Download a processed e-Factura message (the signed invoice/errors "
         "ZIP) by id. Returns the decoded content and an easy-to-read `invoice` view of "
@@ -229,6 +233,7 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         }
 
     @mcp.tool(
+        title="E-Factura: Validate invoice",
         annotations=_READ_ONLY,
         description="Validate a complete UBL invoice / credit note (XML) with ANAF's "
         "own server-side validator, without filing. Authoritative — the same rules "
@@ -248,6 +253,7 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         }
 
     @mcp.tool(
+        title="E-Factura: Prepare invoice filing",
         annotations=_MUTATING,
         description="STEP 1 of filing an invoice: parse the supplied UBL XML and "
         "return an easy-to-read preview + a confirmation token bound to this document "
@@ -261,6 +267,7 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         return _prepare_invoice(ctx, cfg, document, cif=cif)
 
     @mcp.tool(
+        title="E-Factura: Submit invoice",
         annotations=_MUTATING,
         description="STEP 2 of filing an invoice: file the supplied UBL XML with ANAF. "
         "Requires the confirmation_token from efactura_prepare_invoice for the SAME "
@@ -339,6 +346,7 @@ def _prepare_invoice(
 
 def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
+        title="E-Transport: List notifications",
         annotations=_READ_ONLY,
         description="List e-Transport notifications from the last `days` (1-60) for a "
         "fiscal code.",
@@ -355,6 +363,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         }
 
     @mcp.tool(
+        title="E-Transport: Upload status",
         annotations=_READ_ONLY,
         description="Get the processing state of an e-Transport upload by its upload "
         "id (index_incarcare).",
@@ -368,6 +377,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         }
 
     @mcp.tool(
+        title="E-Transport: Look up active declarations",
         annotations=_READ_ONLY,
         description="Look up active e-Transport declarations where a fiscal code is "
         "the transport organiser (the `info` endpoint).",
@@ -390,6 +400,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         }
 
     @mcp.tool(
+        title="E-Transport: Code lists",
         annotations=_READ_ONLY,
         description="List one e-Transport nomenclature (code list) as "
         "{name, code[, label]} entries. `kind` is one of: operation_types, "
@@ -401,6 +412,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         return {"kind": kind, "entries": nomenclature_entries(kind)}
 
     @mcp.tool(
+        title="E-Transport: Prepare declaration",
         annotations=_MUTATING,
         description="STEP 1 of filing an e-Transport declaration from STRUCTURED "
         "fields — no XML needed: compose the ANAF declaration XML from the given "
@@ -417,6 +429,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         return _prepare_composed_transport(cfg, declaration, cif=cif)
 
     @mcp.tool(
+        title="E-Transport: Prepare deletion",
         annotations=_MUTATING,
         description="STEP 1 of deleting an issued e-Transport UIT: compose the "
         "stergere XML and return it + a preview + a confirmation token. Then call "
@@ -431,6 +444,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         )
 
     @mcp.tool(
+        title="E-Transport: Prepare confirmation",
         annotations=_MUTATING,
         description="STEP 1 of confirming an issued e-Transport UIT: compose the "
         "confirmare XML and return it + a preview + a confirmation token. "
@@ -454,6 +468,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         )
 
     @mcp.tool(
+        title="E-Transport: Prepare vehicle change",
         annotations=_MUTATING,
         description="STEP 1 of changing the vehicle on an issued e-Transport UIT: "
         "compose the modifVehicul XML and return it + a preview + a confirmation "
@@ -480,6 +495,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         )
 
     @mcp.tool(
+        title="E-Transport: Prepare XML filing",
         annotations=_MUTATING,
         description="STEP 1 of filing an e-Transport document the caller already "
         "has as XML: parse it and return an easy-to-read preview + a confirmation "
@@ -495,6 +511,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         return _prepare_transport(ctx, cfg, document, cif=cif)
 
     @mcp.tool(
+        title="E-Transport: Submit filing",
         annotations=_MUTATING,
         description="STEP 2 of filing any e-Transport document: file the supplied "
         "XML with ANAF and return the UIT code. Requires the confirmation_token "
@@ -626,6 +643,7 @@ def _register_public(mcp: FastMCP, ctx: AppContext) -> None:
     """
 
     @mcp.tool(
+        title="ANAF Info: Taxpayer lookup",
         annotations=_READ_ONLY,
         description="Look up CUIs (max 100) in ANAF's public taxpayer/VAT registry — "
         "no auth needed. One call answers, per CUI as of `date` (ISO, default "
@@ -640,6 +658,7 @@ def _register_public(mcp: FastMCP, ctx: AppContext) -> None:
         return _lookup_payload(result)
 
     @mcp.tool(
+        title="ANAF Info: RO e-Factura register",
         annotations=_READ_ONLY,
         description="Query the Registrul RO e-Factura (opt-in register) for CUIs "
         "(max 100) — no auth needed. Mostly relevant for B2G option dates; for a "
@@ -653,6 +672,7 @@ def _register_public(mcp: FastMCP, ctx: AppContext) -> None:
         return _lookup_payload(result)
 
     @mcp.tool(
+        title="ANAF Info: Farmers register",
         annotations=_READ_ONLY,
         description="Query ANAF's farmers' special-regime register (art. 315¹) for "
         "CUIs (max 500) — no auth needed. Membership is the record's `registered` "
@@ -665,6 +685,7 @@ def _register_public(mcp: FastMCP, ctx: AppContext) -> None:
         return _lookup_payload(result)
 
     @mcp.tool(
+        title="ANAF Info: Religious entities register",
         annotations=_READ_ONLY,
         description="Query ANAF's register of cult entities (tax-credit eligible "
         "religious entities) for CUIs (max 500) — no auth needed. Membership is the "
@@ -677,6 +698,7 @@ def _register_public(mcp: FastMCP, ctx: AppContext) -> None:
         return _lookup_payload(result)
 
     @mcp.tool(
+        title="ANAF Info: Financial statement",
         annotations=_READ_ONLY,
         description="Fetch the public indicators of one CUI's annual financial "
         "statement (bilanț) for a given year — no auth needed. The indicator set "
