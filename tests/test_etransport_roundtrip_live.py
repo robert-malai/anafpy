@@ -172,7 +172,7 @@ async def test_etransport_test_roundtrip(provider: TokenProvider, cif: str) -> N
         # self-declared notification yields its no-results envelope — the top-level
         # singular `error` string that diverges from every other endpoint's `Errors[]`
         # (the one doc gap the 2026-07-02 roundtrip surfaced; api.md §4). Pin it.
-        info = await client.info(cui_op=cif, uit=upload.uit)
+        info = await client.info(organizer_cui=cif, uit=upload.uit)
         assert not info.items
         assert info.error is not None
         assert "nu exista informatii" in info.error.lower()

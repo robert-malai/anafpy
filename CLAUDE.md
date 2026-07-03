@@ -130,6 +130,12 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
 - **Module style**: `from __future__ import annotations`, explicit `__all__`, module +
   class docstrings, Google-style docstring sections. Line length 88. Keep new code in the
   voice of the surrounding files.
+- **English identifiers everywhere in hand-written code**: variables, parameters, and
+  model field names are descriptive English; ANAF's Romanian wire names survive only
+  as Pydantic validation aliases (`data_creare` -> `created_at`), string literals
+  (dict keys, query params, URL segments), and the generated schema models. Domain
+  acronyms with no sensible translation (`cui`, `cif`, `uit`, `caen`) and enum
+  members named after ANAF's own codes stay as-is.
 
 ## MCP server (`anafpy.mcp`)
 

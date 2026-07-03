@@ -268,20 +268,20 @@ class _JsonEnvelope(BaseModel):
 class _UploadEnvelope(_JsonEnvelope):
     """``upload`` response: ``index_incarcare`` + ``UIT`` on acceptance."""
 
-    index_incarcare: _StrNone = None
+    upload_index: _StrNone = Field(default=None, alias="index_incarcare")
     uit: _StrNone = Field(default=None, alias="UIT")
 
 
 class _StatusEnvelope(_JsonEnvelope):
     """``stareMesaj`` response: ``stare`` (ok|nok) plus any ``Errors[]``."""
 
-    stare: _StrNone = None
+    state: _StrNone = Field(default=None, alias="stare")
 
 
 class _ListaEnvelope(_JsonEnvelope):
     """``lista`` response: notifications under ``mesaje[]``."""
 
-    mesaje: list[Notification] = []
+    messages: list[Notification] = Field(default_factory=list, alias="mesaje")
 
 
 class _InfoEnvelope(_JsonEnvelope):

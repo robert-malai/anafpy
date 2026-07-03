@@ -473,7 +473,7 @@ async def test_info_required_param_only() -> None:
         )
     )
     async with _client() as client:
-        result = await client.info(cui_op="123456789")
+        result = await client.info(organizer_cui="123456789")
 
     assert route.called
     params = dict(route.calls.last.request.url.params)
@@ -494,10 +494,10 @@ async def test_info_optional_params_forwarded() -> None:
     route = respx.get(f"{BASE}/info").mock(return_value=httpx.Response(200, json=[]))
     async with _client() as client:
         await client.info(
-            cui_op="111",
-            cui_decl="222",
+            organizer_cui="111",
+            declarant_cui="222",
             uit="UITAAA",
-            ref_decl="REF99",
+            declarant_ref="REF99",
         )
     params = dict(route.calls.last.request.url.params)
     assert params == {
@@ -519,7 +519,7 @@ async def test_info_genuine_error_raises() -> None:
     )
     async with _client() as client:
         with pytest.raises(AnafResponseError, match="CUI necunoscut"):
-            await client.info(cui_op="0")
+            await client.info(organizer_cui="0")
 
 
 @respx.mock
@@ -533,7 +533,7 @@ async def test_info_errors_array_no_results_returned() -> None:
         )
     )
     async with _client() as client:
-        result = await client.info(cui_op="0")
+        result = await client.info(organizer_cui="0")
     assert result.items == []
     assert result.error == "Nu exista informatii"
 
@@ -557,7 +557,7 @@ async def test_info_top_level_error_no_results() -> None:
         )
     )
     async with _client() as client:
-        result = await client.info(cui_op="0")
+        result = await client.info(organizer_cui="0")
     assert result.items == []
     assert result.error == "Nu exista informatii pentru aceasta solicitare"
 
@@ -569,7 +569,7 @@ async def test_info_unrecognised_body_raises() -> None:
     )
     async with _client() as client:
         with pytest.raises(AnafResponseError) as ei:
-            await client.info(cui_op="0")
+            await client.info(organizer_cui="0")
     assert "unrecognised info response" in str(ei.value)
 
 

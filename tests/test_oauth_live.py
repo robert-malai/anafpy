@@ -94,7 +94,7 @@ async def test_efactura_test_list_messages_shape(
         messages = [m async for m in client.list_messages(cif=cif, days=60)]
     for message in messages:  # shape assertions only when the inbox has content
         assert message.id
-        assert message.tip
+        assert message.message_type
 
 
 async def test_etransport_test_list_notifications_shape(

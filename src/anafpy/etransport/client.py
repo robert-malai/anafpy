@@ -176,11 +176,11 @@ class ETransportClient:
     def _parse_upload(body: bytes) -> UploadResult:
         envelope = _load_envelope(body, _UploadEnvelope, "upload")
         errors = envelope.error_messages
-        if envelope.index_incarcare is None and not errors:
+        if envelope.upload_index is None and not errors:
             # Be explicit rather than silently returning an empty result.
             errors = [f"unrecognised upload response: {as_text(body)[:200]}"]
         return UploadResult(
-            upload_id=envelope.index_incarcare,
+            upload_id=envelope.upload_index,
             uit=envelope.uit,
             errors=errors,
             raw=body,
@@ -214,7 +214,7 @@ class ETransportClient:
     def _parse_status(body: bytes) -> MessageStatus:
         envelope = _load_envelope(body, _StatusEnvelope, "stareMesaj")
         errors = envelope.error_messages
-        if envelope.stare is None:
+        if envelope.state is None:
             # `Errors` without `stare` is a *query* failure (unknown/invalid index,
             # missing SPV rights, daily limit — per the stare swagger), not a document
             # outcome — so it raises rather than masquerading as a rejection.
@@ -223,7 +223,7 @@ class ETransportClient:
                 f"stareMesaj error: {detail}", status_code=200, body=as_text(body)
             )
         try:
-            state = MessageState.from_raw(envelope.stare)
+            state = MessageState.from_raw(envelope.state)
         except ValueError as exc:
             # A state string we don't know: be explicit, in the AnafError hierarchy.
             raise AnafResponseError(
@@ -262,7 +262,7 @@ class ETransportClient:
         """
         envelope = _load_envelope(body, _ListaEnvelope, "lista")
         errors = envelope.error_messages
-        if errors and not envelope.mesaje:
+        if errors and not envelope.messages:
             if all(is_empty_result_message(message) for message in errors):
                 return []
             raise AnafResponseError(
@@ -270,30 +270,31 @@ class ETransportClient:
                 status_code=200,
                 body=as_text(body),
             )
-        return envelope.mesaje
+        return envelope.messages
 
     async def info(
         self,
         *,
-        cui_op: str,
-        cui_decl: str | None = None,
+        organizer_cui: str,
+        declarant_cui: str | None = None,
         uit: str | None = None,
-        ref_decl: str | None = None,
+        declarant_ref: str | None = None,
     ) -> InfoList:
-        """Look up active notifications where ``cui_op`` is the transport organizer.
+        """Look up active notifications where ``organizer_cui`` (ANAF: ``cui_op``)
+        is the transport organizer.
 
         A benign "no results" note comes back as an empty :class:`InfoList` with
         ``error`` carrying ANAF's wording; a genuine query error (missing SPV
         rights, daily limit, unknown CUI) raises :class:`AnafResponseError` —
         the same split the list endpoints apply.
         """
-        params: dict[str, str] = {"cui_op": cui_op}
-        if cui_decl is not None:
-            params["cui_decl"] = cui_decl
+        params: dict[str, str] = {"cui_op": organizer_cui}
+        if declarant_cui is not None:
+            params["cui_decl"] = declarant_cui
         if uit is not None:
             params["uit"] = uit
-        if ref_decl is not None:
-            params["ref_decl"] = ref_decl
+        if declarant_ref is not None:
+            params["ref_decl"] = declarant_ref
         response = await self._request("GET", "info", params=params)
         return self._parse_info(response.content)
 

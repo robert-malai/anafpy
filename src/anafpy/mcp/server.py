@@ -371,13 +371,16 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         "the transport organiser (the `info` endpoint).",
     )
     async def etransport_lookup(
-        cui_op: str,
-        cui_decl: str | None = None,
+        organizer_cui: str,
+        declarant_cui: str | None = None,
         uit: str | None = None,
-        ref_decl: str | None = None,
+        declarant_ref: str | None = None,
     ) -> dict[str, object]:
         result = await ctx.etransport().info(
-            cui_op=cui_op, cui_decl=cui_decl, uit=uit, ref_decl=ref_decl
+            organizer_cui=organizer_cui,
+            declarant_cui=declarant_cui,
+            uit=uit,
+            declarant_ref=declarant_ref,
         )
         return {
             "items": [i.model_dump() for i in result.items],

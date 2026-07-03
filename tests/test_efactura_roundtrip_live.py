@@ -271,8 +271,8 @@ async def test_efactura_test_roundtrip(provider: TokenProvider, cif: str) -> Non
         # entry once indexed.
         async for item in client.list_messages(cif=cif, days=1):
             assert item.id
-            assert item.id_solicitare
-            assert item.tip
+            assert item.request_id
+            assert item.message_type
 
 
 async def test_efactura_validare_public_prod_shapes(

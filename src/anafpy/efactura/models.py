@@ -17,7 +17,7 @@ from enum import StrEnum
 from functools import cached_property
 from typing import Annotated, Any, cast
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from .ubl.maindoc import CreditNote, Invoice
 
@@ -148,16 +148,23 @@ class SignatureValidationResult(BaseModel):
 
 
 class MessageListItem(BaseModel):
-    """One entry from a message-list response."""
+    """One entry from a message-list response.
+
+    Descriptive field names, with ANAF's wire names kept as validation aliases
+    (``data_creare`` -> ``created_at``, ...); values are read verbatim.
+    ``populate_by_name`` lets callers also construct by the field names.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
 
     id: _StrNone = None
-    id_solicitare: _StrNone = None
-    tip: _StrNone = None
-    data_creare: _StrNone = None
+    request_id: _StrNone = Field(default=None, alias="id_solicitare")
+    message_type: _StrNone = Field(default=None, alias="tip")
+    created_at: _StrNone = Field(default=None, alias="data_creare")
     cif: _StrNone = None
-    cif_emitent: _StrNone = None
-    cif_beneficiar: _StrNone = None
-    detalii: _StrNone = None
+    sender_cif: _StrNone = Field(default=None, alias="cif_emitent")
+    receiver_cif: _StrNone = Field(default=None, alias="cif_beneficiar")
+    details: _StrNone = Field(default=None, alias="detalii")
 
 
 def parse_ubl_document(xml: bytes) -> Invoice | CreditNote | None:

@@ -421,7 +421,7 @@ class EFacturaClient:
     def _parse_validate(body: bytes) -> RemoteValidationResult:
         try:
             data = json.loads(body)
-            stare = data["stare"]
+            state = data["stare"]
         except (ValueError, TypeError, KeyError) as exc:
             # Be explicit rather than inventing an outcome for an unknown shape.
             raise AnafResponseError(
@@ -435,7 +435,7 @@ class EFacturaClient:
         ]
         trace_id = data.get("trace_id")
         return RemoteValidationResult(
-            valid=str(stare).strip().lower() == "ok",
+            valid=str(state).strip().lower() == "ok",
             messages=messages,
             trace_id=str(trace_id) if trace_id is not None else None,
             raw=body,
