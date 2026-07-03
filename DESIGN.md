@@ -253,9 +253,19 @@ doc — see `docs/anaf-reference/etransport/api.md`):
   `post_incident`). `build_etransport` composes the wire model (filling
   `cod_declarant` from the upload CIF; a conflicting explicit value raises),
   `render_etransport` serializes, and `ETransportClient.upload_document` does
-  compose→upload in one call. Authoring validation is **structural only** (XSD
-  patterns, lengths, decimal shapes, exactly-one-of border-point/customs-office/
-  address per route end) — business rules stay ANAF's, per §4 Validation. Enum-coded
+  compose→upload in one call. Authoring validation is **field-level shape only**:
+  the XSD's patterns/lengths/decimal shapes, tightened (2026-07-03) by the
+  *unconditional* rules of ANAF's e-Transport Schematron (vendored under
+  `docs/anaf-reference/_sources/`) — UIT check digits (BR-019), gross ≥ net per
+  goods line (BR-020), no leading zero in the declarant code (BR-002), min-2-char
+  locality/street (BR-214/215), a note required on an 'ALTELE' document (BR-026),
+  the withdrawn `AN` country code rejected (BR-CL-001), exactly-one-of
+  border-point/customs-office/address per route end (BR-210/211). Those rules
+  reject with certainty, so failing at construction is data hygiene, not a rule
+  engine. The Schematron's *operation-type conditional* rules (partner-country,
+  purpose-code, and route-endpoint matrices) stay ANAF's to enforce on upload, per
+  §4 Validation — they surface only as field descriptions (which the MCP tool
+  schemas carry to the composing model). Enum-coded
   fields are typed with the generated XSD enums, accept member **names or ANAF
   codes** on input (plates/UITs are normalized), and serialize as names for readable
   previews. Reading is the same models via `read_flat_transport` — a full

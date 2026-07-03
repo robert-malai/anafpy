@@ -413,7 +413,7 @@ async def test_prepare_then_submit_files_transport(tmp_path: Path) -> None:
 
 # --- composed e-Transport filings (structured fields, no caller XML) ------------------
 
-_UIT = "0123456789ACDE42"
+_UIT = "0123456789ACDE94"
 
 
 @respx.mock
@@ -540,6 +540,11 @@ async def test_etransport_nomenclature_lists_names_and_codes(tmp_path: Path) -> 
     scopes = await _call(server, "etransport_nomenclature", kind="operation_scopes")
     same_as_op = next(e for e in scopes["entries"] if e["code"] == 9999)
     assert same_as_op["label"] == "Același cu operațiunea"
+    # unit_codes is code-only: the Schematron's closed UN/ECE list (BR-CL-003).
+    units = await _call(server, "etransport_nomenclature", kind="unit_codes")
+    codes = {entry["code"] for entry in units["entries"]}
+    assert {"KGM", "LTR", "H87", "TNE"} <= codes
+    assert "KG" not in codes  # kilogram is KGM; bare KG is not on ANAF's list
 
 
 # --- public no-auth lookups -----------------------------------------------------------

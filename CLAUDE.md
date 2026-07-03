@@ -181,7 +181,9 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   XML back to `etransport_submit` verbatim (the token is bound to the rendered
   bytes, so any mangling fails closed). `etransport_prepare` (`EtransportXmlInput`)
   remains for callers with ready-made XML. `etransport_nomenclature` lists the XSD
-  code lists (names accepted anywhere an enum-coded field is) — see
+  code lists (names accepted anywhere an enum-coded field is) plus the code-only
+  `unit_codes` — the UN/ECE Rec 20/21 list ANAF's Schematron enforces for goods
+  lines, carried in [mcp/unitcodes.py](src/anafpy/mcp/unitcodes.py) — see
   [mcp/nomenclatures.py](src/anafpy/mcp/nomenclatures.py).
 - **`FlatInvoice` is a read view; the e-Transport flat models are bidirectional.**
   All are defined at the **client layer**
@@ -229,7 +231,13 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   nothing; e-Transport has no standalone validator — ANAF validates on upload.
   There is deliberately **no local rule engine** (a Schematron/saxonche extra existed
   and was removed 2026-07-02); prepare never blocks on validation — the human review +
-  ANAF's verdict are the gates. Don't reintroduce local validation.
+  ANAF's verdict are the gates. Don't reintroduce local validation. Distinct from
+  that: the e-Transport flat models carry **field-level shape checks** — the XSD
+  constraints tightened by the *unconditional* rules of ANAF's e-Transport
+  Schematron (UIT check digits, gross ≥ net, `ALTELE` needs a note, ...; the list
+  is in DESIGN.md §5) — which fail at model construction as data hygiene. The
+  Schematron's operation-type *conditional* rules stay ANAF's and appear only as
+  field descriptions.
 
 ## Error model (important)
 

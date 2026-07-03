@@ -180,7 +180,7 @@ async def test_upload_document_files_a_deletion() -> None:
     route = respx.post(f"{BASE}/upload/ETRANSP/123/2").mock(
         return_value=httpx.Response(200, json=_UPLOAD_OK)
     )
-    uit = "0123456789ACDE42"
+    uit = "0123456789ACDE94"
     async with _client() as client:
         result = await client.upload_document(FlatDeletion(uit=uit), cif="123")
     assert result.accepted

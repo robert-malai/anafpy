@@ -166,9 +166,11 @@ from anafpy.etransport.schema.schema_etr_v2_20230126 import (
 
 declaration = FlatTransport(
     operation_type=CodTipOperatiuneType.TTN,           # domestic transport
-    partner=FlatTransportPartner(name="Partener SRL", country=CodTaraType.ROMANIA),
+    partner=FlatTransportPartner(
+        name="Partener SRL", country=CodTaraType.ROMANIA, code="12345678",
+    ),
     vehicle=FlatTransportVehicle(
-        plate="CJ01ABC", carrier_name="Transport SRL",
+        plate="CJ01ABC", carrier_name="Transport SRL", carrier_code="23456789",
         carrier_country=CodTaraType.ROMANIA, transport_date=dt.date(2026, 7, 10),
     ),
     start_location=FlatTransportLocation(address=FlatTransportAddress(
@@ -181,7 +183,8 @@ declaration = FlatTransport(
     goods=[FlatTransportGood(
         operation_scope=CodScopOperatiuneType.COMERCIALIZARE,
         name="Materiale constructii", quantity=Decimal("100"), unit_code="KGM",
-        gross_weight=Decimal("110"), tariff_code="6810",
+        gross_weight=Decimal("110"), net_weight=Decimal("100"),
+        value_ron=Decimal("2500"), tariff_code="6810",
     )],
     documents=[FlatTransportDocument(
         doc_type=TipDocumentType.CMR, date=dt.date(2026, 7, 9), number="FAC-001",

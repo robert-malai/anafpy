@@ -6,7 +6,9 @@ entries come straight from the generated XSD enums (regeneration keeps them in
 sync); the human labels of the small nomenclatures (operation types, scopes,
 document and confirmation types) are hand-carried here verbatim from the XSD's
 ``xs:documentation``, because the codegen keeps that text as source comments, not
-runtime data.
+runtime data. The one non-enum list is ``unit_codes`` — the UN/ECE Rec 20/21
+codes ANAF's Schematron enforces for goods lines (the XSD only pattern-checks
+them), carried in :mod:`.unitcodes`; its entries are code-only.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from ..etransport.schema.schema_etr_v2_20230126 import (
     TipDocumentType,
 )
 from ..exceptions import AnafConfigError
+from .unitcodes import UNIT_CODES
 
 __all__ = ["nomenclature_entries"]
 
@@ -97,12 +100,16 @@ _LABELS: dict[type[Enum], dict[str, str]] = {
 def nomenclature_entries(kind: str) -> list[dict[str, object]]:
     """The ``{name, code[, label]}`` entries of one nomenclature.
 
-    Raises :class:`AnafConfigError` for an unknown ``kind`` (naming the valid ones).
+    ``unit_codes`` entries are ``{code}`` only. Raises :class:`AnafConfigError`
+    for an unknown ``kind`` (naming the valid ones).
     """
+    if kind == "unit_codes":
+        return [{"code": code} for code in UNIT_CODES]
     enum_cls = _KINDS.get(kind)
     if enum_cls is None:
+        valid = sorted([*_KINDS, "unit_codes"])
         raise AnafConfigError(
-            f"unknown nomenclature {kind!r}; one of: {', '.join(sorted(_KINDS))}"
+            f"unknown nomenclature {kind!r}; one of: {', '.join(valid)}"
         )
     labels = _LABELS.get(enum_cls, {})
     return [

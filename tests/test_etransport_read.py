@@ -21,7 +21,11 @@ from anafpy.etransport import (
     FlatDeletion,
     FlatSubmission,
     FlatTransport,
+    FlatTransportAddress,
+    FlatTransportDocument,
+    FlatTransportGood,
     FlatTransportLocation,
+    FlatTransportPartner,
     FlatVehicleChange,
     build_etransport,
     parse_etransport_document,
@@ -37,7 +41,7 @@ from anafpy.etransport.schema.schema_etr_v2_20230126 import (
 )
 from anafpy.exceptions import AnafConfigError
 
-UIT = "0123456789ACDE42"
+UIT = "0123456789ACDE94"
 
 
 def _round_trip(document: FlatSubmission) -> FlatSubmission:
@@ -121,6 +125,73 @@ def test_plate_and_uit_are_normalized() -> None:
     assert deletion.uit == UIT
     change = FlatVehicleChange(uit=UIT, plate="b-100 xyz")
     assert change.plate == "B100XYZ"
+
+
+# --- Schematron-derived field rules ---------------------------------------------------
+#
+# The unconditional format/consistency rules of ANAF's e-Transport Schematron
+# (docs/anaf-reference/_sources/eTransport-validation_v.2.0.2_12082024.sch) are
+# mirrored as flat-model constraints; the operation-type conditional business rules
+# deliberately are not (DESIGN.md §5).
+
+
+@pytest.mark.parametrize(
+    "uit", ["3V0P0L0P0T3JUW46", "0C1E0K0N0M3EHP79", "9E0P0C0J0J3DQV99"]
+)
+def test_uit_accepts_the_schematron_example_codes(uit: str) -> None:
+    assert FlatDeletion(uit=uit).uit == uit
+
+
+def test_uit_rejects_wrong_check_digits() -> None:
+    # BR-019: right alphabet and length, wrong checksum (a mistyped code).
+    with pytest.raises(ValidationError, match="check digits"):
+        FlatDeletion(uit="0123456789ACDE42")
+
+
+def test_good_rejects_gross_weight_below_net() -> None:
+    good = build_flat_transport().goods[0].model_dump()  # gross 120
+    with pytest.raises(ValidationError, match="net_weight"):
+        FlatTransportGood.model_validate(good | {"net_weight": "130"})
+
+
+def test_good_rejects_13_integer_digits() -> None:
+    good = build_flat_transport().goods[0].model_dump()
+    with pytest.raises(ValidationError, match="less than"):
+        FlatTransportGood.model_validate(good | {"gross_weight": "1000000000000"})
+
+
+def test_document_type_altele_requires_a_note() -> None:
+    base = {"doc_type": "ALTELE", "date": "2026-06-27"}
+    with pytest.raises(ValidationError, match="note"):
+        FlatTransportDocument.model_validate(base)
+    noted = FlatTransportDocument.model_validate(base | {"note": "packing list"})
+    assert noted.note == "packing list"
+
+
+def test_declarant_code_rejects_leading_zero() -> None:
+    with pytest.raises(ValidationError, match="pattern"):
+        FlatDeletion(uit=UIT, declarant_code="0123456")
+
+
+def test_country_an_is_rejected_as_no_longer_accepted() -> None:
+    for value in ("AN", "NETHERLANDS_ANTILLES"):
+        with pytest.raises(ValidationError, match="no longer"):
+            FlatTransportPartner.model_validate({"name": "Ghost NV", "country": value})
+
+
+def test_address_rejects_single_character_locality_and_street() -> None:
+    base = {"county": "CLUJ", "locality": "Cluj", "street": "Str B"}
+    for field in ("locality", "street"):
+        with pytest.raises(ValidationError, match="at least 2 characters"):
+            FlatTransportAddress.model_validate(base | {field: "X"})
+
+
+def test_vehicle_change_renders_changed_at_without_microseconds() -> None:
+    flat = FlatVehicleChange(
+        uit=UIT, plate="B1AAA", changed_at=dt.datetime(2026, 7, 2, 12, 30, 5, 999999)
+    )
+    xml = render_etransport(flat, declarant_code="123")
+    assert b'dataModificare="2026-07-02T12:30:05"' in xml
 
 
 # --- deletion / confirmation / vehicle change -----------------------------------------

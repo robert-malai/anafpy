@@ -66,18 +66,44 @@ means:
 | `operation_type` | yes | `TTN` domestic, `AIC`/`LIC` intra-EU in/out, `IMP`/`EXP`, `LHI`/`LHE` lohn, `SCI`/`SCE` call-off stock, `DIN`/`DIE` transit storage. Infer from the route (where the goods enter/leave Romania) and **confirm with the user**. |
 | `partner` | yes | name, country, fiscal code. Who this is depends on the operation: the *foreign seller* for AIC/IMP, the *foreign buyer* for LIC/EXP, the *commercial counterparty* for TTN. |
 | `vehicle` | yes | `plate`, `carrier_name`/`carrier_country`/`carrier_code`, `transport_date`; `trailer1`/`trailer2` if any. Plates are normalized automatically (spaces/dashes stripped). |
-| `start_location` / `end_location` | yes | Exactly **one** of `address` (county + locality + street), `border_point`, or `customs_office` per end. TTN: address → address. AIC: border point or customs office → address. LIC: address → border point. IMP: customs office → address. EXP: address → customs office/border point. ANAF rejects mismatches on upload. |
+| `start_location` / `end_location` | yes | Exactly **one** of `address` (county + locality + street), `border_point`, or `customs_office` per end. Which combination each operation type expects is in the rules table below — ANAF rejects mismatches on upload. |
 | `goods[]` | ≥ 1 line | per line: `name`, `operation_scope` (usually `COMERCIALIZARE`; `ACELASI_CU_OPERATIUNEA` when the scope is the operation itself), `quantity` + `unit_code` (UN/ECE: `KGM` kg, `LTR` litre, `H87` piece), `gross_weight` (kg), optional `net_weight`, `tariff_code` (NC, 4/6/8 digits — copy from the invoice, never guess), `value_ron` (excl. VAT). |
 | `documents[]` | ≥ 1 | the accompanying document: `doc_type` `CMR` / `FACTURA` / `AVIZ_DE_INSOTIRE_A_MARFII` / `ALTELE`, with `date` and `number`. Cite the actual source document you extracted from. |
 | `declarant_ref` | no | the user's own reference (order number, file id) — useful for finding the filing later via `etransport_lookup`. |
 | `correction_of_uit` | no | set **only** when correcting an already-issued UIT (see below). |
+
+ANAF enforces these **cross-field rules on upload** (prepare deliberately doesn't —
+map the data so it survives them):
+
+| `operation_type` | Partner country | `operation_scope` per goods line | Typical route |
+|---|---|---|---|
+| TTN (30) | RO only | `COMERCIALIZARE`, `TRANSFER_INTRE_GESTIUNI`, `BUNURI_PUSE_LA_DISPOZITIA_CLIENTULUI` or `ALTELE` | address → address |
+| AIC (10) | EU, not RO | any scope except the two TTN-only transfers and 9999 | border point → address |
+| LIC (20) | EU, not RO | `COMERCIALIZARE`, `GRATUITATI`, `OPERATIUNI_DE_LIVRARE_CU_INSTALARE`, `LEASING_FINANCIAR_OPERATIONAL`, `BUNURI_IN_GARANTIE` or `ALTELE` | address → border point |
+| LHI / SCI (12/14) | EU, not RO | `ACELASI_CU_OPERATIUNEA` | border point → address |
+| LHE / SCE (22/24) | EU, not RO | `ACELASI_CU_OPERATIUNEA` | address → border point |
+| IMP (40) | outside the EU | `ACELASI_CU_OPERATIUNEA` | customs office or border point → address |
+| EXP (50) | outside the EU | `ACELASI_CU_OPERATIUNEA` | address → customs office or border point |
+| DIN / DIE (60/70) | EU, not RO | `ACELASI_CU_OPERATIUNEA` | like AIC / like LIC |
+
+- Customs offices are **import/export only**: at the start of an IMP, at the end of
+  an EXP — every other operation uses addresses and border points.
+- `tariff_code`, `net_weight` and `value_ron` are **required on every goods line
+  except for DIN/DIE**, where they may be omitted.
+- `prior_notifications` only for the intra-community operations
+  (AIC/LHI/SCI/LIC/LHE/SCE) — ANAF rejects them elsewhere.
+- For TTN, the partner's fiscal code is required: a valid RO code, or `PF` for a
+  private individual. A RO carrier always needs a valid `carrier_code` (`PF`
+  accepted on TTN).
 
 Helpers while mapping:
 
 - `etransport_nomenclature` lists the accepted values for any enum-coded field
   (`operation_types`, `operation_scopes`, `counties`, `border_points`,
   `customs_offices`, `countries`, `document_types`). Fields accept the member name
-  (`TTN`, `CLUJ`, `NADLAC`) or the ANAF numeric code.
+  (`TTN`, `CLUJ`, `NADLAC`) or the ANAF numeric code. `kind="unit_codes"` lists
+  the closed UN/ECE unit-code list ANAF accepts for goods lines — check it before
+  guessing a unit (kilogram is `KGM`, piece is `H87`; `KG`/`PCS` don't exist).
 - `anaf_lookup_taxpayers` (no auth needed) verifies a Romanian CUI and returns the
   registered company name — use it to check the partner/carrier instead of
   transcribing names from a scan.

@@ -389,8 +389,11 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         description="List one e-Transport nomenclature (code list) as "
         "{name, code[, label]} entries. `kind` is one of: operation_types, "
         "operation_scopes, counties, border_points, customs_offices, countries, "
-        "document_types, confirmation_types. The names are accepted anywhere the "
-        "etransport_prepare_* tools take an enum-coded field.",
+        "document_types, confirmation_types, unit_codes. The names are accepted "
+        "anywhere the etransport_prepare_* tools take an enum-coded field. "
+        "unit_codes is code-only: the closed UN/ECE Rec 20/21 list ANAF accepts "
+        "for a goods line's unit_code — check it before guessing a unit (kilogram "
+        "is KGM, piece is H87; 'KG'/'PCS' are not on the list).",
     )
     def etransport_nomenclature(kind: str) -> dict[str, object]:
         return {"kind": kind, "entries": nomenclature_entries(kind)}

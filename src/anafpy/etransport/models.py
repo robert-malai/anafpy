@@ -27,6 +27,7 @@ from enum import Enum, StrEnum
 from typing import Annotated, Any, assert_never
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -318,6 +319,18 @@ class _InfoEnvelope(_JsonEnvelope):
 # accepts (names too) nor what serialization emits (names), and MCP clients validate
 # tool output against it. The only structure not carried is the XSD's unused
 # ``xs:any`` extension hooks.
+#
+# Field constraints mirror the XSD *tightened by ANAF's Schematron*
+# (``docs/anaf-reference/_sources/eTransport-validation_v.2.0.2_12082024.sch``) where
+# the Schematron rule is unconditional — a pure format or single-model consistency
+# check (UIT check digits BR-019, gross >= net BR-020, no leading zero in the
+# declarant code BR-002, ...): data violating those is rejected by ANAF with
+# certainty, so failing fast at construction is a kindness, not a rule engine. The
+# Schematron's *operation-type conditional* rules (partner country vs operation,
+# purpose-code matrices, border-point/customs-office direction rules) are ANAF
+# policy that changes across revisions; they stay ANAF's to enforce on upload —
+# here they appear only as field descriptions so composing callers (the MCP model)
+# know about them. Per DESIGN.md §4/§5: no local rule engine, prepare never blocks.
 
 
 def _member_or_value(enum_cls: type[Enum]) -> Callable[[object], object]:
@@ -356,7 +369,13 @@ _OperationScope = Annotated[
     _STR_SCHEMA,
     Field(
         description="Operation scope: member name ('COMERCIALIZARE', ...) or "
-        "numeric code (101, ...)."
+        "numeric code (101, ...). ANAF ties the accepted scopes to the operation "
+        "type — TTN: COMERCIALIZARE, TRANSFER_INTRE_GESTIUNI, "
+        "BUNURI_PUSE_LA_DISPOZITIA_CLIENTULUI or ALTELE; LIC: COMERCIALIZARE, "
+        "GRATUITATI, OPERATIUNI_DE_LIVRARE_CU_INSTALARE, "
+        "LEASING_FINANCIAR_OPERATIONAL, BUNURI_IN_GARANTIE or ALTELE; AIC: every "
+        "scope except the TTN-only transfers and ACELASI_CU_OPERATIUNEA; every "
+        "other operation type takes ACELASI_CU_OPERATIUNEA (9999)."
     ),
 ]
 _County = Annotated[
@@ -366,9 +385,23 @@ _County = Annotated[
     _STR_SCHEMA,
     Field(description="County: name ('CLUJ', 'MUNICIPIUL_BUCURESTI') or ANAF code."),
 ]
+
+
+def _still_accepted_country(member: CodTaraType) -> CodTaraType:
+    # The XSD still lists 'AN' (Netherlands Antilles) but ANAF's Schematron country
+    # list (BR-CL-001/BR-CL-010) dropped it, so an 'AN' filing is rejected on upload.
+    if member is CodTaraType.NETHERLANDS_ANTILLES:
+        raise ValueError(
+            "country 'AN' (Netherlands Antilles) is in the XSD but no longer "
+            "accepted by ANAF; use the successor codes 'BQ', 'CW' or 'SX'"
+        )
+    return member
+
+
 _Country = Annotated[
     CodTaraType,
     BeforeValidator(_member_or_value(CodTaraType)),
+    AfterValidator(_still_accepted_country),
     _AS_NAME,
     _STR_SCHEMA,
     Field(description="Country: ISO-3166 alpha-2 code ('RO') or name ('ROMANIA')."),
@@ -413,9 +446,23 @@ def _clean_code(value: object) -> object:
     return value
 
 
+def _uit_check_digits(value: str) -> str:
+    # BR-019 (also stated in the XSD's UitType note): the last 2 characters are the
+    # last two digits of the sum of the ASCII codes of the first 14. A mismatch
+    # means the code was mistyped, so fail before filing against a wrong UIT.
+    expected = str(sum(ord(char) for char in value[:14]))[-2:]
+    if value[14:] != expected:
+        raise ValueError(
+            f"UIT check digits {value[14:]!r} do not match the first 14 characters "
+            f"(expected {expected!r}) — the code was mistyped or truncated"
+        )
+    return value
+
+
 _Uit = Annotated[
     str,
     BeforeValidator(_clean_code),
+    AfterValidator(_uit_check_digits),
     Field(
         pattern=r"^[0-9ACDEFHJKLMNPQRTUVWXY]{14}[0-9]{2}$",
         description="The 16-character UIT code ANAF issued for the declaration.",
@@ -426,8 +473,14 @@ _Plate = Annotated[
     BeforeValidator(_clean_code),
     Field(pattern=r"^[0-9A-Z]{2,20}$", description="Vehicle registration plate."),
 ]
-_TrailerPlate = Annotated[str, BeforeValidator(_clean_code)]
-_Quantity = Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=2)]
+_TrailerPlate = Annotated[
+    str,
+    BeforeValidator(_clean_code),
+    Field(pattern=r"^[0-9A-Z]{2,20}$", description="Trailer registration plate."),
+]
+# The XSD's 12.2 shape is 12 integer digits + 2 decimals; a max_digits budget would
+# wrongly admit 13 integer digits when fewer decimals are used.
+_Quantity = Annotated[Decimal, Field(gt=0, lt=Decimal(10**12), decimal_places=2)]
 
 
 class FlatTransportPartner(BaseModel):
@@ -436,7 +489,12 @@ class FlatTransportPartner(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     country: _Country
     code: str | None = Field(
-        default=None, min_length=1, max_length=30, description="Partner fiscal code."
+        default=None,
+        min_length=1,
+        max_length=30,
+        description="Partner fiscal code. For domestic transport (TTN) ANAF "
+        "requires it: a valid Romanian code, or the literal 'PF' for a private "
+        "individual whose code is unknown.",
     )
 
 
@@ -444,20 +502,29 @@ class FlatTransportVehicle(BaseModel):
     """Vehicle, carrier, and transport-date details."""
 
     plate: _Plate
-    trailer1: _TrailerPlate | None = Field(default=None, pattern=r"^[0-9A-Z]{2,20}$")
-    trailer2: _TrailerPlate | None = Field(default=None, pattern=r"^[0-9A-Z]{2,20}$")
+    trailer1: _TrailerPlate | None = None
+    trailer2: _TrailerPlate | None = None
     carrier_name: str = Field(min_length=1, max_length=200)
     carrier_country: _Country
-    carrier_code: str | None = Field(default=None, min_length=1, max_length=30)
+    carrier_code: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=30,
+        description="Carrier fiscal code. When carrier_country is RO, ANAF "
+        "requires a valid Romanian code ('PF' accepted for a private individual "
+        "on domestic transport).",
+    )
     transport_date: dt.date
 
 
 class FlatTransportAddress(BaseModel):
     """A national address at one end of the road route."""
 
+    # The Schematron (BR-214/BR-215) wants at least 2 characters here, one more
+    # than the XSD's Str100.
     county: _County
-    locality: str = Field(min_length=1, max_length=100)
-    street: str = Field(min_length=1, max_length=100)
+    locality: str = Field(min_length=2, max_length=100)
+    street: str = Field(min_length=2, max_length=100)
     number: str | None = Field(default=None, min_length=1, max_length=20)
     block: str | None = Field(default=None, min_length=1, max_length=30)
     entrance: str | None = Field(default=None, min_length=1, max_length=20)
@@ -471,9 +538,11 @@ class FlatTransportLocation(BaseModel):
     """One end of the road route: exactly one of ``border_point`` (PTF),
     ``customs_office`` (BV), or a national ``address``.
 
-    Which one ANAF expects depends on the operation type (e.g. a domestic ``TTN``
-    uses addresses at both ends; an ``AIC`` starts at a border point or customs
-    office) — ANAF validates that on upload.
+    Which one ANAF expects depends on the operation type: a domestic ``TTN`` uses
+    addresses at both ends; inbound operations (AIC/LHI/SCI/IMP/DIN) start at a
+    border point or customs office, outbound ones (LIC/LHE/SCE/EXP/DIE) end at
+    one; a customs office is only valid at the start of an import (IMP) or the
+    end of an export (EXP). ANAF validates all of that on upload.
     """
 
     border_point: _BorderPoint | None = None
@@ -501,21 +570,29 @@ class FlatTransportGood(BaseModel):
     quantity: _Quantity
     unit_code: str = Field(
         pattern=r"^[0-9A-Z]{2,3}$",
-        description="UN/ECE Rec 20 unit code, e.g. 'KGM' (kg), 'LTR', 'H87' (piece).",
+        description="UN/ECE Rec 20/21 unit code, e.g. 'KGM' (kg), 'LTR', 'H87' "
+        "(piece). ANAF validates against the full closed list — 'KG' or 'PCS' "
+        "are not on it.",
     )
     gross_weight: _Quantity = Field(description="Gross weight in kg.")
-    net_weight: _Quantity | None = Field(default=None, description="Net weight in kg.")
+    net_weight: _Quantity | None = Field(
+        default=None,
+        description="Net weight in kg. ANAF requires it for every operation type "
+        "except DIN/DIE (60/70).",
+    )
     tariff_code: str | None = Field(
         default=None,
         pattern=r"^([0-9]{4}|[0-9]{6}|[0-9]{8})$",
-        description="NC tariff code (4, 6 or 8 digits).",
+        description="NC tariff code (4, 6 or 8 digits). ANAF requires it for "
+        "every operation type except DIN/DIE (60/70).",
     )
     value_ron: Decimal | None = Field(
         default=None,
         ge=0,
-        max_digits=14,
+        lt=Decimal(10**12),
         decimal_places=2,
-        description="Value in RON without VAT.",
+        description="Value in RON without VAT. ANAF requires it for every "
+        "operation type except DIN/DIE (60/70).",
     )
     line_ref: str | None = Field(
         default=None,
@@ -523,6 +600,16 @@ class FlatTransportGood(BaseModel):
         max_length=50,
         description="Declarant's own reference for this line.",
     )
+
+    @model_validator(mode="after")
+    def _gross_covers_net(self) -> FlatTransportGood:
+        # BR-020: a line's gross weight must be >= its net weight.
+        if self.net_weight is not None and self.gross_weight < self.net_weight:
+            raise ValueError(
+                f"gross_weight ({self.gross_weight}) must be greater than or "
+                f"equal to net_weight ({self.net_weight})"
+            )
+        return self
 
 
 class FlatTransportDocument(BaseModel):
@@ -532,6 +619,16 @@ class FlatTransportDocument(BaseModel):
     date: dt.date
     number: str | None = Field(default=None, min_length=1, max_length=50)
     note: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def _other_needs_note(self) -> FlatTransportDocument:
+        # BR-026: 'Altele' says nothing about the document, so ANAF wants the note
+        # to say what it is.
+        if self.doc_type is TipDocumentType.ALTELE and self.note is None:
+            raise ValueError(
+                "doc_type 'ALTELE' (9999) requires a note naming the document"
+            )
+        return self
 
 
 class FlatPriorNotification(BaseModel):
@@ -545,9 +642,11 @@ class FlatPriorNotification(BaseModel):
 class _FlatSubmissionBase(BaseModel):
     """Root attributes shared by every flat e-Transport document."""
 
+    # The Schematron's TIN regex (BR-002) forbids a leading zero, which the XSD's
+    # CodDeclarantType pattern would allow.
     declarant_code: str | None = Field(
         default=None,
-        pattern=r"^((\d{13})|(\d{2,10}))$",
+        pattern=r"^([1-9]\d{12}|[1-9]\d{1,9})$",
         description="Declarant CUI/CNP; filled from the upload CIF when omitted.",
     )
     declarant_ref: str | None = Field(
@@ -579,7 +678,12 @@ class FlatTransport(_FlatSubmissionBase):
     end_location: FlatTransportLocation
     goods: list[FlatTransportGood] = Field(min_length=1)
     documents: list[FlatTransportDocument] = Field(min_length=1)
-    prior_notifications: list[FlatPriorNotification] = []
+    prior_notifications: list[FlatPriorNotification] = Field(
+        default=[],
+        description="References to prior declarations. Only meaningful for the "
+        "intra-community operations (AIC/LHI/SCI/LIC/LHE/SCE); ANAF rejects them "
+        "for TTN, IMP, EXP, DIN and DIE.",
+    )
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -611,8 +715,8 @@ class FlatVehicleChange(_FlatSubmissionBase):
 
     uit: _Uit
     plate: _Plate
-    trailer1: _TrailerPlate | None = Field(default=None, pattern=r"^[0-9A-Z]{2,20}$")
-    trailer2: _TrailerPlate | None = Field(default=None, pattern=r"^[0-9A-Z]{2,20}$")
+    trailer1: _TrailerPlate | None = None
+    trailer2: _TrailerPlate | None = None
     changed_at: dt.datetime | None = Field(
         default=None, description="When the vehicle changed; defaults to now."
     )
@@ -806,7 +910,8 @@ def build_etransport(
             observatii=document.note,
         )
     elif isinstance(document, FlatVehicleChange):
-        changed_at = document.changed_at or dt.datetime.now()
+        # ANAF's documented dataModificare format is second-precision (BR-203).
+        changed_at = (document.changed_at or dt.datetime.now()).replace(microsecond=0)
         root.modif_vehicul = ModifVehiculType(
             uit=document.uit,
             nr_vehicul=document.plate,
