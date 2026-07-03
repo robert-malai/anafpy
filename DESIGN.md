@@ -35,8 +35,8 @@ ANAF; it does not compose them.
   into a friendly **flat read view** (`FlatInvoice`) for display/triage. e-Transport stays
   outbound + own-declaration status only.
 - **`FlatInvoice` is a read view, not an authoring surface.** It is produced *from*
-  UBL — the only e-Factura mapping direction is **UBL → flat**. It renders both the
-  inbound inbox and the outbound `prepare` preview, is intentionally **lossy** (raw
+  UBL — the only e-Factura mapping direction is **UBL → flat**. It renders the
+  inbound inbox, is intentionally **lossy** (raw
   bytes + full UBL stay authoritative), and carries a `complete` flag +
   `dropped_fields` when it can't represent something. anafpy never goes flat → UBL:
   no invoice composition. The e-Transport flat models are the deliberate exception
@@ -161,8 +161,8 @@ Design (layered):
 - **Serialization**: no marshmallow. UBL ⇄ XML via `xsdata-pydantic`'s
   `XmlParser`/`XmlSerializer` (zero serializer code). The one hand-written piece is a
   defensive **UBL→flat reader** producing the `FlatInvoice` read view (parties, lines, VAT
-  breakdown, totals, dates; `complete`/`dropped_fields` on loss), reused for the outbound
-  `prepare` preview and the inbound inbox. There is **no flat→UBL write mapping**: anafpy
+  breakdown, totals, dates; `complete`/`dropped_fields` on loss), backing the inbound
+  inbox and `download` tier 3. There is **no flat→UBL write mapping**: anafpy
   reads UBL into the flat view, it never composes UBL.
 
 ### Operations (option C: discrete primary + optional orchestration)
@@ -319,14 +319,20 @@ A **local stdio connector** built on the phase-1 clients (extra `anafpy[mcp]`,
 `python -m anafpy.mcp`). It exposes the operations as Claude Cowork skills, owns the
 XML pass-through tool *inputs* (the friendly flat models come from the client
 layer, §4/§5), reads the existing token store, and refreshes headlessly.
-*(Implemented: the gated prepare→submit flow, XML-only e-Factura filing, composed
+*(Implemented: the gated prepare→submit flow for e-Transport, composed
 e-Transport filing, the flat previews and the e-Factura inbox, and the compiled
 reference as resources.)*
 
-- **e-Factura outbound = XML pass-through only.** The filing tool takes complete UBL
-  XML the caller's invoicing software exported — `UblXmlInput {xml|path}`. The MCP
-  layer does **not** compose invoices: no flat→UBL mapping. (`FlatInvoice` is only
-  ever a *read* projection of UBL — never an input.)
+- **No e-Factura filing tools** *(REVISED 2026-07-03; the XML pass-through pair
+  `efactura_prepare_invoice`/`efactura_submit_invoice` was implemented, then
+  removed)*. There is no MCP use case: outbound UBL comes from third-party
+  invoicing software, and that software files with ANAF directly — routing its
+  export through a chat-driven MCP gate adds risk without adding value. The MCP
+  e-Factura surface is **read-only**: inbox, status, download, `efactura_validate`
+  (`UblXmlInput {xml|path}` now feeds only the validator). `EFacturaClient.upload`
+  remains the library filing path. If filing tools ever return, they must stay XML
+  pass-through: no invoice composition, no flat→UBL mapping (`FlatInvoice` is only
+  ever a *read* projection of UBL — never an input).
 - **e-Transport outbound = composed from structured fields** (§5; REVISED
   2026-07-03). `etransport_prepare_declaration` takes the client-layer
   `FlatTransport` as tool input; `etransport_prepare_deletion` / `_confirmation` /
@@ -341,26 +347,43 @@ reference as resources.)*
   Nădlac" → `NADLAC` instead of guessing codes.
 - **Display names**: every tool carries an English MCP `title` — the human-facing
   name clients show instead of the snake_case `name` — following
-  `Service: operation` ("E-Factura: Submit invoice", "E-Transport: Prepare
+  `Service: operation` ("E-Factura: Validate invoice", "E-Transport: Prepare
   declaration", "ANAF Info: Taxpayer lookup" for the public lookups, "ANAF:
   Authentication status" for `auth_status`). One language only: MCP has no title
   localization, and the model never sees titles (it works from `name` +
   `description`), so Romanian conversation quality is unaffected.
 - **Safety: read-first, two-step gated filing.** Read-only tools (`*_list*`, `*_status`,
-  `*_download`, `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
-  freely callable. Filing is split `*_prepare*` → `*_submit*`: `prepare` parses (or,
-  for e-Transport, composes) the XML into the **flat models** to render a preview and
+  `*_lookup`, `*_validate`, `auth_status`) are annotated `readOnlyHint` and
+  freely callable; `efactura_download` is equally freely callable but annotated
+  honestly (`readOnlyHint=False`, idempotent, non-destructive) since it may write
+  artifact files at caller-given paths (next bullet). Filing (e-Transport only) is split `etransport_prepare*` →
+  `etransport_submit`: `prepare` parses (or composes) the XML into the
+  **flat models** to render a preview and
   returns an HMAC **confirmation token** bound to the exact XML bytes plus the submission
-  context (CIF, upload standard); `submit` requires that token (same bytes, same CIF)
+  context (CIF); `submit` requires that token (same bytes, same CIF)
   **and** `confirm=True`, and redeems it **single-use** so one approval files at most
   once. Not a `dry_run` bool.
 - **Validation is ANAF's own**: `efactura_validate` calls the server-side `validare`
   endpoint (authoritative); `prepare` never blocks on validation — the human review
   and ANAF's verdict are the gates (see §4 Validation for the Schematron reversal).
 - **Read-only e-Factura inbox**: `efactura_list_messages` (id, type, date, counterparty
-  CIF) → `efactura_download` (raw zip/XML/PDF) → the `FlatInvoice` **read view** for
+  CIF) → `efactura_download` → the `FlatInvoice` **read view** for
   display/triage, from the same client-layer reader. e-Transport stays outbound +
   `lista`/`stareMesaj`.
+- **Binary artifacts: files first, one PDF resource, never context** (decided
+  2026-07-03). The model operates on the flat view; the ZIP and PDF are for the
+  *human*, and current hosts read resources *into model context* (no save/open
+  affordance), so base64 blobs in tool results or resource reads are the wrong
+  delivery for batch flows. Since the server is local stdio, its filesystem IS the
+  user's: `efactura_download` takes `save_zip_as` (the legally archivable signed
+  ZIP) and `save_pdf_as` (ANAF's `transformare` rendering, called with
+  `validate=False` — the message was validated at filing — and **best-effort**: a
+  non-PDF answer surfaces as `pdf_error`, never fails the download). Caller-given
+  full paths, not a directory + naming convention: the agent composes filenames
+  from invoice metadata ("`<date> - <partner>.pdf`"). The PDF is additionally the
+  stateless resource template `anafmsg://{message_id}/pdf` (fetch + convert on
+  read) for hosts that grow real resource UX; there is deliberately **no ZIP
+  resource** — a base64 ZIP serves neither the model nor any host UI.
 - **Public lookups as `anaf_*` tools** (over `PublicClient`, §6): `anaf_lookup_taxpayers`
   / `anaf_lookup_efactura_register` / `anaf_lookup_farmers` / `anaf_lookup_cult_entities`
   / `anaf_financial_statement`. Read-only, **no auth required** (usable before
@@ -410,7 +433,8 @@ reference as resources.)*
 7. ~~Code realignment to thin transport~~ **DONE.** Outbound is XML pass-through (flat→UBL
    mapping removed); `FlatInvoice`/`FlatTransport` are client-layer read views built by a
    single `read_flat_invoice` / `read_flat_transport` (+ `complete` / `dropped_fields`),
-   exposed as `download` tier 3 (`DownloadedMessage.view`), the MCP prepare preview, and
+   exposed as `download` tier 3 (`DownloadedMessage.view`), the MCP e-Transport
+   prepare preview, and
    the e-Factura inbox. All three gates green. **PARTLY REVERSED 2026-07-03 for
    e-Transport only**: its flat models became bidirectional full translations of the
    XSD (§5 Structured authoring) — the read-view-only stance now applies to

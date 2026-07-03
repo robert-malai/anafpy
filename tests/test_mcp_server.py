@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import time
+import zipfile
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -181,6 +183,80 @@ async def test_efactura_get_status(tmp_path: Path) -> None:
     assert out["download_id"] == "55"
 
 
+def _download_zip() -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("3828.xml", invoice_xml())
+        zf.writestr("semnatura_3828.xml", b"<Signature/>")
+    return buf.getvalue()
+
+
+@respx.mock
+async def test_efactura_download_saves_zip_and_pdf(tmp_path: Path) -> None:
+    respx.get(f"{EFACTURA}/descarcare").mock(
+        return_value=httpx.Response(200, content=_download_zip())
+    )
+    # `transformare` is public/prod-only like `validare`; /DA skips re-validation
+    # (the message already passed ANAF's validation when it was filed).
+    pdf_route = respx.post(f"{EFACTURA_PUBLIC}/transformare/FACT1/DA").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7 fake")
+    )
+    server = create_server(_config(tmp_path))
+    pdf_target = tmp_path / "out" / "2026-06-28 - ACME SRL.pdf"
+    zip_target = tmp_path / "out" / "archive.zip"
+    out = await _call(
+        server,
+        "efactura_download",
+        message_id="55",
+        save_pdf_as=str(pdf_target),
+        save_zip_as=str(zip_target),
+    )
+    assert out["invoice"]["number"] == "INV-1"
+    assert out["pdf_error"] is None
+    assert out["pdf_path"] == str(pdf_target)
+    assert out["zip_path"] == str(zip_target)
+    assert pdf_target.read_bytes() == b"%PDF-1.7 fake"
+    assert zip_target.read_bytes() == _download_zip()
+    assert pdf_route.called
+
+
+@respx.mock
+async def test_efactura_download_pdf_failure_is_best_effort(tmp_path: Path) -> None:
+    respx.get(f"{EFACTURA}/descarcare").mock(
+        return_value=httpx.Response(200, content=_download_zip())
+    )
+    # transformare answers 200 with a JSON error body when it cannot render.
+    respx.post(f"{EFACTURA_PUBLIC}/transformare/FACT1/DA").mock(
+        return_value=httpx.Response(200, json={"stare": "nok"})
+    )
+    server = create_server(_config(tmp_path))
+    pdf_target = tmp_path / "invoice.pdf"
+    out = await _call(
+        server, "efactura_download", message_id="55", save_pdf_as=str(pdf_target)
+    )
+    # The download itself still succeeds; the PDF failure is reported, not raised.
+    assert out["invoice"]["number"] == "INV-1"
+    assert out["pdf_path"] is None
+    assert "no PDF" in out["pdf_error"]
+    assert not pdf_target.exists()
+
+
+@respx.mock
+async def test_efactura_message_pdf_resource(tmp_path: Path) -> None:
+    respx.get(f"{EFACTURA}/descarcare").mock(
+        return_value=httpx.Response(200, content=_download_zip())
+    )
+    respx.post(f"{EFACTURA_PUBLIC}/transformare/FACT1/DA").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7 fake")
+    )
+    server = create_server(_config(tmp_path))
+    templates = await server.list_resource_templates()
+    assert "anafmsg://{message_id}/pdf" in {t.uriTemplate for t in templates}
+    contents = list(await server.read_resource("anafmsg://55/pdf"))
+    assert contents[0].content == b"%PDF-1.7 fake"
+    assert contents[0].mime_type == "application/pdf"
+
+
 @respx.mock
 async def test_efactura_validate_calls_anaf_validator(tmp_path: Path) -> None:
     route = respx.post(f"{EFACTURA_PUBLIC}/validare/FACT1").mock(
@@ -211,30 +287,33 @@ async def test_efactura_validate_routes_credit_notes_to_fcn(tmp_path: Path) -> N
     assert route.called
 
 
-# --- gated submit: e-Factura --------------------------------------------------------
+# --- no e-Factura filing tools --------------------------------------------------------
 
 
-def _invoice_doc(*, number: str = "INV-1") -> dict[str, Any]:
-    return {"xml": invoice_xml(number=number)}
-
-
-async def test_prepare_invoice_returns_token_and_preview(tmp_path: Path) -> None:
+async def test_efactura_filing_tools_are_not_registered(tmp_path: Path) -> None:
+    # Removed 2026-07-03: outbound invoices come from third-party invoicing software
+    # that files with ANAF directly — the MCP e-Factura surface is read-only
+    # (inbox, status, download, validate).
     server = create_server(_config(tmp_path))
-    out = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
-    assert out["valid"] is True
-    assert out["confirmation_token"]
-    # Preview is the read view parsed back out of the supplied XML.
-    assert out["invoice_preview"]["number"] == "INV-1"
-    assert out["invoice_preview"]["total_with_vat"] == "24.99"
-    assert out["invoice_preview"]["complete"] is True
+    names = {t.name for t in await server.list_tools()}
+    assert "efactura_prepare_invoice" not in names
+    assert "efactura_submit_invoice" not in names
+    assert {"efactura_validate", "efactura_download", "etransport_submit"} <= names
 
 
-async def test_submit_invoice_requires_confirm(tmp_path: Path) -> None:
+# --- gated submit: e-Transport ------------------------------------------------------
+
+
+def _transport_doc() -> dict[str, Any]:
+    return {"xml": transport_xml()}
+
+
+async def test_submit_requires_confirm(tmp_path: Path) -> None:
     server = create_server(_config(tmp_path))
     out = await _call(
         server,
-        "efactura_submit_invoice",
-        document=_invoice_doc(),
+        "etransport_submit",
+        document=_transport_doc(),
         confirmation_token="whatever",
         confirm=False,
     )
@@ -242,13 +321,13 @@ async def test_submit_invoice_requires_confirm(tmp_path: Path) -> None:
     assert "confirm=True" in out["message"]
 
 
-async def test_submit_invoice_rejects_bad_token(tmp_path: Path) -> None:
+async def test_submit_rejects_bad_token(tmp_path: Path) -> None:
     server = create_server(_config(tmp_path))
     out = await _call(
         server,
-        "efactura_submit_invoice",
-        document=_invoice_doc(),
-        confirmation_token="v1.efactura.invoice.9999999999.deadbeef",
+        "etransport_submit",
+        document=_transport_doc(),
+        confirmation_token="v1.etransport.declaration.9999999999.deadbeef",
         confirm=True,
     )
     assert out["accepted"] is False
@@ -256,60 +335,18 @@ async def test_submit_invoice_rejects_bad_token(tmp_path: Path) -> None:
 
 
 @respx.mock
-async def test_prepare_then_submit_files_invoice(tmp_path: Path) -> None:
-    route = respx.post(f"{EFACTURA}/upload").mock(
-        return_value=httpx.Response(200, text='<header index_incarcare="777"/>')
-    )
-    server = create_server(_config(tmp_path))
-    prepared = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
-    token = prepared["confirmation_token"]
-    out = await _call(
-        server,
-        "efactura_submit_invoice",
-        document=_invoice_doc(),
-        confirmation_token=token,
-        confirm=True,
-    )
-    assert out["accepted"] is True
-    assert out["upload_id"] == "777"
-    assert route.called
-    assert route.calls.last.request.url.params["standard"] == "UBL"
-
-
-@respx.mock
-async def test_submit_credit_note_files_with_standard_cn(tmp_path: Path) -> None:
-    route = respx.post(f"{EFACTURA}/upload").mock(
-        return_value=httpx.Response(200, text='<header index_incarcare="778"/>')
-    )
-    server = create_server(_config(tmp_path))
-    doc = {"xml": credit_note_xml()}
-    prepared = await _call(server, "efactura_prepare_invoice", document=doc)
-    assert prepared["invoice_preview"]["document_type"] == "credit_note"
-    out = await _call(
-        server,
-        "efactura_submit_invoice",
-        document=doc,
-        confirmation_token=prepared["confirmation_token"],
-        confirm=True,
-    )
-    assert out["accepted"] is True
-    assert route.calls.last.request.url.params["standard"] == "CN"
-
-
-@respx.mock
 async def test_submit_rejects_token_for_different_document(tmp_path: Path) -> None:
-    respx.post(f"{EFACTURA}/upload").mock(
-        return_value=httpx.Response(200, text='<header index_incarcare="1"/>')
+    respx.post(f"{ETRANSPORT}/upload/ETRANSP/123/2").mock(
+        return_value=httpx.Response(200, json={"ExecutionStatus": 0})
     )
     server = create_server(_config(tmp_path))
-    prepared = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
-    token = prepared["confirmation_token"]
+    prepared = await _call(server, "etransport_prepare", document=_transport_doc())
     # A different document (different XML bytes) must not match the token.
     out = await _call(
         server,
-        "efactura_submit_invoice",
-        document=_invoice_doc(number="INV-2"),
-        confirmation_token=token,
+        "etransport_submit",
+        document={"xml": transport_xml().replace("B100XYZ", "B200XYZ")},
+        confirmation_token=prepared["confirmation_token"],
         confirm=True,
     )
     assert out["accepted"] is False
@@ -318,16 +355,16 @@ async def test_submit_rejects_token_for_different_document(tmp_path: Path) -> No
 
 @respx.mock
 async def test_submit_rejects_token_for_different_cif(tmp_path: Path) -> None:
-    respx.post(f"{EFACTURA}/upload").mock(
-        return_value=httpx.Response(200, text='<header index_incarcare="1"/>')
+    respx.post(f"{ETRANSPORT}/upload/ETRANSP/999/2").mock(
+        return_value=httpx.Response(200, json={"ExecutionStatus": 0})
     )
     server = create_server(_config(tmp_path))
-    prepared = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
+    prepared = await _call(server, "etransport_prepare", document=_transport_doc())
     assert prepared["cif"] == "123"  # the default the human approved
     out = await _call(
         server,
-        "efactura_submit_invoice",
-        document=_invoice_doc(),
+        "etransport_submit",
+        document=_transport_doc(),
         confirmation_token=prepared["confirmation_token"],
         confirm=True,
         cif="999",  # not what was prepared
@@ -338,29 +375,25 @@ async def test_submit_rejects_token_for_different_cif(tmp_path: Path) -> None:
 
 @respx.mock
 async def test_submit_token_is_single_use(tmp_path: Path) -> None:
-    route = respx.post(f"{EFACTURA}/upload").mock(
-        return_value=httpx.Response(200, text='<header index_incarcare="777"/>')
+    route = respx.post(f"{ETRANSPORT}/upload/ETRANSP/123/2").mock(
+        return_value=httpx.Response(
+            200,
+            json={"ExecutionStatus": 0, "index_incarcare": 9, "UIT": "3RO123"},
+        )
     )
     server = create_server(_config(tmp_path))
-    prepared = await _call(server, "efactura_prepare_invoice", document=_invoice_doc())
+    prepared = await _call(server, "etransport_prepare", document=_transport_doc())
     args = {
-        "document": _invoice_doc(),
+        "document": _transport_doc(),
         "confirmation_token": prepared["confirmation_token"],
         "confirm": True,
     }
-    first = await _call(server, "efactura_submit_invoice", **args)
-    second = await _call(server, "efactura_submit_invoice", **args)
+    first = await _call(server, "etransport_submit", **args)
+    second = await _call(server, "etransport_submit", **args)
     assert first["accepted"] is True
     assert second["accepted"] is False
     assert "already used" in second["message"]
     assert route.call_count == 1  # the non-idempotent POST went out exactly once
-
-
-# --- gated submit: e-Transport ------------------------------------------------------
-
-
-def _transport_doc() -> dict[str, Any]:
-    return {"xml": transport_xml()}
 
 
 @respx.mock

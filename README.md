@@ -18,8 +18,8 @@ needed, and the same models render what you read back.
 
 > Status: **early / alpha** (`0.x`), not yet published to PyPI. The OAuth2 auth layer,
 > both async clients (with an easy-to-read flat view of downloaded documents), and the
-> MCP server (XML pass-through e-Factura filing, structured e-Transport filing, and a
-> read-only inbox) are implemented and tested.
+> MCP server (structured e-Transport filing and a read-only e-Factura surface —
+> inbox, status, download, validate) are implemented and tested.
 > Validation is ANAF's own server-side `validare` endpoint — there is no local rule
 > engine. See [`DESIGN.md`](DESIGN.md) for the full design and
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
@@ -60,8 +60,8 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
 - **Generated models** — UBL 2.1 / CIUS-RO (`from anafpy.efactura import Invoice,
   CreditNote`) and the proprietary e-Transport XSD, generated from vendored schemas.
 - **MCP server** (`anafpy[mcp]`) — a local stdio connector exposing the operations as
-  Cowork skills, with read-first, two-step gated filing and a read-only e-Factura inbox
-  (see below).
+  Cowork skills, with read-first, two-step gated e-Transport filing and a read-only
+  e-Factura surface (see below).
 
 Not yet built: a sync facade, CI, and PyPI publishing.
 
@@ -218,26 +218,33 @@ ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
   python -m anafpy.mcp        # or the `anafpy-mcp` console script
 ```
 
-It exposes **read-only** tools (`auth_status`; the e-Factura inbox via
-`efactura_list_messages` / `efactura_get_status` / `efactura_download`; `etransport_list`
+It exposes **freely callable read tools** (`auth_status`; the e-Factura inbox via
+`efactura_list_messages` / `efactura_get_status` / `efactura_download` — the latter
+can also **save artifacts for the user**: `save_zip_as` writes the signed archive
+ZIP and `save_pdf_as` writes ANAF's official PDF rendering (`transformare`,
+best-effort) to caller-given paths, which powers flows like "export last month's
+invoices as `<date> - <partner>.pdf`"; the PDF is also exposed as the MCP resource
+`anafmsg://<message_id>/pdf`; `etransport_list`
 / `etransport_get_status` / `etransport_lookup` / `etransport_nomenclature`;
 `efactura_validate`, which runs
 ANAF's authoritative server-side validator without filing; and the `anaf_*` public
 lookups — taxpayer/VAT registry, RO e-Factura register, farmers/cult registers, and
 financial statements — which need **no login at all**) plus **two-step gated
-filing**: `*_prepare*` returns a preview + a confirmation
-token bound to the exact document and the CIF being filed for; `etransport_submit` /
-`efactura_submit_invoice` files only when
+filing for e-Transport**: `etransport_prepare*` returns a preview + a confirmation
+token bound to the exact document and the CIF being filed for; `etransport_submit`
+files only when
 given that token (same document, same CIF) and `confirm=True`, and each token is
-single-use — filing again requires a fresh prepare. **e-Factura filing is XML
-pass-through** — you hand it the complete UBL XML your invoicing software exported; the
-server never composes invoices. **e-Transport filing is composed for you**:
+single-use — filing again requires a fresh prepare. **The MCP e-Factura surface is
+read-only** — there are no invoice filing tools (removed 2026-07-03: outbound UBL
+comes from invoicing software that files with ANAF itself; `EFacturaClient.upload`
+remains for library users). **e-Transport filing is composed for you**:
 `etransport_prepare_declaration` (a new declaration or, via `correction_of_uit`, a
 correction), `etransport_prepare_deletion`, `etransport_prepare_confirmation`, and
 `etransport_prepare_vehicle_change` take structured fields (enum-coded values by ANAF
 code or by name — `TTN`, `CLUJ`, `NADLAC`; discoverable via `etransport_nomenclature`),
 compose the declaration XML, and return it alongside the preview and token;
-`etransport_prepare` still accepts ready-made XML. Both the inbox and the `prepare`
+`etransport_prepare` still accepts ready-made XML. Both the e-Factura inbox and the
+e-Transport `prepare`
 previews present documents as friendly **flat models** parsed from the XML (for
 invoices, easy to read and lossy by design — the raw bytes stay authoritative). The
 compiled ANAF reference is surfaced as read-only resources. Auth stays

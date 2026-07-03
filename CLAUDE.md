@@ -13,8 +13,8 @@ statements). It is a
 **thin, stateless transport client, not invoicing software**. **e-Factura outbound is
 XML pass-through** (no invoice composition): callers bring complete invoice XML their
 own system produced, and anafpy validates, files, tracks, and downloads; received UBL
-is wrapped in a friendly **flat read view** (`FlatInvoice`, UBL→flat only) reused for
-the e-Factura inbox and the outbound `prepare` preview. **e-Transport is fully
+is wrapped in a friendly **flat read view** (`FlatInvoice`, UBL→flat only) backing
+the e-Factura inbox. **e-Transport is fully
 translated** (decided 2026-07-03): there is usually no upstream software producing
 declaration XML and ANAF's XSD is small and fully enumerated, so the e-Transport flat
 models are **bidirectional** — the same models author a filing
@@ -152,13 +152,26 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   returns a `FastMCP`; `AppContext` owns one `TokenProvider` + lazily-built clients and
   closes them in the server lifespan. The server reads the existing token store and
   refreshes headlessly — it never drives the cert/browser step (that stays the CLI).
-- **e-Factura filing is XML pass-through only.** The tool input is the complete UBL
-  XML the caller's invoicing software exported (`UblXmlInput` in `mcp/models.py`) —
-  the MCP layer does **not** compose invoices, and must never reuse the generated UBL
-  schema models as tool input. `prepare` parses the supplied XML with the shared
-  client-layer **UBL→flat reader** into a `FlatInvoice` read view to build the
-  preview; there is no flat→UBL write mapping.
-- **e-Transport filing is composed from structured fields** (decided 2026-07-03; the
+- **No e-Factura filing tools** (removed 2026-07-03): outbound invoices come from
+  third-party invoicing software, which files with ANAF directly — there is no MCP
+  use case, so the e-Factura surface is **read-only** (inbox, status, download,
+  `efactura_validate`). `EFacturaClient.upload` stays for library users. If filing
+  tools ever return, the pass-through rule still applies: the input must be the
+  complete UBL XML the caller's software exported (`UblXmlInput` in
+  `mcp/models.py`, now feeding only `efactura_validate`) — never composed, never
+  the generated UBL schema models as tool input, no flat→UBL write mapping.
+- **Binary artifacts go to disk (or a resource), never into context.** The model
+  works from the flat `invoice` view; `efactura_download` optionally writes the
+  signed archive ZIP (`save_zip_as`) and ANAF's `transformare` PDF rendering
+  (`save_pdf_as`, best-effort — failures surface in `pdf_error`, never fail the
+  download; rendered with `validate=False` since the message already passed ANAF
+  validation at filing) to caller-given paths — the server is local stdio, so its
+  filesystem is the user's (this is what enables batch flows like "save last
+  month's invoices as `<date> - <partner>.pdf`", where the agent names the files).
+  The PDF is also the resource template `anafmsg://{message_id}/pdf`
+  (fetch+convert on read); there is deliberately **no ZIP resource** — a base64
+  ZIP serves neither the model nor any host UI. Don't return base64 blobs from
+  tools. (decided 2026-07-03; the
   pass-through rule is e-Factura-only). `etransport_prepare_declaration` /
   `_deletion` / `_confirmation` / `_vehicle_change` take the client-layer flat models
   or scalars, render the XML via `render_etransport`, and return it in
@@ -173,7 +186,7 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   ([efactura/models.py](src/anafpy/efactura/models.py),
   [etransport/models.py](src/anafpy/etransport/models.py)). `FlatInvoice` is produced
   *from* UBL by `read_flat_invoice` (UBL→flat only), backs `DownloadedMessage.view`
-  (`download` tier 3), the e-Factura inbox, and the `prepare` preview, is lossy by
+  (`download` tier 3) and the e-Factura inbox, is lossy by
   design — raw bytes + full UBL stay authoritative — and carries `complete` /
   `dropped_fields` when it can't represent something. There is no flat→UBL path; do
   not add one. The e-Transport `FlatTransport` / `FlatDeletion` / `FlatConfirmation`
@@ -186,14 +199,17 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   (public no-auth lookups), plus bare `ANAF` for `auth_status`. Titles are
   UI-only (the model sees `name` + `description`); keep them single-language.
 - **Read-first, two-step gated mutations.** Read-only tools (`*_list*`, `*_status`,
-  `*_download`, `*_lookup`, `etransport_nomenclature`, `efactura_validate`,
+  `*_lookup`, `etransport_nomenclature`, `efactura_validate`,
   `auth_status`, and the no-auth
   `anaf_*` public lookups over `PublicClient` — registries + financial statements,
   usable even with no OAuth credentials configured) are annotated `readOnlyHint` and freely
-  callable. Filing is split `*_prepare*` → `*_submit*`: prepare
+  callable. `efactura_download` is also freely callable but carries honest
+  annotations (`readOnlyHint=False`, idempotent, non-destructive) because it may
+  write files at caller-given paths; the two-step gate is for ANAF filings only. Filing (e-Transport only) is split `etransport_prepare*` →
+  `etransport_submit`: prepare
   parses (or composes) the XML for a preview and returns an HMAC **confirmation token**
-  (`mcp/tokens.py`) bound to the exact XML bytes, the CIF, and (e-Factura) the upload
-  standard; submit requires that token (same document, same CIF) **and** `confirm=True`,
+  (`mcp/tokens.py`) bound to the exact XML bytes and the CIF;
+  submit requires that token (same document, same CIF) **and** `confirm=True`,
   and each token is **single-use** (`TokenLedger`) so a non-idempotent upload is never
   repeated on one approval. Don't collapse this into a `dry_run` bool.
 - **Validation is ANAF's, not local.** `efactura_validate` calls the server-side
