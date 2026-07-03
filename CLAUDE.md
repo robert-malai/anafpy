@@ -328,7 +328,9 @@ results.
   to any other live file.
 - **Keep the docs in sync with the change.** When a change alters the public surface,
   status, layout, or conventions, update the affected docs in the same change:
-  [README.md](README.md) (what works / usage / install), this `CLAUDE.md` (layout,
+  [README.md](README.md) (what works / usage / install), [INSTALL.md](INSTALL.md)
+  (the end-user setup walkthrough — accountant audience: ANAF app registration,
+  cert login, Claude/Cowork config), this `CLAUDE.md` (layout,
   commands, conventions), [DESIGN.md](DESIGN.md) (design decisions), and
   `docs/anaf-reference/` (only when ANAF API facts change — keep its provenance
   frontmatter intact). Don't let docs drift behind the code.

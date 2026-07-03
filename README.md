@@ -68,6 +68,10 @@ clients are async-only.)
 
 ## Install
 
+Setting up a **fresh machine end to end** — ANAF app registration, the certificate
+login, and the Claude / Cowork configuration, written for a non-developer — follow
+[`INSTALL.md`](INSTALL.md). The short version for developers:
+
 Not on PyPI yet — install from source:
 
 ```bash

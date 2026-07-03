@@ -1,0 +1,278 @@
+# Installing anafpy on a new computer
+
+This guide takes you from a brand-new computer to talking to ANAF from
+[Claude Cowork](https://claude.com) — listing your e-Factura inbox, filing
+e-Transport declarations, looking up business partners. It is written for an
+accountant, not a programmer: every command is given in full, and every step says
+what you should see.
+
+You will do five things, in order:
+
+1. Register an application on ANAF's portal (one-time, on ANAF's website).
+2. Install two small tools: `git` and `uv`.
+3. Download anafpy.
+4. Log in to ANAF once with your qualified certificate.
+5. Connect the server to Claude, and check that it works.
+
+Steps 1–4 are one-time. Plan for about 30 minutes, plus however long ANAF's portal
+takes.
+
+## Before you start
+
+You need:
+
+- **Your qualified digital certificate** (the USB token you already use for SPV /
+  ANAF declarations), plugged in and working in your browser. If you can log in to
+  SPV with it today, you are ready.
+- **SPV enrollment** for the firm (SPV PJ role) — again, if you already file for
+  the firm through SPV, this is done.
+- The firm's **CUI** (fiscal code).
+
+## Step 1 — Register an OAuth application on ANAF's portal
+
+ANAF requires every program that calls its APIs to be registered. You do this once,
+on the portal, with your certificate:
+
+1. **Enroll as an API user**: on [anaf.ro](https://www.anaf.ro), go to *Servicii
+   Online → Înregistrare utilizatori → Dezvoltatori aplicații → Înregistrare pentru
+   API-uri*. ANAF emails you a security code to confirm.
+2. **Create an OAuth application profile** (*Profil Oauth*):
+   - **Denumire aplicație**: any name, e.g. `anafpy`.
+   - **Callback URL 1**: exactly `https://localhost:9002/callback` — note the
+     **`https://`**; the portal rejects `http://`. This URL never needs a public
+     server; only your own browser uses it.
+   - **Serviciu**: tick **E-Factura** and **E-Transport**.
+3. Press **Generare Client ID**. The portal shows a **Client ID** and a **Client
+   Secret**.
+
+Copy both into a password manager (or write them somewhere safe). They identify
+*your* application to ANAF and you will need them in steps 4 and 5. They are not
+your SPV password and they don't replace the certificate.
+
+## Step 2 — Install git and uv
+
+Open a terminal — **Terminal** on macOS, **PowerShell** on Windows (press Start,
+type "PowerShell") — and run:
+
+**macOS**
+
+```bash
+xcode-select --install                                 # installs git (skip if git --version already works)
+curl -LsSf https://astral.sh/uv/install.sh | sh        # installs uv
+```
+
+**Windows (PowerShell)**
+
+```powershell
+winget install --id Git.Git -e
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Close and reopen the terminal, then check both answer:
+
+```bash
+git --version
+uv --version
+```
+
+`uv` manages Python for you — you do **not** need to install Python separately; the
+right version is downloaded automatically on first use.
+
+## Step 3 — Download anafpy
+
+Still in the terminal:
+
+```bash
+git clone https://github.com/robert-malai/anafpy
+cd anafpy
+uv sync --frozen --extra mcp
+```
+
+The last command builds the environment from the locked dependency list; it takes a
+minute the first time. Remember where the folder ended up (run `pwd` on macOS or
+`cd` on Windows to print it) — you'll paste that path in step 5. To update anafpy
+later: `git pull` in this folder, then `uv sync --frozen --extra mcp` again.
+
+## Step 4 — Log in to ANAF (one-time, with your certificate)
+
+This is the only step that uses the certificate. After you confirm the certificate
+in the browser, ANAF sends your computer a one-time code — and there are two ways
+to catch it:
+
+- **Option A — automatic (recommended).** A one-time certificate setup makes
+  `https://localhost` real on your computer; the login then completes in the
+  browser by itself, nothing to copy.
+- **Option B — paste mode (no setup).** The browser ends on an error page and you
+  copy its address into the terminal within ~60 seconds.
+
+### Option A — automatic capture
+
+First, install [mkcert](https://github.com/FiloSottile/mkcert) — a small tool that
+makes certificates your own computer trusts:
+
+**macOS** (via [Homebrew](https://brew.sh); install Homebrew first if
+`brew --version` doesn't answer):
+
+```bash
+brew install mkcert
+```
+
+**Windows (PowerShell)**:
+
+```powershell
+winget install FiloSottile.mkcert
+```
+
+Then — same on both systems — reopen the terminal, go to the `anafpy` folder from
+step 3, and create the `localhost` certificate (once):
+
+```bash
+mkcert -install          # one-time; adds mkcert's authority to this computer's trust store — confirm the password/UAC prompt
+mkcert localhost 127.0.0.1
+```
+
+This writes `localhost+1.pem` and `localhost+1-key.pem` into the current folder.
+The certificates mkcert makes are trusted **only on this computer** — nothing
+leaves it.
+
+Then plug in the USB token and run (one line, with your values from step 1):
+
+```bash
+uv run anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
+  --redirect-uri https://localhost:9002/callback \
+  --tls-cert localhost+1.pem --tls-key localhost+1-key.pem
+```
+
+Your **browser opens** on ANAF's login page and asks for your **certificate** —
+pick it and confirm (enter the token PIN if prompted). After that the browser lands
+on a page saying **"You can close this tab and return to the terminal"** — done,
+the code was captured automatically, no warnings, nothing to copy. If the listener
+can't start for any reason, the command falls back to paste mode (Option B) by
+itself.
+
+### Option B — paste mode
+
+```bash
+uv run anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
+  --redirect-uri https://localhost:9002/callback --paste
+```
+
+What happens, in order:
+
+1. Your **browser opens** on ANAF's login page and asks for your **certificate** —
+   pick it and confirm (enter the token PIN if prompted).
+2. The browser then lands on an error page ("can't connect to localhost" or
+   similar). **This is expected** — there is nothing running at that address; the
+   code you need is in the address bar.
+3. **Copy the full URL from the browser's address bar** and **paste it into the
+   terminal**, which is waiting for it. Do this promptly — the code expires in
+   about **60 seconds**. (If it expires, just run the command again.)
+
+### Either way
+
+The command exchanges the code for tokens and stores them in
+`~/.anafpy/tokens.json` (your user folder). Check it worked:
+
+```bash
+uv run anafpy auth status
+```
+
+It should report a valid token. From here on, everything is automatic: the access
+token refreshes by itself for about **a year**, without the certificate. You only
+repeat this step when the refresh token expires (~365 days) or if you revoke the
+application on ANAF's portal — so the USB token is needed roughly **once a year**.
+
+## Step 5 — Connect the server to Claude
+
+anafpy ships a local MCP server — a small program Claude starts on your computer
+and talks to. It never sends your credentials anywhere except to ANAF.
+
+### Claude Desktop / Cowork
+
+Cowork reaches local servers through the Claude Desktop app installed on the same
+computer, so the configuration lives in Claude Desktop:
+
+1. Install and sign in to [Claude Desktop](https://claude.ai/download).
+2. Open its config file (create it if missing):
+   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+     (in Claude Desktop: *Settings → Developer → Edit Config*)
+   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+3. Add this (replace the three `...` values and the folder path from step 3; on
+   Windows write the path with doubled backslashes, e.g. `C:\\Users\\ana\\anafpy`):
+
+```json
+{
+  "mcpServers": {
+    "anafpy": {
+      "command": "uv",
+      "args": [
+        "run", "--directory", "/Users/ana/anafpy",
+        "--frozen", "--extra", "mcp", "anafpy-mcp"
+      ],
+      "env": {
+        "ANAFPY_CLIENT_ID": "...",
+        "ANAFPY_CLIENT_SECRET": "...",
+        "ANAFPY_CIF": "12345678"
+      }
+    }
+  }
+}
+```
+
+`ANAFPY_CIF` is the firm's CUI (digits only) — the default fiscal code used when
+you don't say otherwise in conversation.
+
+4. Quit Claude Desktop fully and reopen it. The anafpy tools appear under the
+   app's connectors/tools, and Cowork sessions on this computer can use them.
+
+### Claude Code (alternative)
+
+If you use Claude Code in a terminal instead:
+
+```bash
+claude mcp add anafpy \
+  -e ANAFPY_CLIENT_ID=... -e ANAFPY_CLIENT_SECRET=... -e ANAFPY_CIF=... \
+  -- uv run --directory /Users/ana/anafpy --frozen --extra mcp anafpy-mcp
+```
+
+## Step 6 — Check that it works
+
+Ask Claude, in a new conversation:
+
+1. *"What's my ANAF authentication status?"* — should report a valid token (this
+   reads the login from step 4).
+2. *"Look up CUI 14399840 in the ANAF taxpayer registry."* — the public lookups
+   work even before login, so this confirms the server itself runs.
+3. *"List my e-Factura messages from the last 7 days."* — confirms the
+   authenticated e-Factura connection end to end.
+
+For e-Transport, filing is deliberately two-step: Claude prepares the declaration
+and shows you a preview, and **nothing is filed until you explicitly approve it**
+— then it submits and reports the UIT. Try it by asking Claude to declare a
+transport from an invoice or CMR you have at hand.
+
+## Good to know
+
+- **Production vs. test**: the server talks to **production** ANAF by default. To
+  practice against ANAF's TEST environment instead, add `"ANAFPY_ENV": "test"`
+  next to the other `env` entries (test filings issue real-looking UITs that are
+  legally meaningless).
+- **Your credentials stay on this computer**: the Client Secret sits in the config
+  file above and the tokens in `~/.anafpy/tokens.json` — protect the computer
+  account like you protect SPV access, and don't share the folder.
+- **Yearly renewal**: when tools start failing with a "run `anafpy auth login`"
+  message after ~a year, repeat step 4. Nothing else needs to change.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `mkcert: command not found` right after installing it | Close and reopen the terminal so the new tool is picked up, then retry. |
+| Login says it can't read `localhost+1.pem` (option A) | Run the login command from the `anafpy` folder — that's where `mkcert` wrote the certificate files — or pass their full path. |
+| *"Connection is not private"* warning at `localhost` (option A) | `mkcert -install` didn't complete (it needs the password/UAC confirmation). Run it again, then retry the login; you can also just click **Advanced → Proceed to localhost** once. |
+| Browser error page after the certificate step (option B) | Normal in `--paste` mode — copy the URL from the address bar into the terminal (step 4). |
+| "expired" / invalid code when pasting | You waited past ~60 s. Run the login command again and paste promptly. |
+| No certificate prompt in the browser | The token's driver/software isn't installed or the browser doesn't see the certificate. Test by logging in to SPV first; fix that, then retry. |
+| Claude Desktop shows the server as failed / `uv` not found | Desktop apps don't always see the terminal's PATH. In the config, replace `"command": "uv"` with the full path — macOS: `/Users/<you>/.local/bin/uv`; Windows: `C:\\Users\\<you>\\.local\\bin\\uv.exe` (run `where.exe uv` / `which uv` to confirm). |
+| Tools answer "run `anafpy auth login`" | Step 4 wasn't completed on this computer, or the token expired (~1 year). Run step 4 again. |
+| Filing rejected by ANAF | That's ANAF's verdict on the document's content, not an installation problem — the error text comes back in the tool result; fix the data and prepare again. |
