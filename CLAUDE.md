@@ -195,9 +195,16 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   (only the schema's unused `xs:any` hooks are not carried); enum-coded fields are
   typed with the generated XSD enums, accept name or code, and serialize as names.
 - **Tool display names**: every tool has an English MCP `title` following
-  `Service: operation` — services are `E-Factura`, `E-Transport`, `ANAF Info`
+  `Service: operation` — services are `e-Factura`, `e-Transport`, `ANAF Info`
   (public no-auth lookups), plus bare `ANAF` for `auth_status`. Titles are
   UI-only (the model sees `name` + `description`); keep them single-language.
+- **Branded service names in prose**: in strings, messages, and docs the services
+  are written exactly `e-Factura` and `e-Transport` — even at the start of a
+  sentence or title. This is the branding ANAF itself uses on its website
+  (decided 2026-07-03). Exceptions: identifiers stay English-convention
+  (`EFacturaClient`, `efactura_*`), ANAF wire facts stay verbatim (the
+  `eTransport` XML root/namespace, endpoint names, URLs), and quotes of ANAF's
+  own material in `docs/anaf-reference/` keep ANAF's spelling.
 - **Read-first, two-step gated mutations.** Read-only tools (`*_list*`, `*_status`,
   `*_lookup`, `etransport_nomenclature`, `efactura_validate`,
   `auth_status`, and the no-auth

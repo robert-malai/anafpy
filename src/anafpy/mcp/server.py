@@ -211,7 +211,7 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
 
 def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
-        title="E-Factura: List messages",
+        title="e-Factura: List messages",
         annotations=_READ_ONLY,
         description="List e-Factura messages (sent/received/errors) for a fiscal code. "
         "Give a window as EITHER `days` (1-60) OR an ISO `start`+`end` date range "
@@ -242,7 +242,7 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         }
 
     @mcp.tool(
-        title="E-Factura: Upload status",
+        title="e-Factura: Upload status",
         annotations=_READ_ONLY,
         description="Get the processing state of an e-Factura upload by its upload id "
         "(index_incarcare). Returns ok / nok / in prelucrare and a download id when "
@@ -258,7 +258,7 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         }
 
     @mcp.tool(
-        title="E-Factura: Download message",
+        title="e-Factura: Download message",
         annotations=_ARTIFACT_SAVING,
         description="Download a processed e-Factura message (the signed invoice/errors "
         "ZIP) by id. Returns the decoded content and an easy-to-read `invoice` view of "
@@ -322,7 +322,7 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         return await _render_pdf(ctx, msg.content_xml)
 
     @mcp.tool(
-        title="E-Factura: Validate invoice",
+        title="e-Factura: Validate invoice",
         annotations=_READ_ONLY,
         description="Validate a complete UBL invoice / credit note (XML) with ANAF's "
         "own server-side validator, without filing. Authoritative — the same rules "
@@ -344,7 +344,7 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
 
 def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
-        title="E-Transport: List notifications",
+        title="e-Transport: List notifications",
         annotations=_READ_ONLY,
         description="List e-Transport notifications from the last `days` (1-60) for a "
         "fiscal code.",
@@ -361,7 +361,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         }
 
     @mcp.tool(
-        title="E-Transport: Upload status",
+        title="e-Transport: Upload status",
         annotations=_READ_ONLY,
         description="Get the processing state of an e-Transport upload by its upload "
         "id (index_incarcare).",
@@ -375,7 +375,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         }
 
     @mcp.tool(
-        title="E-Transport: Look up active declarations",
+        title="e-Transport: Look up active declarations",
         annotations=_READ_ONLY,
         description="Look up active e-Transport declarations where a fiscal code is "
         "the transport organiser (the `info` endpoint).",
@@ -398,7 +398,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         }
 
     @mcp.tool(
-        title="E-Transport: Code lists",
+        title="e-Transport: Code lists",
         annotations=_READ_ONLY,
         description="List one e-Transport nomenclature (code list) as "
         "{name, code[, label]} entries. `kind` is one of: operation_types, "
@@ -410,7 +410,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         return {"kind": kind, "entries": nomenclature_entries(kind)}
 
     @mcp.tool(
-        title="E-Transport: Prepare declaration",
+        title="e-Transport: Prepare declaration",
         annotations=_MUTATING,
         description="STEP 1 of filing an e-Transport declaration from STRUCTURED "
         "fields — no XML needed: compose the ANAF declaration XML from the given "
@@ -427,7 +427,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         return _prepare_composed_transport(cfg, declaration, cif=cif)
 
     @mcp.tool(
-        title="E-Transport: Prepare deletion",
+        title="e-Transport: Prepare deletion",
         annotations=_MUTATING,
         description="STEP 1 of deleting an issued e-Transport UIT: compose the "
         "stergere XML and return it + a preview + a confirmation token. Then call "
@@ -442,7 +442,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         )
 
     @mcp.tool(
-        title="E-Transport: Prepare confirmation",
+        title="e-Transport: Prepare confirmation",
         annotations=_MUTATING,
         description="STEP 1 of confirming an issued e-Transport UIT: compose the "
         "confirmare XML and return it + a preview + a confirmation token. "
@@ -466,7 +466,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         )
 
     @mcp.tool(
-        title="E-Transport: Prepare vehicle change",
+        title="e-Transport: Prepare vehicle change",
         annotations=_MUTATING,
         description="STEP 1 of changing the vehicle on an issued e-Transport UIT: "
         "compose the modifVehicul XML and return it + a preview + a confirmation "
@@ -493,7 +493,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         )
 
     @mcp.tool(
-        title="E-Transport: Prepare XML filing",
+        title="e-Transport: Prepare XML filing",
         annotations=_MUTATING,
         description="STEP 1 of filing an e-Transport document the caller already "
         "has as XML: parse it and return an easy-to-read preview + a confirmation "
@@ -509,7 +509,7 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
         return _prepare_transport(ctx, cfg, document, cif=cif)
 
     @mcp.tool(
-        title="E-Transport: Submit filing",
+        title="e-Transport: Submit filing",
         annotations=_MUTATING,
         description="STEP 2 of filing any e-Transport document: file the supplied "
         "XML with ANAF and return the UIT code. Requires the confirmation_token "

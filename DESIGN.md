@@ -347,7 +347,7 @@ reference as resources.)*
   Nădlac" → `NADLAC` instead of guessing codes.
 - **Display names**: every tool carries an English MCP `title` — the human-facing
   name clients show instead of the snake_case `name` — following
-  `Service: operation` ("E-Factura: Validate invoice", "E-Transport: Prepare
+  `Service: operation` ("e-Factura: Validate invoice", "e-Transport: Prepare
   declaration", "ANAF Info: Taxpayer lookup" for the public lookups, "ANAF:
   Authentication status" for `auth_status`). One language only: MCP has no title
   localization, and the model never sees titles (it works from `name` +

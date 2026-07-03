@@ -10,7 +10,7 @@
   "homepage": "https://github.com/robert-malai/anafpy",
   "repository": "https://github.com/robert-malai/anafpy",
   "license": "Apache-2.0",
-  "keywords": ["anaf", "e-factura", "e-transport", "romania", "einvoicing", "mcp"],
+  "keywords": ["anaf", "e-Factura", "e-Transport", "romania", "einvoicing", "mcp"],
   "mcpServers": {
     "anafpy": {
       "command": "uv",
