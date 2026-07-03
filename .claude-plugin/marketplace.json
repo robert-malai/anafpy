@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "anafpy",
+  "owner": {
+    "name": "Robert Malai"
+  },
+  "description": "Romania's ANAF tax-authority services (e-Factura, e-Transport, public registries) for Claude Code.",
+  "plugins": [
+    {
+      "name": "anafpy",
+      "source": "./",
+      "description": "MCP tools for ANAF e-Factura filing/inbox, e-Transport declarations, and the public no-auth registry lookups, with two-step gated filing."
+    }
+  ]
+}

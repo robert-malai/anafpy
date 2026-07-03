@@ -51,7 +51,9 @@ ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
 Config is env-only — `anafpy.mcp.config.ServerConfig` is a `pydantic-settings`
 `BaseSettings` (use `ServerConfig.from_env()` for a friendly `AnafConfigError`):
 `ANAFPY_CLIENT_ID`,
-`ANAFPY_CLIENT_SECRET` (required), `ANAFPY_TOKEN_STORE` (default `~/.anafpy/tokens.json`),
+`ANAFPY_CLIENT_SECRET` (optional — without them the server still starts and serves
+the public `anaf_*` lookups; the authenticated tools raise a how-to-enable
+`AnafConfigError`), `ANAFPY_TOKEN_STORE` (default `~/.anafpy/tokens.json`),
 `ANAFPY_ENV` (`test`/`prod`), `ANAFPY_CIF` (default fiscal code), `ANAFPY_DOCS_DIR`
 (reference resources, defaults to the repo `docs/anaf-reference/`).
 
@@ -93,6 +95,13 @@ src/anafpy/
     tokens.py            # HMAC confirmation tokens for two-step gated mutations
     server.py            # FastMCP server: tools + resources; `create_server`, `main`
     __main__.py          # `python -m anafpy.mcp` (stdio)
+.claude-plugin/          # Claude Code plugin: plugin.json (inline mcpServers, runs
+                         # `uv run --frozen --extra mcp anafpy-mcp` from the plugin
+                         # checkout) + marketplace.json (the repo is its own
+                         # single-plugin marketplace); no `version` field on purpose
+                         # -> commit-SHA versioning, every push is an update
+skills/                  # plugin workflow skills (etransport-declare: source data ->
+                         # FlatTransport -> prepare -> approval -> submit -> status)
 schemas/                 # vendored XSDs (git-tracked, NOT shipped in the wheel)
 scripts/                 # codegen scripts
 docs/anaf-reference/     # compiled ANAF API reference (oauth/efactura/etransport/public)
@@ -176,7 +185,7 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   `*_download`, `*_lookup`, `etransport_nomenclature`, `efactura_validate`,
   `auth_status`, and the no-auth
   `anaf_*` public lookups over `PublicClient` — registries + financial statements,
-  usable even before `anafpy auth login`) are annotated `readOnlyHint` and freely
+  usable even with no OAuth credentials configured) are annotated `readOnlyHint` and freely
   callable. Filing is split `*_prepare*` → `*_submit*`: prepare
   parses (or composes) the XML for a preview and returns an HMAC **confirmation token**
   (`mcp/tokens.py`) bound to the exact XML bytes, the CIF, and (e-Factura) the upload

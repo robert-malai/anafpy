@@ -34,7 +34,9 @@ def _jwt(exp: float) -> str:
     return f"{seg({'alg': 'RS512'})}.{seg({'exp': int(exp)})}.sig"
 
 
-def _config(tmp_path: Path, *, authenticated: bool = True) -> ServerConfig:
+def _config(
+    tmp_path: Path, *, authenticated: bool = True, credentials: bool = True
+) -> ServerConfig:
     store = tmp_path / "tokens.json"
     if authenticated:
         token = TokenSet.from_token_response(
@@ -42,8 +44,8 @@ def _config(tmp_path: Path, *, authenticated: bool = True) -> ServerConfig:
         )
         FileTokenStore(store).save(token)
     return ServerConfig(
-        client_id="CID",
-        client_secret="S",
+        client_id="CID" if credentials else None,
+        client_secret="S" if credentials else None,
         store_path=store,
         environment=Environment.TEST,
         default_cif="123",
@@ -70,6 +72,67 @@ async def test_auth_status_authenticated(tmp_path: Path) -> None:
     out = await _call(server, "auth_status")
     assert out["authenticated"] is True
     assert out["access_token_valid"] is True
+    assert out["credentials_configured"] is True
+
+
+# --- credential-free server (public lookups only) -------------------------------------
+
+
+def _credential_free(tmp_path: Path) -> ServerConfig:
+    return _config(tmp_path, authenticated=False, credentials=False)
+
+
+async def test_auth_status_reports_missing_credentials(tmp_path: Path) -> None:
+    server = create_server(_credential_free(tmp_path))
+    out = await _call(server, "auth_status")
+    assert out["credentials_configured"] is False
+    assert out["authenticated"] is False
+    assert out["needs_login"] is True
+    assert "ANAFPY_CLIENT_ID" in out["message"]
+
+
+async def test_authenticated_tool_without_credentials_says_how_to_enable(
+    tmp_path: Path,
+) -> None:
+    server = create_server(_credential_free(tmp_path))
+    with pytest.raises(ToolError, match="ANAFPY_CLIENT_ID"):
+        await _call(server, "efactura_get_status", upload_id="1")
+
+
+@respx.mock
+async def test_public_lookup_works_without_credentials(tmp_path: Path) -> None:
+    respx.post("https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "found": [{"date_generale": {"cui": 1590082, "denumire": "OMV"}}],
+                "notFound": [],
+            },
+        )
+    )
+    server = create_server(_credential_free(tmp_path))
+    out = await _call(server, "anaf_lookup_taxpayers", cuis=[1590082])
+    assert out["count"] == 1
+
+
+async def test_prepare_works_but_submit_needs_credentials(tmp_path: Path) -> None:
+    # Composing + previewing a declaration touches no ANAF endpoint, so the
+    # two-step flow is usable up to the human gate; only the actual filing needs
+    # the OAuth credentials.
+    server = create_server(_credential_free(tmp_path))
+    declaration = build_flat_transport().model_dump(mode="json")
+    prepared = await _call(
+        server, "etransport_prepare_declaration", declaration=declaration
+    )
+    assert prepared["valid"] is True
+    with pytest.raises(ToolError, match="ANAFPY_CLIENT_ID"):
+        await _call(
+            server,
+            "etransport_submit",
+            document={"xml": prepared["xml"]},
+            confirmation_token=prepared["confirmation_token"],
+            confirm=True,
+        )
 
 
 # --- read-only e-Factura ------------------------------------------------------------

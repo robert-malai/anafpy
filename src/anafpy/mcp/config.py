@@ -30,7 +30,10 @@ class ServerConfig(BaseSettings):
     plain constructor accepts explicit values (used in tests).
 
     Attributes:
-        client_id: ANAF OAuth client id (``ANAFPY_CLIENT_ID``).
+        client_id: ANAF OAuth client id (``ANAFPY_CLIENT_ID``). Optional: without
+            credentials the server still starts and serves the public no-auth
+            lookups; the authenticated e-Factura / e-Transport tools report how to
+            enable themselves instead of working.
         client_secret: ANAF OAuth client secret (``ANAFPY_CLIENT_SECRET``).
         store_path: token-store JSON file (``ANAFPY_TOKEN_STORE``).
         environment: ``test`` or ``prod`` (``ANAFPY_ENV``).
@@ -45,8 +48,10 @@ class ServerConfig(BaseSettings):
 
     model_config = SettingsConfigDict(populate_by_name=True, extra="ignore")
 
-    client_id: str = Field(validation_alias="ANAFPY_CLIENT_ID")
-    client_secret: str = Field(validation_alias="ANAFPY_CLIENT_SECRET")
+    client_id: str | None = Field(default=None, validation_alias="ANAFPY_CLIENT_ID")
+    client_secret: str | None = Field(
+        default=None, validation_alias="ANAFPY_CLIENT_SECRET"
+    )
     store_path: Path = Field(
         default=Path(_DEFAULT_STORE), validation_alias="ANAFPY_TOKEN_STORE"
     )
@@ -70,28 +75,35 @@ class ServerConfig(BaseSettings):
     def _expand_path(cls, value: Path | None) -> Path | None:
         return value.expanduser() if value is not None else None
 
-    @field_validator("default_cif", "docs_dir", mode="before")
+    @field_validator(
+        "client_id", "client_secret", "default_cif", "docs_dir", mode="before"
+    )
     @classmethod
     def _blank_is_none(cls, value: object) -> object:
         return value or None
+
+    @property
+    def has_credentials(self) -> bool:
+        """Whether an OAuth client id + secret pair is configured."""
+        return self.client_id is not None and self.client_secret is not None
 
     @classmethod
     def from_env(cls) -> ServerConfig:
         """Build a config from the environment.
 
+        Missing OAuth credentials are not an error — the server starts with only
+        the public no-auth lookups usable.
+
         Raises:
-            AnafConfigError: if a required value (the OAuth client id/secret) is missing
-                or invalid — the server cannot refresh tokens without them.
+            AnafConfigError: if a supplied value is invalid (e.g. a bad
+                ``ANAFPY_ENV``).
         """
         try:
-            # BaseSettings populates required fields from the environment; mypy can't
-            # see that without the pydantic plugin, hence the call-arg ignore.
-            return cls()  # type: ignore[call-arg]
+            return cls()
         except ValidationError as exc:
             raise AnafConfigError(
                 "invalid MCP server configuration "
-                "(ANAFPY_CLIENT_ID and ANAFPY_CLIENT_SECRET are required, "
-                "ANAFPY_ENV must be 'test' or 'prod'): "
+                "(ANAFPY_ENV must be 'test' or 'prod'): "
                 f"{exc.errors(include_url=False)}"
             ) from exc
 

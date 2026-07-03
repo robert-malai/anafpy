@@ -70,7 +70,7 @@ Not yet built: a sync facade, CI, and PyPI publishing.
 Not on PyPI yet — install from source:
 
 ```bash
-git clone https://github.com/robertmalai/anafpy && cd anafpy
+git clone https://github.com/robert-malai/anafpy && cd anafpy
 uv sync --all-extras
 ```
 
@@ -243,6 +243,32 @@ invoices, easy to read and lossy by design — the raw bytes stay authoritative)
 compiled ANAF reference is surfaced as read-only resources. Auth stays
 the host-side CLI — the server only reads and refreshes the token store. Configuration is
 environment-only; see [`CLAUDE.md`](CLAUDE.md).
+
+### Claude Code plugin
+
+The repo doubles as a **Claude Code plugin**
+([`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)): installing it from the
+git repo registers the MCP server automatically, run via `uv` from the plugin's own
+checkout (locked deps, no PyPI needed):
+
+```bash
+claude plugin marketplace add robert-malai/anafpy
+claude plugin install anafpy@anafpy
+```
+
+The server reads `ANAFPY_CLIENT_ID` / `ANAFPY_CLIENT_SECRET` (and optionally
+`ANAFPY_CIF`, `ANAFPY_ENV`) from your environment — set them in your shell or in
+Claude Code's `settings.json` `env` block. **No credentials yet?** The plugin still
+works: the server starts without them and the public `anaf_*` lookups (registries,
+financial statements) are fully usable. The e-Factura / e-Transport tools unlock
+once you set the credentials and run the one-time `anafpy auth login` in a
+terminal.
+
+The plugin also ships workflow skills: `/anafpy:etransport-declare` walks Claude
+through filing an e-Transport declaration from whatever source the data lives in
+(an email, a PDF invoice, a CMR, a spreadsheet) — extract, map to the structured
+declaration, prepare, show the preview for your approval, submit, then poll until
+ANAF issues a valid UIT.
 
 ## Development
 

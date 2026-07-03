@@ -147,7 +147,9 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
         annotations=_READ_ONLY,
         description="Report whether a usable ANAF session is present, and when the "
         "tokens expire. Call this first; if not authenticated, ask the user to run "
-        "`anafpy auth login` host-side.",
+        "`anafpy auth login` host-side. If credentials_configured is false, the "
+        "authenticated tools are unavailable (set ANAFPY_CLIENT_ID / "
+        "ANAFPY_CLIENT_SECRET) but the public anaf_* lookups still work.",
     )
     def auth_status() -> AuthStatus:
         return ctx.auth_status()

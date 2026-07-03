@@ -41,9 +41,9 @@ anafpy = "anafpy.cli.main:main"
 anafpy-mcp = "anafpy.mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/robertmalai/anafpy"
-Documentation = "https://github.com/robertmalai/anafpy/tree/main/docs"
-Issues = "https://github.com/robertmalai/anafpy/issues"
+Homepage = "https://github.com/robert-malai/anafpy"
+Documentation = "https://github.com/robert-malai/anafpy/tree/main/docs"
+Issues = "https://github.com/robert-malai/anafpy/issues"
 
 # PEP 735 dependency groups (dev-only; installed via `uv sync`).
 [dependency-groups]
