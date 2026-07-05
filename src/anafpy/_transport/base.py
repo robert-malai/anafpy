@@ -21,6 +21,7 @@ import time
 import unicodedata
 from email.utils import parsedate_to_datetime
 from enum import StrEnum
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -29,6 +30,7 @@ from ..exceptions import AnafRateLimitError, AnafResponseError
 __all__ = [
     "OAUTH_HOST",
     "PUBLIC_HOST",
+    "ROMANIA_TZ",
     "Environment",
     "Service",
     "as_text",
@@ -37,6 +39,11 @@ __all__ = [
     "retry_after_seconds",
     "service_base_url",
 ]
+
+#: ANAF's clock. "Today"/"now" *defaults* (a registry query's as-of date, a vehicle
+#: change's timestamp) are ANAF-semantic values, so they are computed in Romania's
+#: timezone rather than the machine's. Caller-supplied values are never converted.
+ROMANIA_TZ = ZoneInfo("Europe/Bucharest")
 
 #: OAuth2 API host for both services (the cert-direct host ``webserviceapl.anaf.ro`` is
 #: intentionally not used by anafpy).

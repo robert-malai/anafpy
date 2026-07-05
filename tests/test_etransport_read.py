@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
@@ -242,11 +243,14 @@ def test_vehicle_change_round_trips() -> None:
     assert back == flat.model_copy(update={"declarant_code": "123"})
 
 
-def test_vehicle_change_defaults_changed_at_to_now() -> None:
+def test_vehicle_change_defaults_changed_at_to_now_in_romania() -> None:
     change = FlatVehicleChange(uit=UIT, plate="B1AAA")
     doc = build_etransport(change, declarant_code="1")
     assert doc.modif_vehicul is not None
-    assert doc.modif_vehicul.data_modificare.year == dt.date.today().year
+    # The default timestamp is Romania wall time (ANAF's clock), not the machine's.
+    stamped = doc.modif_vehicul.data_modificare.to_datetime()
+    now_romania = dt.datetime.now(ZoneInfo("Europe/Bucharest")).replace(tzinfo=None)
+    assert abs((now_romania - stamped).total_seconds()) < 60
 
 
 # --- declarant code -------------------------------------------------------------------

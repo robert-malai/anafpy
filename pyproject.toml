@@ -32,6 +32,9 @@ dependencies = [
     # OS-credential-store token backend (macOS Keychain, Windows Credential Manager,
     # Linux Secret Service/KWallet) — the DEFAULT TokenStore backend since 2026-07-05.
     "keyring>=25",
+    # IANA tz database for ZoneInfo("Europe/Bucharest") — ANAF-semantic "today"/"now"
+    # defaults are computed in Romania's timezone; Windows has no system tz database.
+    "tzdata; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

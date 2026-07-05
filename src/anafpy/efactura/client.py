@@ -64,8 +64,8 @@ __all__ = ["EFacturaClient"]
 # being XML.
 _XML_BODY_HEADERS = {"Content-Type": "text/plain"}
 
-# Defensive upper bound on pages walked by ``list_messages`` — guards against a
-# misbehaving server that never returns an empty/terminal page.
+# Defensive upper bound on pages walked by ``list_messages``: a server that never
+# returns an empty/terminal page raises rather than silently truncating the list.
 _MAX_LIST_PAGES = 10_000
 # The paginated response's total-page field (per the vendored lista swagger); honoured
 # only when present — the empty-page stop is the real terminator.
@@ -299,8 +299,10 @@ class EFacturaClient:
         """Iterate every e-Factura message in a window, paging under the hood.
 
         Specify the window with **either** ``days`` (1-60) **or** both ``start`` and
-        ``end`` (datetimes) — not both. Yields each :class:`MessageListItem` across all
-        pages of ``listaMesajePaginatieFactura``; an empty window yields nothing.
+        ``end`` (datetimes; a naive one is interpreted in the machine's local
+        timezone — pass timezone-aware values to be explicit). Yields each
+        :class:`MessageListItem` across all pages of
+        ``listaMesajePaginatieFactura``; an empty window yields nothing.
 
         Consume with ``async for``; materialise via
         ``[m async for m in client.list_messages(...)]``.
@@ -338,6 +340,14 @@ class EFacturaClient:
             if total_pages is not None and page >= total_pages:
                 break
             page += 1
+        else:
+            # The cap was exhausted without a terminal page: be explicit rather
+            # than silently yielding a truncated list.
+            raise AnafResponseError(
+                f"listaMesajePaginatieFactura returned no terminal page within "
+                f"{_MAX_LIST_PAGES} pages — aborting rather than truncating",
+                status_code=200,
+            )
 
     @staticmethod
     def _parse_message_page(body: bytes) -> tuple[list[MessageListItem], int | None]:

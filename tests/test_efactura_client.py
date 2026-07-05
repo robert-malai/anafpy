@@ -351,6 +351,23 @@ async def test_list_messages_honours_total_pages_field() -> None:
 
 
 @respx.mock
+async def test_list_messages_page_cap_raises_not_truncates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A server that never returns a terminal page must raise, not silently
+    # truncate the list at the defensive cap.
+    import anafpy.efactura.client as efactura_client
+
+    monkeypatch.setattr(efactura_client, "_MAX_LIST_PAGES", 3)
+    respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        return_value=httpx.Response(200, json={"mesaje": [_msg("1")]})
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="no terminal page"):
+            [m async for m in client.list_messages(days=10, cif="123")]
+
+
+@respx.mock
 async def test_list_messages_empty_window_yields_nothing() -> None:
     route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
         return_value=httpx.Response(

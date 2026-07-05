@@ -39,6 +39,7 @@ from pydantic import (
 )
 from xsdata.models.datatype import XmlDate, XmlDateTime
 
+from .._transport.base import ROMANIA_TZ
 from ..exceptions import AnafConfigError
 from .schema.schema_etr_v2_20230126 import (
     BunuriTransportateType,
@@ -718,7 +719,8 @@ class FlatVehicleChange(_FlatSubmissionBase):
     trailer1: _TrailerPlate | None = None
     trailer2: _TrailerPlate | None = None
     changed_at: dt.datetime | None = Field(
-        default=None, description="When the vehicle changed; defaults to now."
+        default=None,
+        description="When the vehicle changed; defaults to now, Romania time.",
     )
     note: str | None = Field(default=None, min_length=1, max_length=200)
 
@@ -924,7 +926,9 @@ def build_etransport(
         )
     elif isinstance(document, FlatVehicleChange):
         # ANAF's documented dataModificare format is second-precision (BR-203).
-        changed_at = (document.changed_at or dt.datetime.now()).replace(microsecond=0)
+        # The default is Romania *wall* time, kept naive so the rendered
+        # xs:dateTime carries no offset; a caller-supplied value is used as-is.
+        changed_at = (document.changed_at or _now_romania()).replace(microsecond=0)
         root.modif_vehicul = ModifVehiculType(
             uit=document.uit,
             nr_vehicul=document.plate,
@@ -1028,6 +1032,11 @@ def _build_good(good: FlatTransportGood) -> BunuriTransportateType:
         ),
         ref_declarant=good.line_ref,
     )
+
+
+def _now_romania() -> dt.datetime:
+    """Now as naive Romania wall time (ANAF's clock, offset-free on the wire)."""
+    return dt.datetime.now(ROMANIA_TZ).replace(tzinfo=None)
 
 
 def _num(value: Decimal) -> str:

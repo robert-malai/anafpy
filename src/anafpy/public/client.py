@@ -38,7 +38,13 @@ from typing import Any, Self
 import httpx
 from pydantic import ValidationError
 
-from .._transport.base import PUBLIC_HOST, Service, as_text, raise_for_status
+from .._transport.base import (
+    PUBLIC_HOST,
+    ROMANIA_TZ,
+    Service,
+    as_text,
+    raise_for_status,
+)
 from ..exceptions import (
     AnafConfigError,
     AnafResponseError,
@@ -90,9 +96,10 @@ def _normalize_cui(value: int | str) -> int:
 
 
 def _query_date(date: datetime.date | str | None) -> str:
-    """Resolve the as-of date of a registry query (default: today)."""
+    """Resolve the as-of date of a registry query (default: today on the
+    register's own clock — Romania time — not the machine's)."""
     if date is None:
-        return datetime.date.today().isoformat()
+        return datetime.datetime.now(ROMANIA_TZ).date().isoformat()
     if isinstance(date, datetime.date):
         return date.isoformat()
     try:

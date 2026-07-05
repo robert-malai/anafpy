@@ -574,9 +574,28 @@ def _register_etransport(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> No
             )
         except ConfirmationError as exc:
             return SubmitResult(accepted=False, message=str(exc))
+        # Resolve the client BEFORE consuming the token: missing credentials is a
+        # deterministic config error, and must not burn the human's approval.
+        client = ctx.etransport()
         if not ctx.token_ledger.consume(confirmation_token, expires_at):
             return SubmitResult(accepted=False, message=_TOKEN_USED_MESSAGE)
-        result = await ctx.etransport().upload(xml, cif=resolved)
+        # The token is consumed BEFORE the upload, deliberately: on an ambiguous
+        # failure (e.g. a timeout after the request was sent) replaying the same
+        # token must not be able to double-file — the human re-approves instead.
+        try:
+            result = await client.upload(xml, cif=resolved)
+        except AnafError as exc:
+            return SubmitResult(
+                accepted=False,
+                errors=[str(exc)],
+                message=(
+                    "the upload failed and the outcome is UNKNOWN — the request "
+                    "may or may not have reached ANAF. The confirmation token is "
+                    "spent. Before preparing this filing again, check whether it "
+                    "went through (etransport_list, or etransport_get_status if "
+                    "an upload id is known) so it is not filed twice."
+                ),
+            )
         return SubmitResult(
             accepted=result.accepted,
             upload_id=result.upload_id,

@@ -460,6 +460,30 @@ async def test_submit_token_is_single_use(tmp_path: Path) -> None:
 
 
 @respx.mock
+async def test_submit_upload_failure_reports_unknown_outcome(tmp_path: Path) -> None:
+    # A transport failure after approval returns a structured result that says
+    # the outcome is unknown and the token is spent — replaying must not be able
+    # to double-file; the agent is told to check before preparing again.
+    respx.post(f"{ETRANSPORT}/upload/ETRANSP/123/2").mock(
+        side_effect=httpx.ConnectTimeout("connection timed out")
+    )
+    server = create_server(_config(tmp_path))
+    prepared = await _call(server, "etransport_prepare", document=_transport_doc())
+    args = {
+        "document": _transport_doc(),
+        "confirmation_token": prepared["confirmation_token"],
+        "confirm": True,
+    }
+    out = await _call(server, "etransport_submit", **args)
+    assert out["accepted"] is False
+    assert "UNKNOWN" in out["message"]
+    assert out["errors"]  # the transport error is carried for diagnostics
+    replay = await _call(server, "etransport_submit", **args)
+    assert replay["accepted"] is False
+    assert "already used" in replay["message"]
+
+
+@respx.mock
 async def test_prepare_then_submit_files_transport(tmp_path: Path) -> None:
     route = respx.post(f"{ETRANSPORT}/upload/ETRANSP/123/2").mock(
         return_value=httpx.Response(

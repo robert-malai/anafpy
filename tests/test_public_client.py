@@ -7,7 +7,9 @@ docs/anaf-reference/public/api.md (2026-07-02).
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -163,6 +165,21 @@ async def test_taxpayer_lookup_accepts_documented_envelope() -> None:
         result = await client.lookup_taxpayers([123])
     assert result.found == []
     assert result.not_found == [123]
+
+
+@respx.mock
+async def test_lookup_default_date_is_romania_today() -> None:
+    # The as-of default is today on the register's own clock (Romania time),
+    # not the machine's — a host in another timezone must not shift the date.
+    route = respx.post(f"{BASE}/api/PlatitorTvaRest/v9/tva").mock(
+        return_value=httpx.Response(200, json={"found": [], "notFound": [123]})
+    )
+    async with _client() as client:
+        await client.lookup_taxpayers([123])
+    expected = datetime.datetime.now(ZoneInfo("Europe/Bucharest")).date().isoformat()
+    assert json.loads(route.calls.last.request.content) == [
+        {"cui": 123, "data": expected}
+    ]
 
 
 @respx.mock

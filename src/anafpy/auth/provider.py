@@ -58,6 +58,8 @@ class TokenProvider:
         # Scopes a single operation: serialize refreshes and hand the operation
         # the freshest persisted token set. Tokens must not outlive the block —
         # holding them across operations would reintroduce a stale cache.
+        # Store I/O is synchronous (keyring can block briefly) — accepted for a
+        # local single-user process; refreshes happen ~once per 90 days.
         async with self._lock:
             tokens = self._store.load()
             if tokens is None:
