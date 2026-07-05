@@ -30,3 +30,12 @@ htmlcov/
 .anafpy/
 secrets.toml
 .env
+
+# TLS certs / keys (mkcert localhost certs for `anafpy auth login --tls-cert/--tls-key`)
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+rootCA*.pem
