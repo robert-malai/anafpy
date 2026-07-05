@@ -54,9 +54,10 @@ Config is env-only — `anafpy.mcp.config.ServerConfig` is a `pydantic-settings`
 `ANAFPY_CLIENT_SECRET` (optional — without them the server still starts and serves
 the public `anaf_*` lookups; the authenticated tools raise a how-to-enable
 `AnafConfigError`), `ANAFPY_TOKEN_STORE` (default `~/.anafpy/tokens.json`),
-`ANAFPY_TOKEN_STORE_BACKEND` (`file`/`keyring`, default `file` — `keyring` keeps
-tokens in the OS credential store via `KeyringTokenStore` and the `anafpy[keyring]`
-extra; the CLI honours the same variable and `--store-backend`),
+`ANAFPY_TOKEN_STORE_BACKEND` (`keyring`/`file`, default `keyring` — tokens live in
+the OS credential store via `KeyringTokenStore` (`keyring` is a core dependency);
+`file` is the opt-out for Docker/headless hosts without a credential store; the
+CLI honours the same variable and `--store-backend`),
 `ANAFPY_ENV` (`test`/`prod`, default `prod`), `ANAFPY_CIF` (default fiscal code), `ANAFPY_DOCS_DIR`
 (reference resources, defaults to the repo `docs/anaf-reference/`),
 `ANAFPY_SKILLS_DIR` (workflow skills re-served as MCP prompts, defaults to the repo
@@ -78,7 +79,7 @@ src/anafpy/
   exceptions.py          # AnafError hierarchy (see "Error model")
   _transport/base.py     # Environment, Service, service_base_url + shared error raising
   auth/                  # OAuth2 layer: models, store, oauth, provider, callback
-  cli/main.py            # `anafpy auth login|status`
+  cli/main.py            # `anafpy auth login|status|logout`
   efactura/
     ubl/                 # GENERATED UBL 2.1 models (xsdata-pydantic) — do not hand-edit
     client.py            # EFacturaClient (async)
@@ -143,11 +144,19 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   Every login binds a random OAuth `state` (login-CSRF protection, 2026-07-04):
   the listener 400s (and keeps waiting on) redirects that don't echo it, and the
   paste parser rejects a mismatching URL — a pasted bare code is exempt.
-  Token persistence is the `TokenStore` protocol: `FileTokenStore` (default JSON
-  file) or `KeyringTokenStore` (OS credential store, `anafpy[keyring]` extra —
-  splits the set across vault entries on Windows, whose 2560-byte blob cap is
-  smaller than one ANAF JWT); selected by `ANAFPY_TOKEN_STORE_BACKEND` /
-  `--store-backend`.
+  `anafpy auth logout` is **purely local** — it clears the token store and makes
+  no network call: ANAF's documented `/revoke` is not reachable headlessly
+  (live-probed 2026-07-05: 302 to the F5 APM login wall, identical to a
+  nonexistent path — see the oauth reference §3), so tokens end only by expiry
+  or the portal's Renunțare Oauth. Don't (re)add a revoke call unless ANAF
+  actually routes the endpoint.
+  Token persistence is the `TokenStore` protocol (`load`/`save`/`clear`):
+  `KeyringTokenStore` (OS credential store — the **default** backend since
+  2026-07-05, `keyring` is a core dependency; splits the set across vault
+  entries on Windows, whose 2560-byte blob cap is smaller than one ANAF JWT) or
+  `FileTokenStore` (JSON file, the opt-out for Docker/headless hosts); selected
+  by `ANAFPY_TOKEN_STORE_BACKEND` / `--store-backend`. The test suite installs
+  an in-memory fake keyring **autouse** so no test can touch the real OS store.
 - **Clients are async**, own their `httpx.AsyncClient` (unless one is injected), and are
   async context managers (`async with EFacturaClient(...) as c:`).
 - **Discrete methods do NO transport retry** — one call, one result-or-raise — so the

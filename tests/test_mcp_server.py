@@ -53,6 +53,9 @@ def _config(
     return ServerConfig(
         client_id="CID" if credentials else None,
         client_secret="S" if credentials else None,
+        # Explicit file backend: these tests seed tokens via FileTokenStore
+        # (the shipped default is keyring).
+        store_backend="file",
         store_path=store,
         environment=Environment.TEST,
         default_cif="123",
@@ -871,10 +874,11 @@ def test_signing_key_unique_per_config() -> None:
 
 
 def test_store_backend_read_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "keyring")
-    assert ServerConfig.from_env().store_backend == "keyring"
-    monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "")
+    monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "file")
     assert ServerConfig.from_env().store_backend == "file"
+    # Unset/blank falls back to the default backend: the OS credential store.
+    monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "")
+    assert ServerConfig.from_env().store_backend == "keyring"
 
 
 def test_invalid_store_backend_raises_config_error(

@@ -38,9 +38,9 @@ class ServerConfig(BaseSettings):
         client_secret: ANAF OAuth client secret (``ANAFPY_CLIENT_SECRET``).
         store_path: token-store JSON file (``ANAFPY_TOKEN_STORE``); used only by
             the ``file`` backend.
-        store_backend: ``file`` (JSON at ``store_path``) or ``keyring`` (the OS
-            credential store; needs the ``anafpy[keyring]`` extra)
-            (``ANAFPY_TOKEN_STORE_BACKEND``).
+        store_backend: ``keyring`` (the OS credential store, the default) or
+            ``file`` (JSON at ``store_path`` — for Docker/headless hosts without
+            a credential store) (``ANAFPY_TOKEN_STORE_BACKEND``).
         environment: ``test`` or ``prod`` (``ANAFPY_ENV``).
         default_cif: fiscal code used when a tool call omits ``cif`` (``ANAFPY_CIF``).
         docs_dir: directory of the compiled ANAF reference exposed as MCP resources
@@ -64,7 +64,7 @@ class ServerConfig(BaseSettings):
         default=Path(_DEFAULT_STORE), validation_alias="ANAFPY_TOKEN_STORE"
     )
     store_backend: Literal["file", "keyring"] = Field(
-        default="file", validation_alias="ANAFPY_TOKEN_STORE_BACKEND"
+        default="keyring", validation_alias="ANAFPY_TOKEN_STORE_BACKEND"
     )
     environment: Environment = Field(
         default=Environment.PROD, validation_alias="ANAFPY_ENV"
@@ -102,7 +102,7 @@ class ServerConfig(BaseSettings):
     @field_validator("store_backend", mode="before")
     @classmethod
     def _blank_backend_is_default(cls, value: object) -> object:
-        return value or "file"
+        return value or "keyring"
 
     @property
     def has_credentials(self) -> bool:

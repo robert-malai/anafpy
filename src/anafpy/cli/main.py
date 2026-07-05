@@ -194,6 +194,26 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_logout(args: argparse.Namespace) -> int:
+    # Purely local: ANAF's documented /revoke is not reachable headlessly (it
+    # answers with the certificate login wall — live-probed 2026-07-05), so
+    # deleting the refresh token from this machine IS the logout; server-side the
+    # tokens end by expiry or the portal's "Renunțare Oauth".
+    store, store_label = _token_store(args)
+    try:
+        tokens = store.load()
+    except AnafConfigError:
+        # An unreadable store is exactly what logout should get rid of.
+        print("warning: token store unreadable — removing it anyway", file=sys.stderr)
+    else:
+        if tokens is None:
+            print("not authenticated — nothing to remove")
+            return 0
+    store.clear()
+    print(f"✓ Logged out. Tokens removed from {store_label}.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="anafpy",
@@ -236,6 +256,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_store_args(status)
     status.set_defaults(func=_cmd_status)
 
+    logout = auth.add_parser(
+        "logout", help="remove the stored tokens (ends this machine's access)"
+    )
+    _add_store_args(logout)
+    logout.set_defaults(func=_cmd_logout)
+
     return parser
 
 
@@ -249,10 +275,10 @@ def _add_store_args(parser: argparse.ArgumentParser) -> None:
         "--store-backend",
         choices=("file", "keyring"),
         # Read at parse time (not import) so tests and wrappers can set the env.
-        default=os.environ.get("ANAFPY_TOKEN_STORE_BACKEND", "file"),
-        help="where tokens live: a JSON file at --store, or the OS credential "
-        "store (macOS Keychain / Windows Credential Manager; needs "
-        "anafpy[keyring]); default from ANAFPY_TOKEN_STORE_BACKEND",
+        default=os.environ.get("ANAFPY_TOKEN_STORE_BACKEND", "keyring"),
+        help="where tokens live: the OS credential store (macOS Keychain / "
+        "Windows Credential Manager; the default), or a JSON file at --store "
+        "(for Docker/headless hosts); default from ANAFPY_TOKEN_STORE_BACKEND",
     )
 
 

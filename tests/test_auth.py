@@ -280,6 +280,16 @@ def test_file_store_corrupt_file_raises_config_error(tmp_path: Path) -> None:
         FileTokenStore(path).load()
 
 
+def test_file_store_clear_removes_file(tmp_path: Path) -> None:
+    path = tmp_path / "tokens.json"
+    store = FileTokenStore(path)
+    store.save(TokenSet(access_token="a", refresh_token="r"))
+    store.clear()
+    assert not path.exists()
+    store.clear()  # idempotent: clearing an empty store is a no-op
+    assert store.load() is None
+
+
 # --- keyring token store ----------------------------------------------------------
 
 
@@ -324,6 +334,16 @@ def test_keyring_store_save_drops_stale_chunks(fake_keyring: FakeKeyring) -> Non
     loaded = KeyringTokenStore(chunk_size=10_000).load()
     assert loaded is not None
     assert loaded.access_token == tokens.access_token
+
+
+def test_keyring_store_clear_removes_all_chunks(fake_keyring: FakeKeyring) -> None:
+    store = KeyringTokenStore(chunk_size=64)
+    store.save(_stored_tokens())
+    assert len(fake_keyring.entries) > 1  # continuation entries must go too
+    store.clear()
+    assert fake_keyring.entries == {}
+    store.clear()  # idempotent: clearing an empty store is a no-op
+    assert store.load() is None
 
 
 def test_keyring_store_corrupt_entry_raises_config_error(

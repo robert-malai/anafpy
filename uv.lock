@@ -18,6 +18,7 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
+    { name = "keyring" },
     { name = "pydantic" },
     { name = "pyjwt" },
     { name = "tenacity" },
@@ -25,9 +26,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-keyring = [
-    { name = "keyring" },
-]
 mcp = [
     { name = "mcp" },
     { name = "pydantic-settings" },
@@ -67,7 +65,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "keyring", marker = "extra == 'keyring'", specifier = ">=25" },
+    { name = "keyring", specifier = ">=25" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.10" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-settings", marker = "extra == 'mcp'", specifier = ">=2.4" },
@@ -76,7 +74,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=8.3" },
     { name = "xsdata-pydantic", specifier = ">=24.5" },
 ]
-provides-extras = ["mcp", "keyring"]
+provides-extras = ["mcp"]
 
 [package.metadata.requires-dev]
 codegen = [

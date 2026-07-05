@@ -40,8 +40,11 @@ class FakeKeyring(keyring.backend.KeyringBackend):
         del self.entries[(service, username)]
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def fake_keyring() -> Iterator[FakeKeyring]:
+    """In-memory keyring for EVERY test (autouse): keyring is the default token
+    store backend, so without this a test that forgets to pick a backend would
+    read/write the developer's real OS credential store."""
     previous = keyring.get_keyring()
     fake = FakeKeyring()
     keyring.set_keyring(fake)

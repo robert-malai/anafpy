@@ -170,8 +170,9 @@ What happens, in order:
 
 ### Either way
 
-The command exchanges the code for tokens and stores them in
-`~/.anafpy/tokens.json` (your user folder). Check it worked:
+The command exchanges the code for tokens and stores them in the computer's own
+secure credential store (macOS Keychain / Windows Credential Manager). Check it
+worked:
 
 ```bash
 uv run anafpy auth status
@@ -258,16 +259,23 @@ transport from an invoice or CMR you have at hand.
   next to the other `env` entries (test filings issue real-looking UITs that are
   legally meaningless).
 - **Your credentials stay on this computer**: the Client Secret sits in the config
-  file above and the tokens in `~/.anafpy/tokens.json` — protect the computer
-  account like you protect SPV access, and don't share the folder.
-- **Tokens in the system keychain instead of a file**: optionally, the ANAF tokens
-  can live in the macOS Keychain / Windows Credential Manager rather than
-  `~/.anafpy/tokens.json`. Install with the extra
-  (`uv sync --frozen --extra mcp --extra keyring`), run the step-4 login with
-  `--store-backend keyring` added, and put `"ANAFPY_TOKEN_STORE_BACKEND": "keyring"`
-  next to the other `env` entries in the Claude config.
+  file above and the tokens in the system's credential store (macOS Keychain /
+  Windows Credential Manager) — protect the computer account like you protect
+  SPV access.
+- **Tokens in a file instead of the keychain**: only needed on hosts without a
+  credential store (e.g. a Linux server or Docker). Run the step-4 login with
+  `--store-backend file` added and put `"ANAFPY_TOKEN_STORE_BACKEND": "file"`
+  next to the other `env` entries in the Claude config; the tokens then live in
+  `~/.anafpy/tokens.json` — protect that folder.
 - **Yearly renewal**: when tools start failing with a "run `anafpy auth login`"
   message after ~a year, repeat step 4. Nothing else needs to change.
+- **Signing out** (leaving a shared computer, handing it back to IT): run
+  `uv run anafpy auth logout` from the `anafpy` folder. It deletes the tokens
+  from this computer — afterwards the tools answer "run `anafpy auth login`"
+  until someone signs in again with the certificate. (ANAF offers no way for a
+  program to revoke the tokens on its side; they expire on their own. To cut
+  everything off at ANAF's side too, use *Renunțare Oauth* in the ANAF portal,
+  which deletes the whole app registration.)
 
 ## Troubleshooting
 

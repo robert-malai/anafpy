@@ -20,9 +20,12 @@ sources:
   - title: "Live endpoint probe (this project)"
     note: "Direct TLS/HTTP probe of logincert.anaf.ro/anaf-oauth2/v1/token"
     retrieved: 2026-06-28
+  - title: "Live /revoke probe (this project)"
+    note: "POST /anaf-oauth2/v1/revoke with Basic client auth + dummy token (RFC 7009 shape); contrasted against /token and a nonexistent path"
+    retrieved: 2026-07-05
 compiled: 2026-06-28
 compiled_by: claude-opus-4-8
-last_verified: 2026-06-28
+last_verified: 2026-07-05
 status: draft   # draft until human-reviewed
 ---
 
@@ -90,11 +93,18 @@ the API hosts, not to OAuth). The server presents a `*.anaf.ro` certificate
 (DigiCert/RapidSSL). **JWT signing:** `alg = RS512`, `kid` e.g. `anaf_2023_2024`,
 `iss = https://logincert.anaf.ro`.
 
-> ⚠️ `/revoke` on the `logincert` host appears only in the PDF's **legacy** `fiscnet`
-> screenshots (host-migrated by pattern); the live probe verified `/token` only.
-> Confirm `/revoke` before relying on it.
+> ⚠️ `/revoke` is **not reachable headlessly** (live-probed 2026-07-05). A POST with
+> HTTP Basic client auth and an RFC 7009-shaped body (`token`, `token_type_hint`)
+> answers **HTTP 302 → `/my.policy`** — the F5 BIG-IP APM access-policy wall —
+> ending on a BIG-IP logout page; the behaviour is **identical to a nonexistent
+> path** on the same host, while `/token` answers directly with OAuth JSON
+> (`400 invalid_request` for a bad grant). So the endpoint from the PDF's legacy
+> `fiscnet` screenshots either is not routed on `logincert.anaf.ro` or sits behind
+> the certificate browser session. Treat headless revocation as **unavailable**:
+> tokens end by expiry (90d/365d) or by the portal's *Renunțare Oauth* (§9).
 
-> Provenance: official PDF pp. 23–28; live TLS/HTTP probe 2026-06-28.
+> Provenance: official PDF pp. 23–28; live TLS/HTTP probe 2026-06-28; live /revoke
+> probe 2026-07-05.
 
 ## 4. Step 1 — Authorization request (browser + certificate)
 
@@ -212,13 +222,16 @@ a token is accepted.
 
 ## 9. Revocation
 
-- **`/anaf-oauth2/v1/revoke`** revokes a token.
+- **`/anaf-oauth2/v1/revoke`** revokes a token *per the PDF*, but is **not reachable
+  headlessly** — a client-secret-authenticated POST gets the F5 APM login-wall
+  redirect, indistinguishable from a nonexistent path (live-probed 2026-07-05;
+  see §3). In practice tokens are only invalidated by **expiry** or by the portal.
 - **Renunțare Oauth** (portal) deletes all of the account's app profiles and
   client_id/secret pairs and revokes access of clients using their tokens; to obtain
   new tokens you must re-register.
 - If tokens are compromised, send them to ANAF to block their access.
 
-> Provenance: official PDF pp. 20–22, 29.
+> Provenance: official PDF pp. 20–22, 29; live /revoke probe 2026-07-05.
 
 ## 10. `anafpy` implementation checklist
 

@@ -81,8 +81,7 @@ git clone https://github.com/robert-malai/anafpy && cd anafpy
 uv sync --all-extras
 ```
 
-The distribution offers two extras: `anafpy[mcp]` (the MCP server) and
-`anafpy[keyring]` (keep tokens in the OS credential store instead of a file).
+The distribution offers one extra: `anafpy[mcp]` (the MCP server).
 
 ## Authentication
 
@@ -93,6 +92,7 @@ one-time, interactive bootstrap runs on your machine (the cert lives there):
 anafpy auth login --client-id <ID> --client-secret <SECRET> \
                   --redirect-uri https://localhost:9002/callback --paste
 anafpy auth status        # show stored token validity
+anafpy auth logout        # remove the stored tokens (signs this machine out)
 ```
 
 Register the callback URL with the **`https://` scheme** — ANAF's developer portal
@@ -125,17 +125,28 @@ callback still doesn't need a public server; pick how the code gets captured:
   CLI falls back to paste mode.
 
 This opens your browser for the certificate step, captures the authorization code,
-exchanges it for tokens, and stores them under
-`~/.anafpy/tokens.json`. Tokens then refresh **headlessly** for ~a year (access token
+exchanges it for tokens, and stores them in the **OS credential store** (macOS
+Keychain, Windows Credential Manager, Linux Secret Service/KWallet — the default
+backend). Tokens then refresh **headlessly** for ~a year (access token
 90 days, refresh token 365 days), so the cert is needed only about once a year. See
 [`docs/anaf-reference/oauth/authentication.md`](docs/anaf-reference/oauth/authentication.md).
 
-Prefer the **OS credential store** (macOS Keychain, Windows Credential Manager,
-Linux Secret Service/KWallet) over a JSON file? Install the `anafpy[keyring]`
-extra and pass `--store-backend keyring` to `auth login` / `auth status` — or set
-`ANAFPY_TOKEN_STORE_BACKEND=keyring`, which the MCP server reads too. On Windows
-the token set is transparently split across vault entries (Credential Manager
-caps one entry at 2560 bytes, smaller than an ANAF JWT).
+To sign out — e.g. when leaving a shared machine — run `anafpy auth logout`. It
+deletes the stored tokens, which is what ends this machine's access: without the
+refresh token it can no longer mint new access tokens. The logout is purely
+local: ANAF documents a `/revoke` endpoint but it is not reachable headlessly
+(live-verified 2026-07-05 — ANAF's gateway answers with its certificate login
+wall, same as for a nonexistent path), so server-side the tokens simply expire
+(access ~90 days, refresh ~365 days); to hard-revoke them use **Renunțare
+Oauth** in ANAF's developer portal (this deletes the app registration).
+
+On a **headless host without a credential store** (Docker, a bare Linux server),
+switch to the JSON-file backend: pass `--store-backend file` to `auth login` /
+`auth status` / `auth logout` — or set `ANAFPY_TOKEN_STORE_BACKEND=file`, which
+the MCP server reads too; the file lives at `~/.anafpy/tokens.json` (`--store` /
+`ANAFPY_TOKEN_STORE` to move it). On Windows the credential store's token set is
+transparently split across vault entries (Credential Manager caps one entry at
+2560 bytes, smaller than an ANAF JWT).
 
 ## Usage
 
@@ -143,14 +154,14 @@ The clients are async and used as context managers. Build a `TokenProvider` over
 stored tokens, then call discrete operations:
 
 ```python
-from anafpy.auth import FileTokenStore, TokenProvider
+from anafpy.auth import KeyringTokenStore, TokenProvider
 from anafpy.efactura import EFacturaClient
 
 provider = TokenProvider(
     client_id="<ID>",
     client_secret="<SECRET>",
-    store=FileTokenStore("~/.anafpy/tokens.json"),
-    # or KeyringTokenStore() for the OS credential store (anafpy[keyring])
+    store=KeyringTokenStore(),  # OS credential store (the default backend)
+    # or FileTokenStore("~/.anafpy/tokens.json") for headless/Docker hosts
 )
 
 async with EFacturaClient(provider) as efactura:

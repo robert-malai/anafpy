@@ -1,10 +1,10 @@
 """Token persistence.
 
-``TokenStore`` is the abstraction the rest of the library depends on; ``FileTokenStore``
-is the batteries-included default (a JSON file with owner-only permissions, suitable for
-mounting as a Docker volume). ``KeyringTokenStore`` keeps the tokens in the OS
-credential store instead (macOS Keychain, Windows Credential Manager, Linux Secret
-Service/KWallet) and needs the ``anafpy[keyring]`` extra.
+``TokenStore`` is the abstraction the rest of the library depends on;
+``KeyringTokenStore`` is the default backend — tokens live in the OS credential store
+(macOS Keychain, Windows Credential Manager, Linux Secret Service/KWallet).
+``FileTokenStore`` (a JSON file with owner-only permissions, suitable for mounting as
+a Docker volume) is the opt-out for headless hosts without a credential store.
 """
 
 from __future__ import annotations
@@ -31,6 +31,8 @@ class TokenStore(Protocol):
 
     def save(self, tokens: TokenSet) -> None: ...
 
+    def clear(self) -> None: ...
+
 
 class MemoryTokenStore:
     """In-process token store (tests, ephemeral runtimes)."""
@@ -43,6 +45,9 @@ class MemoryTokenStore:
 
     def save(self, tokens: TokenSet) -> None:
         self._tokens = tokens
+
+    def clear(self) -> None:
+        self._tokens = None
 
 
 class FileTokenStore:
@@ -83,8 +88,21 @@ class FileTokenStore:
         tmp.chmod(0o600)
         tmp.replace(self.path)
 
+    def clear(self) -> None:
+        """Delete the store file; a no-op when none exists.
 
-_KEYRING_HINT = "install the keyring extra: pip install 'anafpy[keyring]'"
+        Raises:
+            AnafConfigError: the file exists but cannot be removed.
+        """
+        try:
+            self.path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise AnafConfigError(
+                f"cannot remove token store {self.path}: {exc}"
+            ) from exc
+
+
+_KEYRING_HINT = "reinstall anafpy (`keyring` is a core dependency)"
 
 #: Windows Credential Manager caps a secret blob at 2560 bytes and the keyring
 #: backend writes UTF-16, so a token set only fits split into ≤1280-character
@@ -95,17 +113,17 @@ _WINDOWS_CHUNK_CHARS = 1200
 class KeyringTokenStore:
     """Token store in the OS credential store, via the ``keyring`` library.
 
-    Uses the platform's native secret store — macOS Keychain, Windows Credential
-    Manager, or a Linux Secret Service/KWallet daemon. The token set is stored as
-    JSON under ``(service, username)``; a set longer than ``chunk_size`` characters
-    is split across continuation entries (``username#1``, ``#2``, ...), which is
-    what makes Windows work at all (its blob cap is smaller than one ANAF JWT).
-    ``chunk_size=None`` picks the platform default: split on Windows, one entry
-    everywhere else.
+    The default backend. Uses the platform's native secret store — macOS Keychain,
+    Windows Credential Manager, or a Linux Secret Service/KWallet daemon. The token
+    set is stored as JSON under ``(service, username)``; a set longer than
+    ``chunk_size`` characters is split across continuation entries (``username#1``,
+    ``#2``, ...), which is what makes Windows work at all (its blob cap is smaller
+    than one ANAF JWT). ``chunk_size=None`` picks the platform default: split on
+    Windows, one entry everywhere else.
 
-    Requires the ``anafpy[keyring]`` extra; construction fails with
-    :class:`~anafpy.exceptions.AnafConfigError` when the package or a usable OS
-    backend is missing.
+    Construction fails with :class:`~anafpy.exceptions.AnafConfigError` when no
+    usable OS backend exists (e.g. headless Linux without a Secret Service
+    daemon) — use the ``file`` backend there.
     """
 
     def __init__(
@@ -188,5 +206,25 @@ class KeyringTokenStore:
         except KeyringError as exc:
             raise AnafConfigError(
                 f"cannot write the OS credential store (service {self.service!r}): "
+                f"{exc}"
+            ) from exc
+
+    def clear(self) -> None:
+        """Delete the token entries (including continuation chunks); no-op when absent.
+
+        Raises:
+            AnafConfigError: the credential store cannot be read or written.
+        """
+        import keyring
+        from keyring.errors import KeyringError
+
+        try:
+            index = 0
+            while keyring.get_password(self.service, self._entry(index)) is not None:
+                keyring.delete_password(self.service, self._entry(index))
+                index += 1
+        except KeyringError as exc:
+            raise AnafConfigError(
+                f"cannot clear the OS credential store (service {self.service!r}): "
                 f"{exc}"
             ) from exc

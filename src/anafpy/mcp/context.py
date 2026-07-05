@@ -51,8 +51,8 @@ class AppContext:
         self.config = config
         self._provider: TokenProvider | None = None
         if config.client_id is not None and config.client_secret is not None:
-            # A keyring backend without the extra installed fails loudly here,
-            # at server start, rather than on the first authenticated call.
+            # A keyring backend without a usable OS credential store fails loudly
+            # here, at server start, rather than on the first authenticated call.
             store: TokenStore = (
                 KeyringTokenStore()
                 if config.store_backend == "keyring"

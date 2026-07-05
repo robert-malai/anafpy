@@ -151,18 +151,36 @@ Design (layered):
   `state` — its reference flow leaves `state` empty but echoes the parameter back,
   per the recorded redirects). No PKCE: ANAF's documented flow doesn't offer it;
   the client is confidential (secret-authenticated) anyway.
-- **OS-credential-store backend** (added 2026-07-03): `KeyringTokenStore` over the
-  `keyring` library (optional `anafpy[keyring]` extra), selected via
-  `ANAFPY_TOKEN_STORE_BACKEND=keyring` / `--store-backend keyring`. One
+- **OS-credential-store backend** (added 2026-07-03; **made the default
+  2026-07-05**): `KeyringTokenStore` over the `keyring` library, selected via
+  `ANAFPY_TOKEN_STORE_BACKEND` / `--store-backend` (default `keyring`). One
   implementation covers macOS Keychain, Windows Credential Manager, and Linux
   Secret Service/KWallet. Windows caps a credential blob at 2560 bytes (UTF-16,
   so ~1280 chars) — smaller than one ANAF JWT — so the store splits the JSON
   token set across continuation entries (`tokens#1`, `#2`, ...) there and prunes
   stale ones on rewrite; the fallback considered was an MSAL-style DPAPI-encrypted
-  file, rejected as a second platform-specific code path. The file store stays
-  the default (Docker-mountable, no OS daemon needed).
+  file, rejected as a second platform-specific code path. Making it the default
+  promoted `keyring` from an extra to a **core dependency** (a default that may
+  not be installed would be self-contradictory); the file store remains the
+  opt-out for Docker/headless hosts (mountable, no OS daemon needed), and the
+  test suite installs an in-memory fake keyring autouse so tests can never touch
+  a developer's real credential store.
 - **`anafpy auth login`** runs host-side (browser + cert). The MCP server consumes
   the token store and auto-refreshes.
+- **`anafpy auth logout`: purely local** (added 2026-07-05). Logout clears the
+  token store (`TokenStore.clear()`, all backends) and makes **no network call** —
+  that alone ends the machine's access, since without the refresh token no new
+  access tokens can be minted. A best-effort upstream revocation (RFC 7009-shaped
+  POST to `/anaf-oauth2/v1/revoke`) was built first and removed the same day: a
+  live probe (2026-07-05) showed `/revoke` is **not reachable headlessly** —
+  ANAF's F5 gateway 302s to its certificate login wall, byte-identical to a
+  nonexistent path, while `/token` answers OAuth JSON directly (see the oauth
+  reference §3) — and shipping a call that always fails only trains users to
+  ignore its warning. `REVOKE_URL` stays in `auth/oauth.py` as a documented fact;
+  re-adding a revoke call is warranted only if ANAF ever routes the endpoint.
+  An unreadable (corrupt) store is cleared anyway rather than blocking on the
+  parse error. There is deliberately no MCP logout tool — destroying credentials
+  stays a human, CLI-side act.
 
 ### Deployment
 

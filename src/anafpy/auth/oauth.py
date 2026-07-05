@@ -26,6 +26,9 @@ __all__ = [
 
 AUTHORIZE_URL = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize"
 TOKEN_URL = "https://logincert.anaf.ro/anaf-oauth2/v1/token"
+#: Documented by ANAF's PDF but NOT reachable headlessly (live-probed 2026-07-05:
+#: a client-secret-authenticated POST gets the F5 APM login-wall redirect, identical
+#: to a nonexistent path). Kept as a documented fact; nothing in anafpy calls it.
 REVOKE_URL = "https://logincert.anaf.ro/anaf-oauth2/v1/revoke"
 
 
