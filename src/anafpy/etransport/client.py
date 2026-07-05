@@ -262,9 +262,9 @@ class ETransportClient:
         """
         envelope = _load_envelope(body, _ListaEnvelope, "lista")
         errors = envelope.error_messages
-        if errors and not envelope.messages:
-            if all(is_empty_result_message(message) for message in errors):
-                return []
+        # A genuine error raises even when `mesaje` is also present (an undocumented
+        # combination): explicit, rather than silently dropping the error note.
+        if errors and not all(is_empty_result_message(message) for message in errors):
             raise AnafResponseError(
                 f"ANAF e-Transport list error: {'; '.join(errors)}",
                 status_code=200,

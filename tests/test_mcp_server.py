@@ -483,6 +483,26 @@ async def test_prepare_then_submit_files_transport(tmp_path: Path) -> None:
     assert route.called
 
 
+async def test_prepare_unreadable_xml_file_is_reported_not_raised(
+    tmp_path: Path,
+) -> None:
+    # A bad `path` must come back as an invalid PreparedSubmission (the documented
+    # shape), not escape the tool as a raw FileNotFoundError.
+    server = create_server(_config(tmp_path))
+    out = await _call(
+        server, "etransport_prepare", document={"path": str(tmp_path / "missing.xml")}
+    )
+    assert out["valid"] is False
+    assert out["confirmation_token"] is None
+    assert "cannot read XML file" in out["message"]
+
+
+async def test_efactura_list_messages_rejects_unknown_filter(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    with pytest.raises(ToolError, match="unknown `filter`"):
+        await _call(server, "efactura_list_messages", days=5, filter="X")
+
+
 # --- composed e-Transport filings (structured fields, no caller XML) ------------------
 
 _UIT = "0123456789ACDE94"

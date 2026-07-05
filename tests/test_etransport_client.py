@@ -432,6 +432,24 @@ async def test_list_notification_with_error_messages() -> None:
     assert n.messages[1].severity == "WARN"
 
 
+@respx.mock
+async def test_list_notifications_error_alongside_messages_raises() -> None:
+    # An undocumented combination: a genuine error note must not be silently
+    # dropped just because `mesaje` is also present.
+    respx.get(f"{BASE}/lista/5/123").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "mesaje": [{"tip": "NOT", "uit": "3RO1"}],
+                "Errors": [{"errorMessage": "S-a depasit limita zilnica de apeluri"}],
+            },
+        )
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="limita zilnica"):
+            [n async for n in client.list_notifications(days=5, cif="123")]
+
+
 # --- info -----------------------------------------------------------------------------
 
 

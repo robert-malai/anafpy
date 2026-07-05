@@ -244,7 +244,13 @@ def _register_efactura(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None
         filter: str | None = None,
     ) -> dict[str, object]:
         resolved = cfg.require_cif(cif)
-        flt = Filter(filter) if filter else None
+        try:
+            flt = Filter(filter) if filter else None
+        except ValueError as exc:
+            valid = ", ".join(f"{f.value} ({f.name})" for f in Filter)
+            raise AnafConfigError(
+                f"efactura_list_messages: unknown `filter` {filter!r}; one of: {valid}"
+            ) from exc
         messages = [
             m
             async for m in ctx.efactura().list_messages(

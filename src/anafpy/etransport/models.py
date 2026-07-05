@@ -855,16 +855,29 @@ def _read_good(good: BunuriTransportateType) -> FlatTransportGood:
     return FlatTransportGood(
         operation_scope=good.cod_scop_operatiune,
         name=good.denumire_marfa,
-        quantity=Decimal(good.cantitate),
+        quantity=_decimal(good.cantitate),
         unit_code=good.cod_unitate_masura,
-        gross_weight=Decimal(good.greutate_bruta),
-        net_weight=Decimal(good.greutate_neta) if good.greutate_neta else None,
+        gross_weight=_decimal(good.greutate_bruta),
+        net_weight=_decimal(good.greutate_neta) if good.greutate_neta else None,
         tariff_code=good.cod_tarifar,
         value_ron=(
-            Decimal(good.valoare_lei_fara_tva) if good.valoare_lei_fara_tva else None
+            _decimal(good.valoare_lei_fara_tva) if good.valoare_lei_fara_tva else None
         ),
         line_ref=good.ref_declarant,
     )
+
+
+def _decimal(value: str) -> Decimal:
+    """Convert a wire numeric to :class:`Decimal`, raising :class:`ValueError`.
+
+    The XML parser does not enforce the XSD numeric patterns, and a bare
+    ``Decimal(...)`` raises ``decimal.InvalidOperation`` (an ``ArithmeticError``) —
+    outside the ``ValueError`` contract :func:`read_flat_transport` documents.
+    """
+    try:
+        return Decimal(value)
+    except ArithmeticError as exc:
+        raise ValueError(f"invalid numeric value in eTransport XML: {value!r}") from exc
 
 
 # --- build: flat -> XSD models -> wire XML -------------------------------------------

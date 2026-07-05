@@ -9,6 +9,7 @@ all four operations.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from decimal import Decimal
 
 import pytest
@@ -166,6 +167,18 @@ def test_document_type_altele_requires_a_note() -> None:
         FlatTransportDocument.model_validate(base)
     noted = FlatTransportDocument.model_validate(base | {"note": "packing list"})
     assert noted.note == "packing list"
+
+
+def test_read_reports_malformed_wire_numeric_as_value_error() -> None:
+    # The XML parser does not enforce the XSD numeric patterns, so a garbled
+    # numeric reaches the flat translation; it must surface as the documented
+    # ValueError, not leak decimal.InvalidOperation.
+    xml = render_etransport(build_flat_transport(), declarant_code="123").decode()
+    xml = re.sub(r'cantitate="[^"]*"', 'cantitate="abc"', xml)
+    parsed = parse_etransport_document(xml.encode())
+    assert parsed is not None
+    with pytest.raises(ValueError, match="invalid numeric value"):
+        read_flat_transport(parsed)
 
 
 def test_declarant_code_rejects_leading_zero() -> None:

@@ -406,6 +406,16 @@ def test_parse_redirect_url_enforces_expected_state() -> None:
     assert parse_redirect_url("abc", expected_state="s3cret") == "abc"
 
 
+def test_parse_redirect_url_non_ascii_state_is_a_mismatch() -> None:
+    # hmac.compare_digest raises TypeError on non-ASCII *strings*; the check
+    # compares bytes so a garbled/forged state still fails as a state mismatch.
+    with pytest.raises(AnafAuthError, match="state mismatch"):
+        parse_redirect_url(
+            "https://localhost:9002/callback?code=abc&state=béd",
+            expected_state="s3cret",
+        )
+
+
 def test_parse_redirect_url_rejects_garbage() -> None:
     with pytest.raises(AnafAuthError, match="empty input"):
         parse_redirect_url("   ")

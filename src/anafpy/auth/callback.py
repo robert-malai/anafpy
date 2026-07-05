@@ -40,6 +40,13 @@ _PAGE = (
 )
 
 
+def _state_matches(received: str, expected: str) -> bool:
+    """Constant-time ``state`` comparison. Compared as bytes:
+    ``hmac.compare_digest`` raises ``TypeError`` on non-ASCII *strings*, and the
+    received value is attacker-influenced."""
+    return hmac.compare_digest(received.encode("utf-8"), expected.encode("utf-8"))
+
+
 def parse_redirect_url(pasted: str, *, expected_state: str | None = None) -> str:
     """Extract the authorization code from a pasted redirect URL (paste mode).
 
@@ -60,7 +67,7 @@ def parse_redirect_url(pasted: str, *, expected_state: str | None = None) -> str
         query = text.lstrip("?")
     if query:
         params = urllib.parse.parse_qs(query)
-        if expected_state is not None and not hmac.compare_digest(
+        if expected_state is not None and not _state_matches(
             params.get("state", [""])[0], expected_state
         ):
             raise AnafAuthError(
@@ -120,7 +127,7 @@ class CallbackListener:
                     self.end_headers()
                     return
                 query = urllib.parse.parse_qs(url.query)
-                if expected_state is not None and not hmac.compare_digest(
+                if expected_state is not None and not _state_matches(
                     query.get("state", [""])[0], expected_state
                 ):
                     # Not this login attempt's redirect: refuse it and keep
@@ -134,11 +141,15 @@ class CallbackListener:
                 else:
                     result["error"] = query.get("error", ["unknown_error"])[0]
                     msg = b"Authorization failed."
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(_PAGE % msg)
-                done.set()
+                # The outcome is captured; release the waiter even if the browser
+                # drops the connection before the response page is written.
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(_PAGE % msg)
+                finally:
+                    done.set()
 
         try:
             self._server = ThreadingHTTPServer((host, port), Handler)

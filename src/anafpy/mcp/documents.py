@@ -27,14 +27,21 @@ __all__ = ["resolve_xml", "transport_view", "upload_standard"]
 def resolve_xml(document: UblXmlInput | EtransportXmlInput) -> bytes:
     """Read an XML pass-through input to UTF-8 bytes ready to upload.
 
-    Raises :class:`AnafConfigError` when neither or both of ``xml`` / ``path`` are set.
+    Raises :class:`AnafConfigError` when neither or both of ``xml`` / ``path`` are
+    set, or when ``path`` cannot be read — stay in the AnafError hierarchy instead
+    of leaking a raw OS error out of a tool.
     """
     if document.xml and document.path:
         raise AnafConfigError("set only one of `xml` / `path`, not both")
     if document.xml:
         return document.xml.encode("utf-8")
     if document.path:
-        return Path(document.path).expanduser().read_bytes()
+        try:
+            return Path(document.path).expanduser().read_bytes()
+        except OSError as exc:
+            raise AnafConfigError(
+                f"cannot read XML file {document.path!r}: {exc}"
+            ) from exc
     raise AnafConfigError("one of `xml` / `path` is required")
 
 
