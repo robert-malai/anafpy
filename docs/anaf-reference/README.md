@@ -22,4 +22,4 @@ are the authority on any discrepancy.
 
 - `_sources/` — raw originals (PDFs/HTML/XSD/Schematron), never edited or LLM-rewritten.
 - Each doc cites provenance **per section** so claims are spot-checkable.
-- Regeneration: see the docs process in [`/DESIGN.md`](../../DESIGN.md) §6.
+- Regeneration: see the docs process in [`/DESIGN.md`](../../DESIGN.md) §7.
