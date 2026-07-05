@@ -367,6 +367,10 @@ results.
   commands, conventions), [DESIGN.md](DESIGN.md) (design decisions), and
   `docs/anaf-reference/` (only when ANAF API facts change — keep its provenance
   frontmatter intact). Don't let docs drift behind the code.
+- **Repo boundary**: this repo is the whole project (typed clients + local stdio MCP
+  server + skills + docs) and is intended to be publishable. Never add hosted-service
+  code here — token custody, multi-tenancy, and an OAuth-provider surface toward
+  Claude are out of scope (DESIGN.md §11, decided 2026-07-04).
 - Don't commit, push, or create branches/PRs unless asked.
 - The remote is `github.com/robert-malai/anafpy`. There is no CI workflow yet
   (planned, not done).
