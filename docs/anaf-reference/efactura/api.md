@@ -25,7 +25,7 @@ sources:
     local_copy: ../_sources/limiteApeluriAPI.txt
 compiled: 2026-06-28
 compiled_by: claude-opus-4-8
-last_verified: 2026-07-02
+last_verified: 2026-07-07
 status: draft
 ---
 
@@ -158,9 +158,24 @@ GET .../listaMesajePaginatieFactura?startTime={ms}&endTime={ms}&cif={cif}&pagina
 `R`=MESAJ CUMPĂRĂTOR PRIMIT / MESAJ CUMPĂRĂTOR TRANSMIS (both directions).
 
 **Response fields (per message):** `data_creare`, `cif`, `id_solicitare` (the upload
-index), `detalii`, `cif_emitent` (seller), `cif_beneficiar` (buyer), `tip`
+index), `detalii`, `tip`
 (`FACTURA TRIMISA` | `FACTURA PRIMITA` | `ERORI FACTURA` | `MESAJ CUMPARATOR …`), and
-**`id`** (used by `descarcare`).
+**`id`** (used by `descarcare`) — the six properties of the swagger `Mesaj` schema.
+
+**`cif_emitent` / `cif_beneficiar` are documented but never sent.** The API PDF
+(pp. 3–4) lists them among "Parametrii raspuns" for both list endpoints
+(`cif_emitent` = seller, `cif_beneficiar` = buyer), but the swagger `Mesaj` schema
+omits them, and a **production** pull of 522 messages (2026-07-06) contained no such
+JSON keys on any message. Both online sources re-fetched 2026-07-07 and found
+byte-identical to the vendored copies — the conflict is ANAF's, and per this doc's
+source hierarchy the swagger wins. The CIFs ride only inside the free-text `detalii`,
+in (at least) three wordings (first two live-observed in production, third from the
+swagger examples):
+
+- `Factura cu id_incarcare={id} emisa de cif_emitent={seller} pentru cif_beneficiar={buyer}`
+- `Factura cu id_incarcare={id} transmisa de cif={buyer} ca autofactura in numele cif={seller}`
+  (self-billing: the buyer issues on the supplier's behalf)
+- `Erori de validare identificate la factura primita cu id_incarcare={id}` (no CIFs)
 
 **Response envelope (paginated, 3b)** — alongside `mesaje[]`:
 `numar_inregistrari_in_pagina`, `numar_total_inregistrari_per_pagina` (500),
@@ -182,8 +197,14 @@ else (`CIF … nu este un numar`, `Nu aveti drept in SPV pentru CIF=…`, invali
 `startTime`/`endTime`/`pagina`/`filtru`, page > total pages, daily call limit reached)
 is a genuine error.
 
-> Provenance: PDF pp. 2–4; envelope + `eroare` catalog from the lista swagger
-> ([listamesaje.html](../_sources/efactura-swagger/listamesaje.html)).
+> `anafpy`: `MessageListItem` keeps `sender_cif`/`receiver_cif` as optional aliases
+> for the PDF-documented keys (wire wins if ANAF ever sends them); when absent it
+> extracts them (best-effort) from the first two `detalii` wordings above, leaving
+> `None` for wordings that carry no CIFs.
+>
+> Provenance: PDF pp. 2–4; envelope + `eroare` catalog + `Mesaj` schema from the lista
+> swagger ([listamesaje.html](../_sources/efactura-swagger/listamesaje.html));
+> `cif_emitent`/`cif_beneficiar` absence live-confirmed in production 2026-07-06.
 
 ## 4. Download — `GET /FCTEL/rest/descarcare`
 

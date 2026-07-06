@@ -11,13 +11,14 @@ The richer document models (``Invoice``/``CreditNote``) are the generated UBL ty
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from decimal import Decimal
 from enum import StrEnum
 from functools import cached_property
 from typing import Annotated, Any, cast
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from .ubl.maindoc import CreditNote, Invoice
 
@@ -125,12 +126,30 @@ class SignatureValidationResult(BaseModel):
     raw: bytes = b""
 
 
+# The list endpoints never emit cif_emitent/cif_beneficiar as JSON keys despite
+# ANAF's API PDF listing them as response fields (live-confirmed in production
+# 2026-07-06; the swagger Mesaj schema agrees) — the CIFs ride only inside the
+# free-text `detalii`, in these known wordings.
+_DETAILS_INVOICE = re.compile(r"emisa de cif_emitent=(\d+) pentru cif_beneficiar=(\d+)")
+# Self-billing: the buyer transmits the invoice on the supplier's behalf, so the
+# "in numele" party is the seller. Whitespace is \s+ — production shows a double
+# space before "ca autofactura".
+_DETAILS_SELF_BILLED = re.compile(
+    r"transmisa de cif=(\d+)\s+ca autofactura in numele cif=(\d+)"
+)
+
+
 class MessageListItem(BaseModel):
     """One entry from a message-list response.
 
     Descriptive field names, with ANAF's wire names kept as validation aliases
     (``data_creare`` -> ``created_at``, ...); values are read verbatim.
     ``populate_by_name`` lets callers also construct by the field names.
+
+    ``sender_cif``/``receiver_cif`` are documented by ANAF's API PDF but never sent
+    on the wire; when absent they are extracted (best-effort) from the ``details``
+    prose, staying ``None`` for wordings that carry no CIFs (``ERORI FACTURA``,
+    buyer messages).
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -143,6 +162,26 @@ class MessageListItem(BaseModel):
     sender_cif: _StrNone = Field(default=None, alias="cif_emitent")
     receiver_cif: _StrNone = Field(default=None, alias="cif_beneficiar")
     details: _StrNone = Field(default=None, alias="detalii")
+
+    @model_validator(mode="after")
+    def _fill_cifs_from_details(self) -> MessageListItem:
+        """Best-effort ``sender_cif``/``receiver_cif`` extraction from ``details``.
+
+        Wire values win: runs only when both fields are unset, so if ANAF ever
+        starts emitting the documented keys the aliases take precedence. Never
+        raises — an unrecognised wording just leaves the fields ``None``.
+        """
+        if self.sender_cif is not None or self.receiver_cif is not None:
+            return self
+        if not self.details:
+            return self
+        if match := _DETAILS_INVOICE.search(self.details):
+            self.sender_cif, self.receiver_cif = match.groups()
+        elif match := _DETAILS_SELF_BILLED.search(self.details):
+            # Swapped on purpose: the transmitter is the buyer, the seller is the
+            # "in numele" party — sender_cif keeps its cif_emitent (seller) meaning.
+            self.receiver_cif, self.sender_cif = match.groups()
+        return self
 
 
 def parse_ubl_document(xml: bytes) -> Invoice | CreditNote | None:

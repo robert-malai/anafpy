@@ -24,6 +24,7 @@ from anafpy.efactura import (
     EFacturaClient,
     Filter,
     Invoice,
+    MessageListItem,
     MessageState,
     UploadStandard,
 )
@@ -427,6 +428,75 @@ def test_list_messages_window_args_are_validated() -> None:
         client.list_messages(cif="1")
     with pytest.raises(AnafConfigError):  # out-of-range days
         client.list_messages(cif="1", days=61)
+
+
+# --- MessageListItem: CIF fallback from `detalii` -------------------------------------
+
+# The wire never carries cif_emitent/cif_beneficiar (live-confirmed in production
+# 2026-07-06, despite the API PDF listing them) — the model extracts them from the
+# `detalii` prose. Wordings below are verbatim production/swagger samples.
+
+
+def test_message_list_item_extracts_cifs_from_details() -> None:
+    item = MessageListItem.model_validate(
+        {
+            "id": "7424075633",
+            "id_solicitare": "6330291057",
+            "tip": "FACTURA PRIMITA",
+            "detalii": (
+                "Factura cu id_incarcare=6330291057 emisa de "
+                "cif_emitent=5990324 pentru cif_beneficiar=7323483"
+            ),
+        }
+    )
+    assert item.sender_cif == "5990324"
+    assert item.receiver_cif == "7323483"
+
+
+def test_message_list_item_self_billed_wording_swaps_parties() -> None:
+    # The "in numele" party is the supplier — sender_cif keeps its seller meaning.
+    # ANAF emits a double space before "ca autofactura"; kept verbatim.
+    item = MessageListItem.model_validate(
+        {
+            "tip": "FACTURA TRIMISA",
+            "detalii": (
+                "Factura cu id_incarcare=6471405871 transmisa de cif=18680651 "
+                " ca autofactura in numele cif=7323483"
+            ),
+        }
+    )
+    assert item.sender_cif == "7323483"
+    assert item.receiver_cif == "18680651"
+
+
+def test_message_list_item_error_wording_leaves_cifs_none() -> None:
+    item = MessageListItem.model_validate(
+        {
+            "tip": "ERORI FACTURA",
+            "detalii": (
+                "Erori de validare identificate la factura primita cu "
+                "id_incarcare=5001130147"
+            ),
+        }
+    )
+    assert item.sender_cif is None
+    assert item.receiver_cif is None
+
+
+def test_message_list_item_wire_cifs_win_over_details() -> None:
+    # If ANAF ever starts sending the documented keys, they take precedence.
+    item = MessageListItem.model_validate(
+        {
+            "cif_emitent": "111",
+            "cif_beneficiar": "222",
+            "detalii": (
+                "Factura cu id_incarcare=1 emisa de cif_emitent=999 "
+                "pentru cif_beneficiar=888"
+            ),
+        }
+    )
+    assert item.sender_cif == "111"
+    assert item.receiver_cif == "222"
 
 
 # --- validate_signature ---------------------------------------------------------------
