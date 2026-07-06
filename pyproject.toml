@@ -7,7 +7,7 @@ name = "anafpy"
 version = "0.0.1"
 description = "Typed Python clients for Romania's ANAF web services: e-Factura, e-Transport, and the public no-auth registries."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Robert Malai" }]
@@ -16,7 +16,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Financial :: Accounting",
     "Typing :: Typed",
@@ -76,7 +75,7 @@ packages = ["src/anafpy"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py312"
+target-version = "py313"
 src = ["src", "tests"]
 # Generated model packages are formatted by their regeneration scripts, not linted.
 extend-exclude = ["src/anafpy/efactura/ubl", "src/anafpy/etransport/schema"]
@@ -85,7 +84,7 @@ extend-exclude = ["src/anafpy/efactura/ubl", "src/anafpy/etransport/schema"]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PTH", "RUF"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 files = ["src", "tests"]
 # Generated UBL/e-Transport model packages are excluded from strict typing.

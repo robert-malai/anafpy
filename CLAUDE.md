@@ -28,7 +28,7 @@ as-is**: the library is for anyone to use; the MCP server is **best-effort**, an
 configuring it — including provisioning the OAuth application on ANAF's portal —
 is the user's responsibility (DESIGN.md §11).
 
-Python **3.12+** (test 3.12 and 3.13). Built on **httpx** and **Pydantic v2**.
+Python **3.13+**. Built on **httpx** and **Pydantic v2**.
 
 ## Commands
 

@@ -47,7 +47,7 @@ moves documents to and from ANAF; it does not compose them.
   indices, message ids, and statuses. Discrete one-call-one-result methods, no
   transport retry.
 
-Python **3.12+**, **httpx**, **Pydantic v2**.
+Python **3.13+**, **httpx**, **Pydantic v2**.
 
 Out of scope: invoice composition / structured authoring **of e-Factura UBL**
 (e-Transport authoring is in scope — see above); local persistence of documents;
@@ -424,7 +424,7 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
 
 - **uv** (deps + lockfile), **hatchling** (build), **ruff** (lint+format),
   **mypy `--strict`**, **pytest** + **pytest-asyncio** + **respx**, **pre-commit**.
-- **SemVer**, pre-1.0 (`0.x`). Support + test **3.12 and 3.13**.
+- **SemVer**, pre-1.0 (`0.x`). Support + test **3.13**.
 - **License: Apache-2.0** (explicit patent grant; ship `NOTICE`).
 - **CI: GitHub Actions** (lint + type + test matrix; later publish-to-PyPI) —
   planned, not done.

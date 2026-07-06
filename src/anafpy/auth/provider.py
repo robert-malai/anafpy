@@ -116,7 +116,7 @@ class AnafAuth(httpx.Auth):
 
     def sync_auth_flow(
         self, request: httpx.Request
-    ) -> Generator[httpx.Request, httpx.Response, None]:
+    ) -> Generator[httpx.Request, httpx.Response]:
         raise AnafConfigError("anafpy auth is async-only; use an httpx.AsyncClient")
         yield request  # unreachable; makes this a generator to satisfy httpx.Auth
 

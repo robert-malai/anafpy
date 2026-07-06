@@ -16,6 +16,48 @@ fully enumerated) schema into friendly typed models — you author declarations,
 deletions, confirmations, and vehicle changes from structured fields, no XML handling
 needed, and the same models render what you read back.
 
+## What can you do with this?
+
+With the MCP server connected to a Claude client (Claude Desktop, Claude Code), an
+accountant in Romania can ask Claude to:
+
+**Check partners and public data — no login required** (these ride ANAF's public,
+no-auth services):
+
+- **Verify a business partner by CUI/CIF** — name, address, VAT status (plătitor de
+  TVA), TVA la încasare, split-VAT, inactive flag — one call, in bulk if you like.
+- **Check whether a partner is enrolled in RO e-Factura.**
+- **Look up the farmers' register (RegAgric) and religious-entities register (RegCult).**
+- **Pull a company's filed financial statements (bilanț)** for a given year.
+- **Validate an invoice XML** against ANAF's authoritative server-side `validare`
+  (CIUS-RO / BR-RO rules) — no filing.
+
+**Work your e-Factura inbox — read-only** (needs the certificate login):
+
+- **List received and sent invoice messages** for a date window.
+- **Download an invoice** as an easy-to-read view, and **save the official signed ZIP
+  and/or a rendered PDF** to disk — powering batch flows like "export last month's
+  invoices as `<date> - <partner>.pdf`".
+
+> Issuing outbound invoices is deliberately **not** here — that comes from your
+> invoicing software, which files with ANAF directly. The e-Factura surface is read-only.
+
+**Declare goods transport in e-Transport — with a confirmation step** (needs the login):
+
+- **File a declaration and get a UIT code** from transport data in any source — an
+  email, a PDF invoice, a CMR, a spreadsheet — and **correct, delete, confirm, or
+  change the vehicle** on an existing one.
+- **List recent notifications, check an upload's status, and look up active
+  declarations / UIT codes.**
+- Filing is **two-step gated**: Claude shows you a preview, and nothing is submitted to
+  ANAF until you explicitly confirm.
+
+Setup caveats worth knowing: the e-Factura and e-Transport tools need a one-time login
+with your **qualified digital certificate** (the same one you use on ANAF's SPV) — the
+public checks above work without it. The server runs **locally** on your own machine,
+so downloaded invoices and PDFs land on your own filesystem. See
+[`INSTALL.md`](INSTALL.md) for the full Claude Desktop + ANAF setup walkthrough.
+
 > Status: **early / alpha** (`0.x`), not yet published to PyPI. The OAuth2 auth layer,
 > both async clients (with an easy-to-read flat view of downloaded documents), and the
 > MCP server (structured e-Transport filing and a read-only e-Factura surface —
@@ -25,7 +67,7 @@ needed, and the same models render what you read back.
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
 > APIs.
 
-Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
+Requires **Python 3.13+**. Built on **httpx** and **Pydantic v2**.
 
 ## What works today
 
