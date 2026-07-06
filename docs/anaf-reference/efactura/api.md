@@ -153,6 +153,11 @@ GET .../listaMesajeFactura?zile={1..60}&cif={cif}[&filtru={E|T|P|R}]
 GET .../listaMesajePaginatieFactura?startTime={ms}&endTime={ms}&cif={cif}&pagina={n}[&filtru=...]
 ```
 `startTime`/`endTime` = **unix-timestamp milliseconds** (e.g. `1646037374000`).
+Range rules (per the lista swagger's error catalog): `endTime` cannot be before
+`startTime` ("endTime nu poate fi inainte de startTime"), cannot be in the future
+("nu poate fi o data din viitor"), and `startTime` cannot be older than 60 days
+from the request moment ("nu poate fi mai vechi de 60 de zile fata de momentul
+requestului") — messages are retained for 60 days.
 
 **`filtru`** (optional): `E`=ERORI FACTURA, `T`=FACTURA TRIMISĂ, `P`=FACTURA PRIMITĂ,
 `R`=MESAJ CUMPĂRĂTOR PRIMIT / MESAJ CUMPĂRĂTOR TRANSMIS (both directions).
@@ -197,7 +202,11 @@ else (`CIF … nu este un numar`, `Nu aveti drept in SPV pentru CIF=…`, invali
 `startTime`/`endTime`/`pagina`/`filtru`, page > total pages, daily call limit reached)
 is a genuine error.
 
-> `anafpy`: `MessageListItem` keeps `sender_cif`/`receiver_cif` as optional aliases
+> `anafpy`: `list_messages` validates the window rules above client-side
+> (`AnafConfigError`, raised eagerly before any request) — they are unconditional
+> and documented, so failing locally with an English message beats spending a
+> round-trip on a 200-with-`eroare`.
+> `MessageListItem` keeps `sender_cif`/`receiver_cif` as optional aliases
 > for the PDF-documented keys (wire wins if ANAF ever sends them); when absent it
 > extracts them (best-effort) from the first two `detalii` wordings above, leaving
 > `None` for wordings that carry no CIFs.

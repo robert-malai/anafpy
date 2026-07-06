@@ -82,6 +82,11 @@ def _resolve_window(
     """Normalise the requested window to a ``(start_ms, end_ms)`` pair.
 
     Exactly one of ``days`` (1-60) or both ``start`` and ``end`` must be given.
+    The range form mirrors ANAF's own documented rules for
+    ``listaMesajePaginatieFactura`` (the lista swagger's error catalog): ``end``
+    not before ``start``, ``end`` not in the future, and ``start`` at most 60
+    days before the request — ANAF retains e-Factura messages for 60 days, so
+    an older window can never match anything.
     """
     has_days = days is not None
     has_range = start is not None or end is not None
@@ -96,7 +101,18 @@ def _resolve_window(
         end_ms = int(time.time() * 1000)
         return end_ms - days * 86_400_000, end_ms
     if start is not None and end is not None:
-        return _to_ms(start), _to_ms(end)
+        start_ms, end_ms = _to_ms(start), _to_ms(end)
+        now_ms = int(time.time() * 1000)
+        if end_ms < start_ms:
+            raise AnafConfigError("list_messages: `end` cannot be before `start`")
+        if end_ms > now_ms:
+            raise AnafConfigError("list_messages: `end` cannot be in the future")
+        if start_ms < now_ms - 60 * 86_400_000:
+            raise AnafConfigError(
+                "list_messages: `start` cannot be older than 60 days — ANAF "
+                "retains e-Factura messages for 60 days"
+            )
+        return start_ms, end_ms
     raise AnafConfigError("list_messages: pass `days` or both `start` and `end`")
 
 
@@ -300,7 +316,11 @@ class EFacturaClient:
 
         Specify the window with **either** ``days`` (1-60) **or** both ``start`` and
         ``end`` (datetimes; a naive one is interpreted in the machine's local
-        timezone — pass timezone-aware values to be explicit). Yields each
+        timezone — pass timezone-aware values to be explicit). Either way the
+        window must lie within the last 60 days — ANAF retains e-Factura
+        messages for 60 days and rejects older ``start`` values — and ``end``
+        may be neither before ``start`` nor in the future; violations raise
+        :class:`AnafConfigError` locally, before any request. Yields each
         :class:`MessageListItem` across all pages of
         ``listaMesajePaginatieFactura``; an empty window yields nothing.
 

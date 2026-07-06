@@ -30,7 +30,9 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         annotations=READ_ONLY,
         description="List e-Factura messages (sent/received/errors) for a fiscal code. "
         "Give a window as EITHER `days` (1-60) OR an ISO `start`+`end` date range "
-        "(e.g. '2026-06-01'); all pages are fetched and flattened automatically.",
+        "(e.g. '2026-06-01'); all pages are fetched and flattened automatically. "
+        "ANAF retains messages for 60 days, so the window must lie within the "
+        "last 60 days and `end` may be neither before `start` nor in the future.",
     )
     async def efactura_list_messages(
         cif: str | None = None,

@@ -8,7 +8,7 @@ import json
 import time
 import zipfile
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -171,12 +171,15 @@ async def test_efactura_list_messages_date_range(tmp_path: Path) -> None:
         ]
     )
     server = create_server(_config(tmp_path))
+    # Relative to now so the range always sits inside ANAF's 60-day retention.
+    end = datetime.now() - timedelta(days=1)
+    start = end - timedelta(days=28)
     out = await _call(
-        server, "efactura_list_messages", start="2026-06-01", end="2026-06-29"
+        server, "efactura_list_messages", start=start.isoformat(), end=end.isoformat()
     )
     assert out["count"] == 1
     params = dict(route.calls[0].request.url.params)
-    assert params["startTime"] == str(int(datetime(2026, 6, 1).timestamp() * 1000))
+    assert params["startTime"] == str(int(start.timestamp() * 1000))
 
 
 def _download_zip() -> bytes:

@@ -307,8 +307,9 @@ async def test_list_messages_days_window_drives_paginated_endpoint() -> None:
 
 @respx.mock
 async def test_list_messages_explicit_range_passes_exact_ms() -> None:
-    start = datetime(2026, 6, 1, tzinfo=UTC)
-    end = datetime(2026, 6, 29, tzinfo=UTC)
+    # Relative to now so the range always sits inside ANAF's 60-day retention.
+    end = datetime.now(tz=UTC) - timedelta(days=1)
+    start = end - timedelta(days=28)
     route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
         return_value=httpx.Response(200, json={"mesaje": []})
     )
@@ -416,18 +417,33 @@ async def test_list_messages_json_array_body_raises_anaf_error() -> None:
 
 
 def test_list_messages_window_args_are_validated() -> None:
+    # All raised eagerly, before any request — no respx mock is installed, so a
+    # request slipping through would fail loudly.
+    now = datetime.now(tz=UTC)
     client = _client()
     with pytest.raises(AnafConfigError):  # both windows
         client.list_messages(
             cif="1",
             days=5,
-            start=datetime(2026, 6, 1, tzinfo=UTC),
-            end=datetime(2026, 6, 2, tzinfo=UTC),
+            start=now - timedelta(days=2),
+            end=now - timedelta(days=1),
         )
     with pytest.raises(AnafConfigError):  # no window
         client.list_messages(cif="1")
     with pytest.raises(AnafConfigError):  # out-of-range days
         client.list_messages(cif="1", days=61)
+    with pytest.raises(AnafConfigError, match="before `start`"):
+        client.list_messages(
+            cif="1", start=now - timedelta(days=1), end=now - timedelta(days=2)
+        )
+    with pytest.raises(AnafConfigError, match="in the future"):
+        client.list_messages(
+            cif="1", start=now - timedelta(days=1), end=now + timedelta(days=1)
+        )
+    with pytest.raises(AnafConfigError, match="older than 60 days"):
+        client.list_messages(
+            cif="1", start=now - timedelta(days=61), end=now - timedelta(days=1)
+        )
 
 
 # --- MessageListItem: CIF fallback from `detalii` -------------------------------------
