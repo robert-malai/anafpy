@@ -102,7 +102,10 @@ src/anafpy/
     nomenclatures.py     # e-Transport code lists (from the XSD enums) for the model
     skills.py            # skills/*/SKILL.md loader (frontmatter + body) for MCP prompts
     tokens.py            # HMAC confirmation tokens for two-step gated mutations
-    server.py            # FastMCP server: tools + resources + prompts; `create_server`, `main`
+    server/              # FastMCP server package: app.py (`create_server`, `main`,
+                         # auth_status + instructions), tool modules efactura.py /
+                         # etransport.py / public.py, resources.py (ANAF reference),
+                         # prompts.py (skills), _shared.py (tool annotations)
     __main__.py          # `python -m anafpy.mcp` (stdio)
 skills/                  # workflow skills, served by the MCP server as same-name
                          # prompts (etransport-declare: source data -> FlatTransport
