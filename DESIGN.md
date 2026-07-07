@@ -456,20 +456,56 @@ Still open:
 
 ## 11. Distribution
 
-> Decided 2026-07-02. anafpy is distributed **free and as-is**, for anyone to use.
+> Decided 2026-07-02, revised 2026-07-07. anafpy is distributed **free and
+> as-is**, for anyone to use.
 
-The package is provided **as-is** under Apache-2.0 — no warranty, no service
-obligations. The thin-transport scope of §1 is also the legal posture: anafpy
-moves documents, it does not give tax advice, and filing outcomes are the user's
-responsibility. The **MCP server is best-effort**: installing it, configuring the
-environment, provisioning the OAuth application on ANAF's portal, and holding the
-qualified certificate are the user's responsibility.
+**The stance.** The package is provided **as-is** under Apache-2.0 — no warranty,
+no service obligations. The thin-transport scope of §1 is also the legal posture:
+anafpy moves documents, it does not give tax advice, and filing outcomes are the
+user's responsibility. The **MCP server is best-effort**: installing it,
+configuring the environment, provisioning the OAuth application on ANAF's portal,
+and holding the qualified certificate are the **user's responsibility** —
+[INSTALL.md](INSTALL.md) walks through all of it.
 
-The MCP server is and stays a **local stdio server**: tool calls run on the
-user's machine against the user's own tokens — the zero-custody design of §3
-Deployment. Hosted-service code (token custody, multi-tenancy, an OAuth-provider
-surface toward Claude) is out of scope.
+**Local-only, by design.** The MCP server is and stays a **local stdio server**:
+tool calls run on the user's machine against the user's own tokens — the
+zero-custody design of §3 Deployment. A hosted remote server would mean accepting
+**token custody** — per-user encrypted token storage, single-flight refresh
+locking (ANAF rotates the refresh token; a refresh race between replicas bricks
+the grant), a web-initiated OAuth bootstrap with session binding, and a second
+OAuth surface (an OAuth *provider* to the connecting client while remaining an
+OAuth *client* to ANAF) — and it could not drive the qualified-certificate step
+anyway. **No hosted-service code lands in this repo** (decided 2026-07-04): token
+custody, multi-tenancy, and an OAuth-provider surface toward Claude are out of
+scope.
+
+**Practicalities** (non-blocking — the tool is already usable from a checkout):
+
+- **PyPI release + CI + SemVer discipline + security policy** (§9 — planned,
+  not done).
+- **Contribution terms** — Apache-2.0; settle CLA vs DCO before accepting
+  external PRs.
+- **Naming** — `anafpy` is fine as a library name; anything distributed more
+  widely under the tax authority's name risks implying unauthorized affiliation
+  and would need its own name.
 
 **Audience bound that no packaging removes:** every user needs a qualified
 certificate and their own ANAF OAuth app registration, capping the audience at
 people who already deal with ANAF professionally.
+
+**Distribution vehicles:** the MCP server registered
+straight from a source checkout — `claude mcp add anafpy -- uv run --directory
+<checkout> --frozen --extra mcp anafpy-mcp` — so no PyPI release is needed and the
+locked deps travel with the checkout. *(A Claude Code plugin — `.claude-plugin/`
+manifests making the repo its own single-plugin marketplace — shipped 2026-07-03
+and was **REMOVED the same day** in favor of plain MCP registration; don't
+reintroduce it without a new decision here.)* The workflow **skills** under
+`skills/` reach consumers as the MCP server's same-name prompts (§8) — the first
+is `etransport-declare` (extract transport data from any source → map to
+`FlatTransport` → prepare → human approval → submit → poll), which encodes the
+regulatory guardrails (2.5 t / 500 kg / 10,000 RON scope check, 3-days-before and
+5-vs-15-day UIT validity windows) and the never-invent-a-value /
+never-self-approve rules the two-step gate assumes. After the PyPI release: an
+MCPB bundle for Claude Desktop (`server.type: "uv"` so the host manages Python;
+`user_config` with `sensitive` fields → OS keychain, mapped onto the existing
+`ANAFPY_*` env vars) — a thin wrapper over `anafpy[mcp]`.

@@ -282,8 +282,10 @@ async with PublicClient() as public:
 ## MCP server
 
 The `anafpy[mcp]` extra ships a **local stdio MCP server** that wraps the clients as
-Cowork skills. Run it host-side, where the token store written by `anafpy auth login`
-lives:
+Cowork skills. The server is **best-effort**: configuring it — including registering
+your own OAuth application on ANAF's portal — is your responsibility, and
+[INSTALL.md](INSTALL.md) walks you through every step. Run it host-side, where the
+token store written by `anafpy auth login` lives:
 
 ```bash
 ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
@@ -374,3 +376,9 @@ See [`CLAUDE.md`](CLAUDE.md) for repository conventions.
 ## License
 
 [Apache-2.0](LICENSE). Independent / unofficial — not affiliated with ANAF.
+
+anafpy is free to use and provided **as-is**, with no warranty: it moves documents
+to and from ANAF, it does not give tax advice, and filing outcomes are your
+responsibility. The MCP server is **best-effort** — configuring it, provisioning
+your own OAuth application on ANAF's portal, and holding the qualified certificate
+are up to you ([INSTALL.md](INSTALL.md) walks through all of it).

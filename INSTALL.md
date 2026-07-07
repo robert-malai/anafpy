@@ -28,6 +28,11 @@ You need:
   the firm through SPV, this is done.
 - The firm's **CUI** (fiscal code).
 
+One thing to know up front: anafpy is free and provided **as-is**, and support is
+best-effort. The application you register on ANAF's portal in step 1 is **your
+own** — it identifies you to ANAF, nobody operates it on your behalf, and keeping
+it (and your certificate) in order is your responsibility.
+
 ## Step 1 — Register an OAuth application on ANAF's portal
 
 ANAF requires every program that calls its APIs to be registered. You do this once,
