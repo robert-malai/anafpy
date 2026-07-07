@@ -34,7 +34,7 @@ status: draft
 Operations for the RO e-Factura system. Authentication is the shared
 [OAuth2 flow](../oauth/authentication.md) (Bearer token). Invoice **format** is UBL 2.1
 / CIUS-RO; **validation** is ANAF's server-side `validare` endpoint (§5) — `anafpy`
-deliberately has no local rule engine (see `/docs/design.md` §4). This doc is the
+deliberately has no local rule engine (see `/DESIGN.md` §4). This doc is the
 **transport/API surface**.
 
 > **Status:** draft, compiled from the official 5-page API PDF (current as linked from

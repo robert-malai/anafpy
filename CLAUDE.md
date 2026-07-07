@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for working in this repository. See [docs/design.md](docs/design.md) for the full
+Guidance for working in this repository. See [DESIGN.md](DESIGN.md) for the full
 design rationale and [docs/anaf-reference/](docs/anaf-reference/) for a compiled local
 reference of ANAF's APIs. `docs/` is also the MkDocs source tree for the public
 documentation site (Read the Docs, `https://anafpy.readthedocs.io`).
@@ -27,7 +27,7 @@ Claude Cowork skills. The client methods map 1:1 onto MCP tools — discrete ope
 serializable typed inputs/outputs, good docstrings. Distribution is **free and
 as-is**: the library is for anyone to use; the MCP server is **best-effort**, and
 configuring it — including provisioning the OAuth application on ANAF's portal —
-is the user's responsibility (docs/design.md §11).
+is the user's responsibility (DESIGN.md §11).
 
 Python **3.12+** (`requires-python`; the repo `.python-version` dev pin stays 3.13).
 Built on **httpx** and **Pydantic v2**.
@@ -122,7 +122,6 @@ docs/                    # MkDocs source tree for the docs site (mkdocs.yml at r
   mcp/                   # setup.md (the end-user walkthrough, ex-INSTALL.md), tools.md, skills.md
   library/               # quickstart, auth, efactura, etransport, public, errors guides
   api/                   # mkdocstrings pages over the hand-written public modules
-  design.md              # design rationale (ex-repo-root DESIGN.md)
   anaf-reference/        # compiled ANAF API reference (oauth/efactura/etransport/public);
                          # ALSO served as MCP resources (ANAFPY_DOCS_DIR default) — don't move it
 tests/                   # respx-mocked unit tests (+ opt-in live: test_public_live.py, test_oauth_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST)
@@ -290,7 +289,7 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   that: the e-Transport flat models carry **field-level shape checks** — the XSD
   constraints tightened by the *unconditional* rules of ANAF's e-Transport
   Schematron (UIT check digits, gross ≥ net, `ALTELE` needs a note, ...; the list
-  is in docs/design.md §5) — which fail at model construction as data hygiene. The
+  is in DESIGN.md §5) — which fail at model construction as data hygiene. The
   Schematron's operation-type *conditional* rules stay ANAF's and appear only as
   field descriptions.
 
@@ -389,14 +388,14 @@ results.
   accountant audience: ANAF app registration, cert login, Claude/Cowork config;
   [docs/mcp/tools.md](docs/mcp/tools.md) + [docs/mcp/skills.md](docs/mcp/skills.md)
   — the MCP surface; `docs/library/*` — the library guides), this `CLAUDE.md`
-  (layout, commands, conventions), [docs/design.md](docs/design.md) (design
+  (layout, commands, conventions), [DESIGN.md](DESIGN.md) (design
   decisions), and `docs/anaf-reference/` (only when ANAF API facts change — keep
   its provenance frontmatter intact). A new page goes into `mkdocs.yml`'s `nav`.
   Don't let docs drift behind the code.
 - **Repo boundary**: this repo is the whole project (typed clients + local stdio MCP
   server + skills + docs) and is intended to be publishable. Never add hosted-service
   code here — token custody, multi-tenancy, and an OAuth-provider surface toward
-  Claude are out of scope (docs/design.md §11, decided 2026-07-04).
+  Claude are out of scope (DESIGN.md §11, decided 2026-07-04).
 - Don't commit, push, or create branches/PRs unless asked.
 - The remote is `github.com/robert-malai/anafpy`. CI is GitHub Actions:
   `.github/workflows/ci.yml` runs the three code gates on 3.12 + 3.13 plus a

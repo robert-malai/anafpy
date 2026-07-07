@@ -1,4 +1,4 @@
-"""Confirmation tokens for the two-step gated mutation flow (``docs/design.md`` §8).
+"""Confirmation tokens for the two-step gated mutation flow (``DESIGN.md`` §8).
 
 A mutating skill is split in two: ``prepare`` validates a document, shows a preview, and
 hands back a **confirmation token** — an HS256-signed JWT whose claims bind the

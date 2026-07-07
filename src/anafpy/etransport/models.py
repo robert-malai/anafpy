@@ -331,7 +331,7 @@ class _InfoEnvelope(_JsonEnvelope):
 # purpose-code matrices, border-point/customs-office direction rules) are ANAF
 # policy that changes across revisions; they stay ANAF's to enforce on upload —
 # here they appear only as field descriptions so composing callers (the MCP model)
-# know about them. Per docs/design.md §4/§5: no local rule engine, prepare never blocks.
+# know about them. Per DESIGN.md §4/§5: no local rule engine, prepare never blocks.
 
 
 def _member_or_value(enum_cls: type[Enum]) -> Callable[[object], object]:

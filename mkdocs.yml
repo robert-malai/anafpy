@@ -76,7 +76,6 @@ nav:
       - Public services: api/public.md
       - Authentication: api/auth.md
       - Exceptions: api/exceptions.md
-  - Design notes: design.md
   - ANAF API reference:
       - Overview: anaf-reference/README.md
       - OAuth: anaf-reference/oauth/authentication.md

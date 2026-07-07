@@ -68,7 +68,7 @@ full Claude Desktop + ANAF setup.
 > MCP server (structured e-Transport filing and a read-only e-Factura surface —
 > inbox, download, validate) are implemented and tested.
 > Validation is ANAF's own server-side `validare` endpoint — there is no local rule
-> engine. See the [design notes](docs/design.md) for the full design and
+> engine. See [`DESIGN.md`](DESIGN.md) for the full design and
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
 > APIs.
 

@@ -2,7 +2,7 @@
 
 A local stdio connector built on the phase-1 async clients. Requires the
 ``anafpy[mcp]`` extra. Run with ``python -m anafpy.mcp`` (host-side, where the token
-store written by ``anafpy auth login`` lives). See ``docs/design.md`` §8.
+store written by ``anafpy auth login`` lives). See ``DESIGN.md`` §8.
 """
 
 from __future__ import annotations

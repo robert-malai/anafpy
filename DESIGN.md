@@ -467,7 +467,7 @@ anafpy moves documents, it does not give tax advice, and filing outcomes are the
 user's responsibility. The **MCP server is best-effort**: installing it,
 configuring the environment, provisioning the OAuth application on ANAF's portal,
 and holding the qualified certificate are the **user's responsibility** —
-[the setup walkthrough](mcp/setup.md) walks through all of it.
+[the setup walkthrough](docs/mcp/setup.md) walks through all of it.
 
 **Local-only, by design.** The MCP server is and stays a **local stdio server**:
 tool calls run on the user's machine against the user's own tokens — the

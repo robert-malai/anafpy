@@ -45,9 +45,9 @@ own software.
 
 ## Extras
 
-- [Design notes](design.md) — the full design rationale, including the decisions
-  that shape the library (XML pass-through for e-Factura, full translation for
-  e-Transport, no local rule engine, the hybrid error model).
 - [ANAF API reference](anaf-reference/README.md) — a compiled, English-language
   local reference of ANAF's own APIs (OAuth, e-Factura, e-Transport, public
   services), with per-section provenance back to ANAF's original documents.
+- Contributing or curious about the internals? The design rationale lives in
+  [DESIGN.md](https://github.com/robert-malai/anafpy/blob/main/DESIGN.md) in the
+  repository — developer material, kept next to the code.
