@@ -58,7 +58,8 @@ public checks above work without it. The server runs **locally** on your own mac
 so downloaded invoices and PDFs land on your own filesystem. See
 [`INSTALL.md`](INSTALL.md) for the full Claude Desktop + ANAF setup walkthrough.
 
-> Status: **early / alpha** (`0.x`), not yet published to PyPI. The OAuth2 auth layer,
+> Status: **early / alpha** (`0.x`), on PyPI as
+> [`anafpy`](https://pypi.org/project/anafpy/). The OAuth2 auth layer,
 > both async clients (with an easy-to-read flat view of downloaded documents), and the
 > MCP server (structured e-Transport filing and a read-only e-Factura surface —
 > inbox, download, validate) are implemented and tested.
@@ -107,8 +108,8 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   Cowork skills, with read-first, two-step gated e-Transport filing and a read-only
   e-Factura surface (see below).
 
-Not yet built: CI and PyPI publishing. (A sync facade was dropped as a goal — the
-clients are async-only.)
+CI (GitHub Actions, gates on 3.12 + 3.13) and tag-triggered PyPI publishing are in
+place. (A sync facade was dropped as a goal — the clients are async-only.)
 
 ## Install
 
