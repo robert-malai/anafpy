@@ -427,8 +427,9 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   **mypy `--strict`**, **pytest** + **pytest-asyncio** + **respx**, **pre-commit**.
 - **SemVer**, pre-1.0 (`0.x`). Support + test **3.12 and 3.13** (dev pin 3.13).
 - **License: Apache-2.0** (explicit patent grant; ship `NOTICE`).
-- **CI: GitHub Actions** (lint + type + test matrix; later publish-to-PyPI) —
-  planned, not done.
+- **CI: GitHub Actions** — `ci.yml` (three gates × 3.12/3.13 on push/PR) and
+  `release.yml` (gates, tag↔version check, build, publish to PyPI via trusted
+  publishing on `v*` tags).
 - **Testing (layered)**: respx mock suite as the credential-free CI gate + an
   opt-in live suite (`ANAFPY_LIVE=1`). Mock tiers: (1) golden round-trip on
   generated UBL models (regen/serialization regressions); (2) client behavior via
@@ -482,8 +483,8 @@ scope.
 
 **Practicalities** (non-blocking — the tool is already usable from a checkout):
 
-- **PyPI release + CI + SemVer discipline + security policy** (§9 — planned,
-  not done).
+- **CI + release automation are in place** (§9); still open: SemVer discipline
+  as versions accrue + a security policy.
 - **Contribution terms** — Apache-2.0; settle CLA vs DCO before accepting
   external PRs.
 - **Naming** — `anafpy` is fine as a library name; anything distributed more

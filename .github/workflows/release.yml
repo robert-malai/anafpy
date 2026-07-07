@@ -1,0 +1,67 @@
+# Publish to PyPI on a version tag (v*) via trusted publishing (OIDC) — no
+# API token is stored in the repo. PyPI side: the project's trusted publisher
+# must name this repo, this filename (release.yml), and the `pypi` environment.
+# The full CI gates re-run here so a tag can never ship an artifact that a
+# broken branch produced.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --all-extras
+      - name: Tests
+        run: uv run pytest -q
+      - name: Ruff lint
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: Mypy (strict)
+        run: uv run mypy
+
+  build:
+    needs: gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Tag matches the package version
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "pyproject version ${version} does not match tag ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+      - name: Build sdist + wheel
+        run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/anafpy
+    permissions:
+      id-token: write  # OIDC for PyPI trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -381,5 +381,10 @@ results.
   code here — token custody, multi-tenancy, and an OAuth-provider surface toward
   Claude are out of scope (DESIGN.md §11, decided 2026-07-04).
 - Don't commit, push, or create branches/PRs unless asked.
-- The remote is `github.com/robert-malai/anafpy`. There is no CI workflow yet
-  (planned, not done).
+- The remote is `github.com/robert-malai/anafpy`. CI is GitHub Actions:
+  `.github/workflows/ci.yml` runs the three gates on 3.12 + 3.13 for every
+  push/PR; `release.yml` re-runs them on a `v*` tag, checks the tag against
+  `pyproject.toml`'s version, builds, and publishes to PyPI via trusted
+  publishing (OIDC, environment `pypi` — no stored token). The version is
+  declared in `pyproject.toml` **and** `anafpy.__version__`;
+  `tests/test_version.py` keeps them agreeing.

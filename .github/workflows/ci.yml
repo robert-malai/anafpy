@@ -1,0 +1,33 @@
+# Credential-free gates on every push/PR: the respx-mocked test suite, ruff
+# lint + format, and mypy --strict, across the supported Python versions.
+# The live-marked tests stay opt-in (ANAFPY_LIVE=1) and never run here.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --all-extras
+      - name: Tests
+        run: uv run pytest -q
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format
+        run: uv run ruff format --check .
+      - name: Mypy (strict)
+        run: uv run mypy
