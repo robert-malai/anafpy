@@ -59,7 +59,7 @@ Two e-Factura operations are *also* exposed no-auth on this host — `validare` 
 e-Factura in [efactura/api.md](../efactura/api.md) §5–7.
 
 > **Status:** draft, compiled from ANAF's official instruction files (vendored under
-> [`_sources/servicii-web/`](../_sources/servicii-web/)). **No PDF or swagger
+> [`_sources/servicii-web/`](../_sources/servicii-web/servicii_web.html)). **No PDF or swagger
 > presentations exist for these services** — the instruction files are the only
 > official documentation (checked 2026-07-02). Unlike the e-Factura/e-Transport docs,
 > every synchronous endpoint here **was confirmed with a live production call on

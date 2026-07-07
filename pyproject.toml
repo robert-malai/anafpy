@@ -50,7 +50,7 @@ anafpy-mcp = "anafpy.mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/robert-malai/anafpy"
-Documentation = "https://github.com/robert-malai/anafpy/tree/main/docs"
+Documentation = "https://anafpy.readthedocs.io"
 Issues = "https://github.com/robert-malai/anafpy/issues"
 
 # PEP 735 dependency groups (dev-only; installed via `uv sync`).
@@ -59,7 +59,9 @@ Issues = "https://github.com/robert-malai/anafpy/issues"
 # check tool output against the declared schema, and mypy strict wants its stubs.
 test = ["pytest>=8.2", "pytest-asyncio>=0.23", "respx>=0.21", "types-jsonschema>=4.21"]
 lint = ["ruff>=0.5", "mypy>=1.10"]
-docs = ["markitdown>=0.0.1"]
+# markitdown: compiling docs/anaf-reference from ANAF's PDFs/HTML sources.
+# mkdocs-material + mkdocstrings: the documentation site (Read the Docs).
+docs = ["markitdown>=0.0.1", "mkdocs-material>=9.5", "mkdocstrings[python]>=0.27"]
 # Code generation of UBL / e-Transport models from vendored XSDs (dev-only).
 # xsdata is pinned to the 24.x line that the xsdata-pydantic plugin targets; newer
 # xsdata core drifts from the plugin and emits invalid Pydantic field definitions.

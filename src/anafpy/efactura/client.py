@@ -1,10 +1,10 @@
 """Async client for the RO e-Factura web services (``FCTEL/rest``).
 
-Design (see ``DESIGN.md`` §4): discrete 1:1 methods are the primary surface and do **no
-transport retry** — a single call, one result-or-raise — so a non-idempotent ``upload``
-is never silently repeated. ``upload_and_wait`` is the only place that loops, polling
-the processing state with ``tenacity``. HTTP/auth failures raise; business outcomes
-(``nok``, upload rejections) are returned as values.
+Design (see ``docs/design.md`` §4): discrete 1:1 methods are the primary surface and
+do **no transport retry** — a single call, one result-or-raise — so a non-idempotent
+``upload`` is never silently repeated. ``upload_and_wait`` is the only place that
+loops, polling the processing state with ``tenacity``. HTTP/auth failures raise;
+business outcomes (``nok``, upload rejections) are returned as values.
 
 The stateless document services ``validare`` and ``transformare`` are **public,
 no-auth, prod-only** and live on :class:`anafpy.public.client.PublicClient`

@@ -1,4 +1,4 @@
-"""Resolve XML pass-through inputs and project them to read views (``DESIGN.md`` §8).
+"""Resolve XML pass-through inputs, project them to read views (``docs/design.md`` §8).
 
 The XML-taking tools (``efactura_validate``, ``etransport_prepare``) take a *complete*
 document; this module turns an ``xml`` / ``path`` input into bytes and — for the

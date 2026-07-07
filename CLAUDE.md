@@ -1,8 +1,9 @@
 # CLAUDE.md
 
-Guidance for working in this repository. See [DESIGN.md](DESIGN.md) for the full
+Guidance for working in this repository. See [docs/design.md](docs/design.md) for the full
 design rationale and [docs/anaf-reference/](docs/anaf-reference/) for a compiled local
-reference of ANAF's APIs.
+reference of ANAF's APIs. `docs/` is also the MkDocs source tree for the public
+documentation site (Read the Docs, `https://anafpy.readthedocs.io`).
 
 ## What this is
 
@@ -26,7 +27,7 @@ Claude Cowork skills. The client methods map 1:1 onto MCP tools — discrete ope
 serializable typed inputs/outputs, good docstrings. Distribution is **free and
 as-is**: the library is for anyone to use; the MCP server is **best-effort**, and
 configuring it — including provisioning the OAuth application on ANAF's portal —
-is the user's responsibility (DESIGN.md §11).
+is the user's responsibility (docs/design.md §11).
 
 Python **3.12+** (`requires-python`; the repo `.python-version` dev pin stays 3.13).
 Built on **httpx** and **Pydantic v2**.
@@ -39,6 +40,7 @@ uv run pytest -q                     # tests (respx-mocked, credential-free)
 uv run pytest tests/test_auth.py     # one file
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                          # strict
+uv run mkdocs build --strict         # docs site (broken internal links fail); `serve` to preview
 ANAFPY_LIVE=1 uv run pytest -m live  # opt-in live smoke: public services + authenticated TEST (needs .env + auth login)
 ```
 
@@ -71,7 +73,8 @@ uv run python scripts/generate_ubl.py
 uv run python scripts/generate_etransport.py
 ```
 
-All three gates (pytest / ruff / mypy --strict) are currently green and must stay green.
+All four gates (pytest / ruff / mypy --strict / mkdocs build --strict) are currently
+green and must stay green.
 
 ## Layout
 
@@ -113,7 +116,15 @@ skills/                  # workflow skills, served by the MCP server as same-nam
                          # -> prepare -> approval -> submit -> status)
 schemas/                 # vendored XSDs (git-tracked, NOT shipped in the wheel)
 scripts/                 # codegen scripts
-docs/anaf-reference/     # compiled ANAF API reference (oauth/efactura/etransport/public)
+docs/                    # MkDocs source tree for the docs site (mkdocs.yml at repo root,
+                         # .readthedocs.yaml drives the RTD build via uv)
+  index.md               # site landing page (two-audience split: MCP users / library users)
+  mcp/                   # setup.md (the end-user walkthrough, ex-INSTALL.md), tools.md, skills.md
+  library/               # quickstart, auth, efactura, etransport, public, errors guides
+  api/                   # mkdocstrings pages over the hand-written public modules
+  design.md              # design rationale (ex-repo-root DESIGN.md)
+  anaf-reference/        # compiled ANAF API reference (oauth/efactura/etransport/public);
+                         # ALSO served as MCP resources (ANAFPY_DOCS_DIR default) — don't move it
 tests/                   # respx-mocked unit tests (+ opt-in live: test_public_live.py, test_oauth_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST)
 ```
 
@@ -279,7 +290,7 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   that: the e-Transport flat models carry **field-level shape checks** — the XSD
   constraints tightened by the *unconditional* rules of ANAF's e-Transport
   Schematron (UIT check digits, gross ≥ net, `ALTELE` needs a note, ...; the list
-  is in DESIGN.md §5) — which fail at model construction as data hygiene. The
+  is in docs/design.md §5) — which fail at model construction as data hygiene. The
   Schematron's operation-type *conditional* rules stay ANAF's and appear only as
   field descriptions.
 
@@ -351,7 +362,8 @@ results.
 
 ## Conventions for changes
 
-- Keep `pytest`, `ruff`, and `mypy --strict` green; add/extend respx tests for client
+- Keep `pytest`, `ruff`, `mypy --strict`, and `mkdocs build --strict` green;
+  add/extend respx tests for client
   behavior changes (upload→poll→download, `nok` path, 401-refresh, 429 surfacing).
   The respx suite is the gate; the `live`-marked smoke tests
   ([tests/test_public_live.py](tests/test_public_live.py) — public services;
@@ -370,19 +382,25 @@ results.
   to any other live file.
 - **Keep the docs in sync with the change.** When a change alters the public surface,
   status, layout, or conventions, update the affected docs in the same change:
-  [README.md](README.md) (what works / usage / install), [INSTALL.md](INSTALL.md)
-  (the end-user setup walkthrough — accountant audience: ANAF app registration,
-  cert login, Claude/Cowork config), this `CLAUDE.md` (layout,
-  commands, conventions), [DESIGN.md](DESIGN.md) (design decisions), and
-  `docs/anaf-reference/` (only when ANAF API facts change — keep its provenance
-  frontmatter intact). Don't let docs drift behind the code.
+  [README.md](README.md) (the GitHub/PyPI landing page — overview, install, quick
+  usage; deep detail lives on the docs site, which README links with absolute
+  `anafpy.readthedocs.io` URLs), the docs-site pages under `docs/`
+  ([docs/mcp/setup.md](docs/mcp/setup.md) — the end-user setup walkthrough,
+  accountant audience: ANAF app registration, cert login, Claude/Cowork config;
+  [docs/mcp/tools.md](docs/mcp/tools.md) + [docs/mcp/skills.md](docs/mcp/skills.md)
+  — the MCP surface; `docs/library/*` — the library guides), this `CLAUDE.md`
+  (layout, commands, conventions), [docs/design.md](docs/design.md) (design
+  decisions), and `docs/anaf-reference/` (only when ANAF API facts change — keep
+  its provenance frontmatter intact). A new page goes into `mkdocs.yml`'s `nav`.
+  Don't let docs drift behind the code.
 - **Repo boundary**: this repo is the whole project (typed clients + local stdio MCP
   server + skills + docs) and is intended to be publishable. Never add hosted-service
   code here — token custody, multi-tenancy, and an OAuth-provider surface toward
-  Claude are out of scope (DESIGN.md §11, decided 2026-07-04).
+  Claude are out of scope (docs/design.md §11, decided 2026-07-04).
 - Don't commit, push, or create branches/PRs unless asked.
 - The remote is `github.com/robert-malai/anafpy`. CI is GitHub Actions:
-  `.github/workflows/ci.yml` runs the three gates on 3.12 + 3.13 for every
+  `.github/workflows/ci.yml` runs the three code gates on 3.12 + 3.13 plus a
+  strict docs build for every
   push/PR; `release.yml` re-runs them on a `v*` tag, checks the tag against
   `pyproject.toml`'s version, builds, and publishes to PyPI via trusted
   publishing (OIDC, environment `pypi` — no stored token). The version is

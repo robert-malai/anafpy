@@ -34,13 +34,13 @@ status: draft
 Operations for the RO e-Factura system. Authentication is the shared
 [OAuth2 flow](../oauth/authentication.md) (Bearer token). Invoice **format** is UBL 2.1
 / CIUS-RO; **validation** is ANAF's server-side `validare` endpoint (§5) — `anafpy`
-deliberately has no local rule engine (see `/DESIGN.md` §4). This doc is the
+deliberately has no local rule engine (see `/docs/design.md` §4). This doc is the
 **transport/API surface**.
 
 > **Status:** draft, compiled from the official 5-page API PDF (current as linked from
 > the e-Factura *informații tehnice* page on 2026-06-28) plus the official per-endpoint
 > **swagger presentations** (vendored 2026-07-02 under
-> [`_sources/efactura-swagger/`](../_sources/efactura-swagger/)) — the PDF covers
+> [`_sources/efactura-swagger/`](../_sources/efactura-swagger/upload.html)) — the PDF covers
 > URLs/params, the swaggers are the authority on **response schemas**. Re-confirm
 > endpoint behaviour with a live test-environment call during implementation.
 > **First live TEST confirmation 2026-07-02**: `listaMesajePaginatieFactura` returned

@@ -30,6 +30,8 @@ jobs:
         run: uv run ruff check . && uv run ruff format --check .
       - name: Mypy (strict)
         run: uv run mypy
+      - name: Docs build (strict)
+        run: uv run mkdocs build --strict
 
   build:
     needs: gates

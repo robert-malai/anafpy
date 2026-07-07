@@ -1,10 +1,11 @@
 """The anafpy MCP server: e-Factura / e-Transport operations as Cowork skills.
 
-Built on the phase-1 async clients (``DESIGN.md`` §8). Read-only skills (status, list,
-download, lookup, validate) are freely callable. Mutating skills are **two-step**: a
-``prepare`` tool renders a preview and returns a confirmation token, and the matching
-``submit`` tool will only file when handed that token back with the *same* document and
-an explicit ``confirm=True``. Filing tools exist for **e-Transport only**: the
+Built on the phase-1 async clients (``docs/design.md`` §8). Read-only skills (status,
+list, download, lookup, validate) are freely callable. Mutating skills are
+**two-step**: a ``prepare`` tool renders a preview and returns a confirmation token,
+and the matching ``submit`` tool will only file when handed that token back with
+the *same* document and an explicit ``confirm=True``. Filing tools exist for
+**e-Transport only**: the
 e-Factura filing pair (``efactura_prepare_invoice`` / ``efactura_submit_invoice``) was
 removed 2026-07-03 — outbound e-Factura XML comes from third-party invoicing software,
 which files with ANAF directly, so the MCP surface for e-Factura is read-only (inbox,

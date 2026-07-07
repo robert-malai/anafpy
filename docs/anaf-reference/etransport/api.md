@@ -45,7 +45,7 @@ v2.0.2 — reference only, `anafpy` runs no local validation). This doc is the
 > **Status:** draft, from the official **29.07.2024** API PDF — the current version,
 > which **supersedes** older 2023 specs — plus the official per-endpoint **swagger
 > presentations** (vendored 2026-07-02 under
-> [`_sources/etransport-swagger/`](../_sources/etransport-swagger/)), which supply the
+> [`_sources/etransport-swagger/`](../_sources/etransport-swagger/upload_param.html)), which supply the
 > response schemas the PDF omits. It corrected two earlier assumptions (see
 > "Corrections" below).
 > **First live TEST confirmation 2026-07-02**: `lista/60/{cif}` on an empty window

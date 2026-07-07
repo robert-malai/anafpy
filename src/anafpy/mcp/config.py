@@ -1,9 +1,9 @@
 """Server configuration, resolved from the environment via ``pydantic-settings``.
 
-The MCP server is a **local stdio connector** (see ``DESIGN.md`` §8). It reads the same
-credentials and token store that ``anafpy auth login`` writes, so a running server picks
-up an existing session and refreshes it headlessly. Nothing here drives the interactive
-certificate flow — that stays host-side in the CLI.
+The MCP server is a **local stdio connector** (see ``docs/design.md`` §8). It reads
+the same credentials and token store that ``anafpy auth login`` writes, so a running
+server picks up an existing session and refreshes it headlessly. Nothing here drives
+the interactive certificate flow — that stays host-side in the CLI.
 """
 
 from __future__ import annotations

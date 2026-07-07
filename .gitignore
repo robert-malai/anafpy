@@ -40,3 +40,6 @@ secrets.toml
 *.p12
 *.pfx
 rootCA*.pem
+
+# Docs site build output (mkdocs build)
+site/

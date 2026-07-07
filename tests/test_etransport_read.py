@@ -134,7 +134,7 @@ def test_plate_and_uit_are_normalized() -> None:
 # The unconditional format/consistency rules of ANAF's e-Transport Schematron
 # (docs/anaf-reference/_sources/eTransport-validation_v.2.0.2_12082024.sch) are
 # mirrored as flat-model constraints; the operation-type conditional business rules
-# deliberately are not (DESIGN.md §5).
+# deliberately are not (docs/design.md §5).
 
 
 @pytest.mark.parametrize(

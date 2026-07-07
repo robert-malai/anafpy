@@ -1,4 +1,4 @@
-"""MCP tool input/return types (``DESIGN.md`` §8).
+"""MCP tool input/return types (``docs/design.md`` §8).
 
 **Filing tools exist for e-Transport only** (the e-Factura filing pair was removed
 2026-07-03 — outbound invoices come from third-party invoicing software that files

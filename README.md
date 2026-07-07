@@ -16,6 +16,9 @@ fully enumerated) schema into friendly typed models — you author declarations,
 deletions, confirmations, and vehicle changes from structured fields, no XML handling
 needed, and the same models render what you read back.
 
+**Documentation: [anafpy.readthedocs.io](https://anafpy.readthedocs.io)** — the
+end-user setup walkthrough, the library guides, and the API reference.
+
 ## What can you do with this?
 
 With the MCP server connected to a Claude client (Claude Desktop, Claude Code), an
@@ -55,8 +58,9 @@ no-auth services):
 Setup caveats worth knowing: the e-Factura and e-Transport tools need a one-time login
 with your **qualified digital certificate** (the same one you use on ANAF's SPV) — the
 public checks above work without it. The server runs **locally** on your own machine,
-so downloaded invoices and PDFs land on your own filesystem. See
-[`INSTALL.md`](INSTALL.md) for the full Claude Desktop + ANAF setup walkthrough.
+so downloaded invoices and PDFs land on your own filesystem. See the
+[setup walkthrough](https://anafpy.readthedocs.io/en/latest/mcp/setup/) for the
+full Claude Desktop + ANAF setup.
 
 > Status: **early / alpha** (`0.x`), on PyPI as
 > [`anafpy`](https://pypi.org/project/anafpy/). The OAuth2 auth layer,
@@ -64,7 +68,7 @@ so downloaded invoices and PDFs land on your own filesystem. See
 > MCP server (structured e-Transport filing and a read-only e-Factura surface —
 > inbox, download, validate) are implemented and tested.
 > Validation is ANAF's own server-side `validare` endpoint — there is no local rule
-> engine. See [`DESIGN.md`](DESIGN.md) for the full design and
+> engine. See the [design notes](docs/design.md) for the full design and
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
 > APIs.
 
@@ -115,7 +119,8 @@ place. (A sync facade was dropped as a goal — the clients are async-only.)
 
 Setting up a **fresh machine end to end** — ANAF app registration, the certificate
 login, and the Claude / Cowork configuration, written for a non-developer — follow
-[`INSTALL.md`](INSTALL.md). The short version for developers:
+the [setup walkthrough](https://anafpy.readthedocs.io/en/latest/mcp/setup/). The
+short version for developers:
 
 From [PyPI](https://pypi.org/project/anafpy/):
 
@@ -126,7 +131,8 @@ pip install 'anafpy[mcp]' # with the MCP server
 
 The distribution offers one extra: `anafpy[mcp]` (the MCP server).
 
-For the MCP server, prefer running from a **checkout** (as INSTALL.md does): the
+For the MCP server, prefer running from a **checkout** (as the setup walkthrough
+does): the
 compiled ANAF reference (`docs/anaf-reference/`, served as MCP resources) and the
 workflow skills (`skills/`, served as MCP prompts) live in the repo, not in the
 wheel. A PyPI-installed server runs fine but serves neither unless
@@ -149,58 +155,14 @@ anafpy auth status        # show stored token validity
 anafpy auth logout        # remove the stored tokens (signs this machine out)
 ```
 
-Register the callback URL with the **`https://` scheme** — ANAF's developer portal
-rejects `http://` callbacks (HTTP 400 at registration; verified 2026-07-02). The
-callback still doesn't need a public server; pick how the code gets captured:
-
-- **`--paste` (recommended default).** No listener runs. After the certificate step the
-  browser shows a connection error — expected — and you paste the redirect URL from the
-  address bar into the CLI. Paste promptly: ANAF's code expires in ~60 seconds.
-- **`--tls-cert` / `--tls-key`.** The local listener serves TLS directly with a
-  certificate you supply — a self-signed one works. Generate it once (browsers
-  require a `subjectAltName`, not just the CN):
-
-  ```bash
-  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-    -keyout ~/.anafpy/callback-key.pem -out ~/.anafpy/callback-cert.pem \
-    -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-  ```
-
-  then pass `--tls-cert ~/.anafpy/callback-cert.pem --tls-key ~/.anafpy/callback-key.pem`
-  instead of `--paste`. The browser shows a one-time "proceed to localhost" warning
-  (click through — it's your own cert on your own loopback); trust the cert in the OS
-  keychain, or use [mkcert](https://github.com/FiloSottile/mkcert), to remove the
-  warning entirely. On **Windows** (no stock OpenSSL), prefer mkcert:
-  `choco install mkcert` (or `scoop install mkcert`), then `mkcert -install` and
-  `mkcert localhost 127.0.0.1` — the emitted PEM pair plugs into
-  `--tls-cert`/`--tls-key` unchanged, with no browser warning at all.
-- **Neither flag.** The listener speaks plain HTTP; put your own TLS terminator in
-  front of it. If the listener can't start — or no callback arrives in time — the
-  CLI falls back to paste mode.
-
-This opens your browser for the certificate step, captures the authorization code,
-exchanges it for tokens, and stores them in the **OS credential store** (macOS
-Keychain, Windows Credential Manager, Linux Secret Service/KWallet — the default
-backend). Tokens then refresh **headlessly** for ~a year (access token
-90 days, refresh token 365 days), so the cert is needed only about once a year. See
-[`docs/anaf-reference/oauth/authentication.md`](docs/anaf-reference/oauth/authentication.md).
-
-To sign out — e.g. when leaving a shared machine — run `anafpy auth logout`. It
-deletes the stored tokens, which is what ends this machine's access: without the
-refresh token it can no longer mint new access tokens. The logout is purely
-local: ANAF documents a `/revoke` endpoint but it is not reachable headlessly
-(live-verified 2026-07-05 — ANAF's gateway answers with its certificate login
-wall, same as for a nonexistent path), so server-side the tokens simply expire
-(access ~90 days, refresh ~365 days); to hard-revoke them use **Renunțare
-Oauth** in ANAF's developer portal (this deletes the app registration).
-
-On a **headless host without a credential store** (Docker, a bare Linux server),
-switch to the JSON-file backend: pass `--store-backend file` to `auth login` /
-`auth status` / `auth logout` — or set `ANAFPY_TOKEN_STORE_BACKEND=file`, which
-the MCP server reads too; the file lives at `~/.anafpy/tokens.json` (`--store` /
-`ANAFPY_TOKEN_STORE` to move it). On Windows the credential store's token set is
-transparently split across vault entries (Credential Manager caps one entry at
-2560 bytes, smaller than an ANAF JWT).
+This opens your browser for the certificate step, captures the authorization code
+(pasted, or via a local TLS listener), exchanges it for tokens, and stores them in
+the **OS credential store** (macOS Keychain, Windows Credential Manager, Linux
+Secret Service/KWallet — the default backend; a JSON-file backend is the opt-out
+for Docker/headless hosts). Tokens then refresh **headlessly** for ~a year (access
+token 90 days, refresh token 365 days), so the cert is needed only about once a
+year. The [authentication guide](https://anafpy.readthedocs.io/en/latest/library/auth/)
+covers the capture modes, token storage, and signing out.
 
 ## Usage
 
@@ -229,48 +191,15 @@ Discrete methods make a single call (no transport retry). HTTP/auth problems rai
 back as typed values, not exceptions. On HTTP 429 the client raises `AnafRateLimitError`
 exposing `retry_after` rather than backing off itself.
 
-e-Transport declarations are authored from typed models — no XML in sight:
+e-Transport declarations are authored from typed models — no XML in sight. A
+`FlatTransport` holds the partner, vehicle, route, goods, and documents as
+structured fields (enum-coded values accepted by ANAF code or by name), and
+`upload_document` renders and files it in one step:
 
 ```python
-import datetime as dt
-from decimal import Decimal
+from anafpy.etransport import ETransportClient, FlatDeletion, FlatTransport
 
-from anafpy.etransport import (
-    ETransportClient, FlatDeletion, FlatTransport, FlatTransportAddress,
-    FlatTransportDocument, FlatTransportGood, FlatTransportLocation,
-    FlatTransportPartner, FlatTransportVehicle,
-)
-from anafpy.etransport.schema.schema_etr_v2_20230126 import (
-    CodJudetType, CodScopOperatiuneType, CodTaraType, CodTipOperatiuneType,
-    TipDocumentType,
-)
-
-declaration = FlatTransport(
-    operation_type=CodTipOperatiuneType.TTN,           # domestic transport
-    partner=FlatTransportPartner(
-        name="Partener SRL", country=CodTaraType.ROMANIA, code="12345678",
-    ),
-    vehicle=FlatTransportVehicle(
-        plate="CJ01ABC", carrier_name="Transport SRL", carrier_code="23456789",
-        carrier_country=CodTaraType.ROMANIA, transport_date=dt.date(2026, 7, 10),
-    ),
-    start_location=FlatTransportLocation(address=FlatTransportAddress(
-        county=CodJudetType.CLUJ, locality="Cluj-Napoca", street="Memorandumului",
-    )),
-    end_location=FlatTransportLocation(address=FlatTransportAddress(
-        county=CodJudetType.MUNICIPIUL_BUCURESTI, locality="Bucuresti",
-        street="Calea Victoriei",
-    )),
-    goods=[FlatTransportGood(
-        operation_scope=CodScopOperatiuneType.COMERCIALIZARE,
-        name="Materiale constructii", quantity=Decimal("100"), unit_code="KGM",
-        gross_weight=Decimal("110"), net_weight=Decimal("100"),
-        value_ron=Decimal("2500"), tariff_code="6810",
-    )],
-    documents=[FlatTransportDocument(
-        doc_type=TipDocumentType.CMR, date=dt.date(2026, 7, 9), number="FAC-001",
-    )],
-)
+declaration = FlatTransport(...)  # full example in the e-Transport guide
 
 async with ETransportClient(provider) as etransport:
     result = await etransport.upload_document(declaration, cif="12345678")
@@ -278,6 +207,9 @@ async with ETransportClient(provider) as etransport:
     # later: delete / confirm / change vehicle on that UIT the same way, e.g.
     await etransport.upload_document(FlatDeletion(uit=result.uit), cif="12345678")
 ```
+
+The [e-Transport guide](https://anafpy.readthedocs.io/en/latest/library/etransport/)
+has the complete worked declaration.
 
 The public registries need no auth at all:
 
@@ -295,50 +227,32 @@ async with PublicClient() as public:
 
 The `anafpy[mcp]` extra ships a **local stdio MCP server** that wraps the clients as
 Cowork skills. The server is **best-effort**: configuring it — including registering
-your own OAuth application on ANAF's portal — is your responsibility, and
-[INSTALL.md](INSTALL.md) walks you through every step. Run it host-side, where the
-token store written by `anafpy auth login` lives:
+your own OAuth application on ANAF's portal — is your responsibility, and the
+[setup walkthrough](https://anafpy.readthedocs.io/en/latest/mcp/setup/) walks you
+through every step. Run it host-side, where the token store written by
+`anafpy auth login` lives:
 
 ```bash
 ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
   python -m anafpy.mcp        # or the `anafpy-mcp` console script
 ```
 
-It exposes **freely callable read tools** (`auth_status`; the e-Factura inbox via
-`efactura_list_messages` / `efactura_download` — the latter
-can also **save artifacts for the user**: `save_zip_as` writes the signed archive
-ZIP and `save_pdf_as` writes ANAF's official PDF rendering (`transformare`,
-best-effort) to caller-given paths, which powers flows like "export last month's
-invoices as `<date> - <partner>.pdf`" (an existing file is never replaced unless
-`overwrite=true` — a name collision is reported instead of losing a file); the PDF
-is also exposed as the MCP resource
-`anafmsg://<message_id>/pdf`; `etransport_list`
-/ `etransport_get_status` / `etransport_lookup` / `etransport_nomenclature`;
-`efactura_validate`, which runs
-ANAF's authoritative server-side validator without filing; and the `anaf_*` public
-lookups — taxpayer/VAT registry, RO e-Factura register, farmers/cult registers, and
-financial statements. `efactura_validate` and the `anaf_*` lookups ride the public
-no-auth services, so they need **no login at all**) plus **two-step gated
-filing for e-Transport**: `etransport_prepare*` returns a preview + a confirmation
-token bound to the exact document and the CIF being filed for; `etransport_submit`
-files only when
-given that token (same document, same CIF) and `confirm=True`, and each token is
-single-use — filing again requires a fresh prepare. **The MCP e-Factura surface is
-read-only** — there are no invoice filing tools (removed 2026-07-03: outbound UBL
-comes from invoicing software that files with ANAF itself; `EFacturaClient.upload`
-remains for library users). **e-Transport filing is composed for you**:
-`etransport_prepare_declaration` (a new declaration or, via `correction_of_uit`, a
-correction), `etransport_prepare_deletion`, `etransport_prepare_confirmation`, and
-`etransport_prepare_vehicle_change` take structured fields (enum-coded values by ANAF
-code or by name — `TTN`, `CLUJ`, `NADLAC`; discoverable via `etransport_nomenclature`),
-compose the declaration XML, and return it alongside the preview and token;
-`etransport_prepare` still accepts ready-made XML. Both the e-Factura inbox and the
-e-Transport `prepare`
-previews present documents as friendly **flat models** parsed from the XML (for
-invoices, easy to read and lossy by design — the raw bytes stay authoritative). The
-compiled ANAF reference is surfaced as read-only resources. Auth stays
-the host-side CLI — the server only reads and refreshes the token store. Configuration is
-environment-only; see [`CLAUDE.md`](CLAUDE.md).
+The surface is **read-first**: freely callable read tools (the `anaf_*` public
+lookups and `efactura_validate` need **no login at all**; `auth_status`, the
+e-Factura inbox — which can also save the signed ZIP and ANAF's official PDF
+rendering to disk — and the e-Transport reads need the one-time login) plus
+**two-step gated filing for e-Transport**: `etransport_prepare*` composes the
+declaration from structured fields and returns a preview + a single-use
+confirmation token bound to the exact document and CIF; `etransport_submit` files
+only with that token and `confirm=True`. **The e-Factura surface is read-only** —
+outbound invoices come from your invoicing software, which files with ANAF itself.
+The compiled ANAF reference is served as read-only resources, and workflow
+playbooks (like `etransport-declare`, which takes a declaration from any source —
+an email, a PDF invoice, a CMR — through extract → prepare → your approval →
+submit → UIT) as MCP prompts. See the
+[tools overview](https://anafpy.readthedocs.io/en/latest/mcp/tools/) and
+[workflow skills](https://anafpy.readthedocs.io/en/latest/mcp/skills/) for the
+full picture.
 
 Register the server with any MCP client — e.g. with Claude Code, from a source
 checkout (locked deps, no PyPI needed):
@@ -353,15 +267,6 @@ claude mcp add anafpy \
 (registries, financial statements) and `efactura_validate` are fully usable. The
 remaining e-Factura / e-Transport tools unlock once you set the credentials and run
 the one-time `anafpy auth login` in a terminal.
-
-The server also ships workflow playbooks as MCP **prompts** — a user-invoked entry
-point (Claude Desktop's "+" menu, or `/mcp__anafpy__etransport-declare` in Claude
-Code). `etransport-declare` walks Claude through filing an e-Transport declaration
-from whatever source the data lives in (an email, a PDF invoice, a CMR, a
-spreadsheet) — extract, map to the structured declaration, prepare, show the
-preview for your approval, submit, then poll until ANAF issues a valid UIT. The
-playbooks live under [`skills/`](skills/) (`SKILL.md` files, the single source of
-truth) and travel with any connection method.
 
 ## Development
 
@@ -393,4 +298,6 @@ anafpy is free to use and provided **as-is**, with no warranty: it moves documen
 to and from ANAF, it does not give tax advice, and filing outcomes are your
 responsibility. The MCP server is **best-effort** — configuring it, provisioning
 your own OAuth application on ANAF's portal, and holding the qualified certificate
-are up to you ([INSTALL.md](INSTALL.md) walks through all of it).
+are up to you (the
+[setup walkthrough](https://anafpy.readthedocs.io/en/latest/mcp/setup/) covers all
+of it).

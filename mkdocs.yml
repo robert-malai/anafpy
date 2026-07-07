@@ -1,0 +1,85 @@
+# Documentation site (Read the Docs). Build locally with:
+#   uv run mkdocs serve
+# CI and RTD build with --strict: broken internal links fail the build.
+site_name: anafpy
+site_description: >-
+  Typed Python clients for Romania's ANAF web services — e-Factura, e-Transport,
+  and the public no-auth registries — plus a local MCP server.
+site_url: https://anafpy.readthedocs.io/
+repo_url: https://github.com/robert-malai/anafpy
+repo_name: robert-malai/anafpy
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.suggest
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.details
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            show_root_heading: true
+            show_source: false
+
+nav:
+  - Home: index.md
+  - Using with Claude (MCP):
+      - Setup walkthrough: mcp/setup.md
+      - Tools: mcp/tools.md
+      - Workflow skills: mcp/skills.md
+  - Python library:
+      - Quickstart: library/quickstart.md
+      - Authentication: library/auth.md
+      - e-Factura: library/efactura.md
+      - e-Transport: library/etransport.md
+      - Public services: library/public.md
+      - Error model: library/errors.md
+  - API reference:
+      - e-Factura: api/efactura.md
+      - e-Transport: api/etransport.md
+      - Public services: api/public.md
+      - Authentication: api/auth.md
+      - Exceptions: api/exceptions.md
+  - Design notes: design.md
+  - ANAF API reference:
+      - Overview: anaf-reference/README.md
+      - OAuth: anaf-reference/oauth/authentication.md
+      - e-Factura: anaf-reference/efactura/api.md
+      - e-Transport: anaf-reference/etransport/api.md
+      - Public services: anaf-reference/public/api.md

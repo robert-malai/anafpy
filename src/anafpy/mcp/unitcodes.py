@@ -9,7 +9,7 @@ it the authoritative statement of which ``unit_code`` values an upload survives
 (common guesses like ``KG`` or ``PCS`` are *not* on it — kilogram is ``KGM``,
 piece is ``H87``). Codes only: the Schematron carries no labels. Surfaced to the
 model via the ``unit_codes`` nomenclature; deliberately not used for validation
-(DESIGN.md §4: no local rule engine).
+(docs/design.md §4: no local rule engine).
 """
 
 from __future__ import annotations
