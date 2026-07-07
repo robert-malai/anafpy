@@ -98,6 +98,11 @@ minute the first time. Remember where the folder ended up (run `pwd` on macOS or
 `cd` on Windows to print it) — you'll paste that path in step 5. To update anafpy
 later: `git pull` in this folder, then `uv sync --frozen --extra mcp` again.
 
+(anafpy is also on PyPI — `pip install 'anafpy[mcp]'` — but this walkthrough
+deliberately uses the downloaded folder: the ANAF reference documentation and the
+workflow skills that the server offers to Claude ship with the folder, not with
+the PyPI package.)
+
 ## Step 4 — Log in to ANAF (one-time, with your certificate)
 
 This is the only step that uses the certificate. After you confirm the certificate

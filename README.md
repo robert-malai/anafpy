@@ -116,14 +116,25 @@ Setting up a **fresh machine end to end** — ANAF app registration, the certifi
 login, and the Claude / Cowork configuration, written for a non-developer — follow
 [`INSTALL.md`](INSTALL.md). The short version for developers:
 
-Not on PyPI yet — install from source:
+From [PyPI](https://pypi.org/project/anafpy/):
+
+```bash
+pip install anafpy        # or: uv add anafpy
+pip install 'anafpy[mcp]' # with the MCP server
+```
+
+The distribution offers one extra: `anafpy[mcp]` (the MCP server).
+
+For the MCP server, prefer running from a **checkout** (as INSTALL.md does): the
+compiled ANAF reference (`docs/anaf-reference/`, served as MCP resources) and the
+workflow skills (`skills/`, served as MCP prompts) live in the repo, not in the
+wheel. A PyPI-installed server runs fine but serves neither unless
+`ANAFPY_DOCS_DIR` / `ANAFPY_SKILLS_DIR` point at copies. From source:
 
 ```bash
 git clone https://github.com/robert-malai/anafpy && cd anafpy
 uv sync --all-extras
 ```
-
-The distribution offers one extra: `anafpy[mcp]` (the MCP server).
 
 ## Authentication
 
