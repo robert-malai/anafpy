@@ -67,7 +67,7 @@ so downloaded invoices and PDFs land on your own filesystem. See
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
 > APIs.
 
-Requires **Python 3.13+**. Built on **httpx** and **Pydantic v2**.
+Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
 
 ## What works today
 

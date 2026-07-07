@@ -24,6 +24,7 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+.claude/
 
 # Local secrets / tokens (never commit ANAF credentials or token stores)
 *.token.json
