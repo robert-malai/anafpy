@@ -75,3 +75,7 @@ inbox already passed ANAF's validation, whose rules the flat models mirror.
 | `authoring/_codelists.py` | vendored EN 16931 Schematron (`schemas/efactura/schematron/`) | `scripts/generate_efactura_codelists.py` — never hand-edit |
 | `authoring/` (rest) | hand-written; rules translated from the CIUS-RO 1.0.9 Schematron | edit normally, keep rule ids honest |
 | `client.py`, `models.py` | hand-written transport + value types | edit normally |
+
+Provenance of every vendored source (URLs, retrieved dates, vendored subsets) and
+the step-by-step playbook for a CIUS-RO or XSD revision live in
+[`schemas/README.md`](../../../schemas/README.md).

@@ -224,8 +224,8 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
   `test_efactura_roundtrip_live.py` re-files on demand, and its
   `test_validare_agrees_with_local_rules` is the **drift tripwire** asserting
   local `validate()` verdicts track ANAF's both ways, so a CIUS-RO revision
-  announces itself (re-vendor the `.sch` + regenerate the code lists when it
-  fires).
+  announces itself (the step-by-step re-vendor/regenerate/re-align playbook is
+  `schemas/README.md`).
 - **The reader is strict and full-fidelity**: `read_invoice`/`parse_invoice`
   land every wire amount in the explicit fields (never recomputed), so
   round-trips are byte-stable and `validate()` can judge an upstream document's
