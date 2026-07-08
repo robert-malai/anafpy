@@ -1,27 +1,32 @@
 """MCP tool input/return types (``DESIGN.md`` §8).
 
-**Filing tools exist for e-Transport only** (the e-Factura filing pair was removed
-2026-07-03 — outbound invoices come from third-party invoicing software that files
-with ANAF directly; :class:`UblXmlInput` now only feeds ``efactura_validate``).
-**e-Transport is fully translated**:
-the ``etransport_prepare_*`` tools take the client-layer flat models
-(:class:`~anafpy.etransport.models.FlatTransport` and siblings) and compose the
-declaration XML themselves (there is usually no upstream software producing it);
-:class:`EtransportXmlInput` remains for callers who do bring their own XML. The values
-the tools *return* (the prepared-submission gate, submit outcomes) live here; the
-easy-to-read previews reuse the client-layer flat submissions from
-:mod:`anafpy.etransport`.
+Both services file through the same two-step gate, and both offer the two input
+shapes. **XML pass-through** (:class:`UblXmlInput` / :class:`EtransportXmlInput`,
+``{xml|path}``) carries a complete document the caller's software produced —
+the *strongly recommended* e-Factura path when upstream invoicing software
+exists (``DESIGN.md`` §1 — ANAF's SPV purges filed messages after ~60 days;
+the upstream system keeps the durable record). **Structured composition**
+takes the client-layer flat models instead: ``etransport_prepare_*``
+(:class:`~anafpy.etransport.models.FlatTransport` and siblings) and
+``efactura_prepare_invoice``
+(:class:`~anafpy.efactura.authoring.InvoiceDocument`), for callers with no
+upstream system. The values the tools *return* (the prepared-submission gate,
+submit outcomes) live here; the easy-to-read previews reuse the client-layer flat
+models from :mod:`anafpy.etransport` / :mod:`anafpy.efactura.authoring`.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from ..efactura.authoring import Finding, InvoiceDocument
 from ..etransport.models import FlatSubmission
 
 __all__ = [
     "EtransportXmlInput",
+    "PreparedInvoice",
     "PreparedSubmission",
+    "PreparedTransport",
     "SubmitResult",
     "UblXmlInput",
 ]
@@ -30,8 +35,8 @@ __all__ = [
 class UblXmlInput(BaseModel):
     """A complete e-Factura UBL invoice / credit-note as XML.
 
-    Exactly one of ``xml`` / ``path`` must be set. The document is sent to ANAF's
-    validator verbatim — anafpy does not modify or recompute it.
+    Exactly one of ``xml`` / ``path`` must be set. The document is sent to ANAF
+    verbatim — anafpy does not modify or recompute it.
     """
 
     xml: str | None = Field(default=None, description="The UBL document as XML text.")
@@ -50,27 +55,51 @@ class EtransportXmlInput(BaseModel):
 
 
 class PreparedSubmission(BaseModel):
-    """Result of a ``prepare`` step: preview + confirmation token.
+    """Shared shape of a ``prepare`` step: the confirmation-token gate.
 
     ``valid`` is ``False`` (and ``confirmation_token`` ``None``) only when the input
     could not be resolved (bad ``xml``/``path``, invalid fields, no CIF). Otherwise
     pass the token (with the *same* document and ``cif``) to the matching ``submit``
     tool to file; the token is single-use and bound to both. ``cif`` echoes the
-    fiscal code the filing was prepared for. ``transport_preview`` is the
-    easy-to-read projection of the document, for the
-    human to confirm before filing — nothing here is validated against ANAF's rules
-    (ANAF is authoritative). For the composing
-    ``etransport_prepare_*`` tools, ``xml`` carries the exact document that will be
-    filed — pass it back to ``etransport_submit`` verbatim (the token is bound to
-    those bytes).
+    fiscal code the filing was prepared for. For the composing tools
+    (``etransport_prepare_*`` / ``efactura_prepare_invoice``), ``xml`` carries the
+    exact document that will be filed — pass it back to the matching submit tool
+    verbatim (the token is bound to those bytes).
+
+    The per-service results :class:`PreparedTransport` / :class:`PreparedInvoice`
+    add the matching preview, so each tool's output schema describes exactly what
+    it returns.
     """
 
     valid: bool
     confirmation_token: str | None = None
     cif: str | None = None
-    transport_preview: FlatSubmission | None = None
     xml: str | None = None
     message: str = ""
+
+
+class PreparedTransport(PreparedSubmission):
+    """An e-Transport ``prepare`` result.
+
+    ``transport_preview`` is the easy-to-read projection of the document, for the
+    human to confirm before filing — nothing here is validated against ANAF's
+    rules (ANAF validates on upload).
+    """
+
+    transport_preview: FlatSubmission | None = None
+
+
+class PreparedInvoice(PreparedSubmission):
+    """An e-Factura ``prepare`` result.
+
+    ``invoice_preview`` is the flat projection of the exact document that will be
+    filed, for the human to confirm. ``local_findings`` reports anafpy's
+    translated EN 16931 + CIUS-RO rule check — informational: findings never
+    withhold the token, and ANAF's own validation remains authoritative.
+    """
+
+    invoice_preview: InvoiceDocument | None = None
+    local_findings: list[Finding] = []
 
 
 class SubmitResult(BaseModel):

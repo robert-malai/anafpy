@@ -67,11 +67,13 @@ nav:
       - Quickstart: library/quickstart.md
       - Authentication: library/auth.md
       - e-Factura: library/efactura.md
+      - Invoice authoring: library/authoring.md
       - e-Transport: library/etransport.md
       - Public services: library/public.md
       - Error model: library/errors.md
   - API reference:
       - e-Factura: api/efactura.md
+      - Invoice authoring: api/authoring.md
       - e-Transport: api/etransport.md
       - Public services: api/public.md
       - Authentication: api/auth.md

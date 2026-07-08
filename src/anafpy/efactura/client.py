@@ -6,6 +6,13 @@ do **no transport retry** — a single call, one result-or-raise — so a non-id
 loops, polling the processing state with ``tenacity``. HTTP/auth failures raise;
 business outcomes (``nok``, upload rejections) are returned as values.
 
+Outbound documents arrive two ways: ``upload`` takes complete UBL XML exported by
+the caller's invoicing software (the strongly recommended path when such software
+exists — ANAF's SPV purges filed messages after ~60 days, so the upstream system
+is what keeps the durable record), and ``upload_invoice`` composes one from the
+flat authoring models (:mod:`anafpy.efactura.authoring`) for callers with no
+upstream system, who then own archiving the signed downloads.
+
 The stateless document services ``validare`` and ``transformare`` are **public,
 no-auth, prod-only** and live on :class:`anafpy.public.client.PublicClient`
 (``validate_invoice`` / ``render_invoice_pdf``); only the MF signature check
@@ -47,6 +54,7 @@ from ..exceptions import (
     AnafResponseError,
     AnafTransportError,
 )
+from .authoring import DocumentKind, InvoiceDocument, render_invoice
 from .models import (
     DownloadedMessage,
     Filter,
@@ -249,6 +257,39 @@ class EFacturaClient:
             # Be explicit rather than silently returning an empty result.
             errors = [f"unrecognised upload response: {as_text(body)[:200]}"]
         return UploadResult(upload_id=upload_id, errors=errors, raw=body)
+
+    async def upload_invoice(
+        self,
+        document: InvoiceDocument,
+        *,
+        cif: str,
+        skip_validation: bool = False,
+        **upload_kwargs: bool,
+    ) -> UploadResult:
+        """Compose an authored :class:`~anafpy.efactura.authoring.InvoiceDocument`
+        and submit it — filing without upstream invoicing software.
+
+        Renders the flat document to CIUS-RO UBL (totals and the VAT breakdown are
+        computed unless supplied explicitly) and uploads it with the ``standard``
+        matching :attr:`~anafpy.efactura.authoring.InvoiceDocument.kind` (``UBL``
+        for an invoice, ``CN`` for a credit note). The translated EN 16931 +
+        CIUS-RO rule set runs first and raises
+        :class:`~anafpy.efactura.authoring.InvoiceValidationError` on fatal
+        findings; pass ``skip_validation=True`` to let ANAF be the only judge.
+        Callers with ready-made XML from their invoicing software keep using
+        :meth:`upload` — that path stays the recommendation when an upstream
+        system exists.
+
+        Extra boolean flags (``autofactura``, ``extern``, ``executare``, ``b2c``)
+        pass through to :meth:`upload`.
+        """
+        xml = render_invoice(document, skip_validation=skip_validation)
+        standard = (
+            UploadStandard.CN
+            if document.kind is DocumentKind.CREDIT_NOTE
+            else UploadStandard.UBL
+        )
+        return await self.upload(xml, cif=cif, standard=standard, **upload_kwargs)
 
     async def get_status(self, upload_id: str) -> MessageStatus:
         """Poll the processing state for an ``upload_id`` (``index_incarcare``)."""

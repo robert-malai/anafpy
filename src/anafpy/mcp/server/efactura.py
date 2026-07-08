@@ -1,8 +1,17 @@
-"""e-Factura MCP tools: inbox listing, download (with artifact saving), validate.
+"""e-Factura MCP tools: inbox, download (with artifact saving), validate, filing.
 
-The e-Factura surface is read-only — see the package docstring for why the filing
-pair was removed. ``efactura_download`` writes the signed ZIP / ``transformare``
-PDF to caller-given paths so binary artifacts stay out of the model's context.
+Filing is the same two-step gate as e-Transport (``DESIGN.md`` §8), with two
+STEP-1 shapes: ``efactura_prepare`` takes complete UBL XML produced by the user's
+invoicing software (the strongly recommended path when such software exists —
+it, not ANAF's SPV, keeps the durable record; SPV purges filed messages after
+~60 days) and ``efactura_prepare_invoice`` composes the XML from the flat
+:class:`~anafpy.efactura.authoring.InvoiceDocument` — the authoring package
+lets an agent draft a full invoice with no upstream system.
+Prepare runs anafpy's translated CIUS-RO rule check for *informational*
+``local_findings`` but never withholds the token — human review and ANAF's own
+validation stay the gates. ``efactura_download`` writes the signed ZIP /
+``transformare`` PDF to caller-given paths so binary artifacts stay out of the
+model's context.
 """
 
 from __future__ import annotations
@@ -12,16 +21,31 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from ...efactura.authoring import InvoiceDocument, render_invoice
+from ...efactura.authoring import validate as validate_invoice_rules
 from ...efactura.models import Filter, UploadStandard
 from ...exceptions import AnafConfigError, AnafError, AnafResponseError
 from ...public.models import TransformStandard
 from ..config import ServerConfig
 from ..context import AppContext
-from ..documents import resolve_xml, upload_standard
-from ..models import UblXmlInput
-from ._shared import ARTIFACT_SAVING, READ_ONLY
+from ..documents import invoice_view, resolve_xml, upload_standard
+from ..models import PreparedInvoice, SubmitResult, UblXmlInput
+from ..tokens import ConfirmationError, issue_token, verify_token
+from ._shared import ARTIFACT_SAVING, MUTATING, READ_ONLY
 
 __all__ = ["register"]
+
+_INVOICE_KIND = "efactura.invoice"
+
+_TOKEN_USED_MESSAGE = (
+    "confirmation token already used — filing is never repeated on the same "
+    "approval; run the prepare step again"
+)
+
+
+def _invoice_context(cif: str) -> str:
+    """Submission parameters bound into an e-Factura confirmation token."""
+    return f"cif={cif}"
 
 
 def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
@@ -162,6 +186,189 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
             "messages": result.messages,
             "trace_id": result.trace_id,
         }
+
+    @mcp.tool(
+        title="e-Factura: Upload status",
+        annotations=READ_ONLY,
+        description="Get the processing state of an e-Factura upload by its upload "
+        "id (index_incarcare, from efactura_submit). A terminal 'ok' carries the "
+        "download_id of the signed archive — fetch it with efactura_download; "
+        "'nok' carries the rejection findings in errors.",
+    )
+    async def efactura_get_status(upload_id: str) -> dict[str, object]:
+        status = await ctx.efactura().get_status(upload_id)
+        return {
+            "state": status.state.value,
+            "errors": status.errors,
+            "is_terminal": status.is_terminal,
+            "download_id": status.download_id,
+        }
+
+    @mcp.tool(
+        title="e-Factura: Prepare invoice",
+        annotations=MUTATING,
+        description="STEP 1 of filing an e-Factura invoice or credit note composed "
+        "from STRUCTURED fields — no XML and no invoicing software needed: render "
+        "the CIUS-RO UBL from the given invoice (totals and the VAT breakdown are "
+        "computed from the lines unless supplied) and return the exact XML + the "
+        "invoice preview + local_findings (anafpy's translated CIUS-RO rule check "
+        "— informational; ANAF's validation is authoritative) + a confirmation "
+        "token. Show the preview and any findings for approval; then call "
+        "efactura_submit with document={'xml': <the returned xml>}, the token, and "
+        "confirm=True. Does NOT file. When the user's invoicing software already "
+        "produced the XML, prefer efactura_prepare with that XML instead of "
+        "re-composing it here.",
+    )
+    async def efactura_prepare_invoice(
+        invoice: InvoiceDocument, cif: str | None = None
+    ) -> PreparedInvoice:
+        try:
+            resolved = cfg.require_cif(cif)
+        except AnafError as exc:
+            return PreparedInvoice(valid=False, message=str(exc))
+        xml = render_invoice(invoice, skip_validation=True)
+        report = validate_invoice_rules(invoice)
+        token = issue_token(
+            cfg.signing_key,
+            kind=_INVOICE_KIND,
+            payload=xml,
+            context=_invoice_context(resolved),
+        )
+        note = (
+            "no local findings"
+            if not report.findings
+            else f"{len(report.fatal)} fatal / "
+            f"{len(report.findings) - len(report.fatal)} warning local finding(s) "
+            "— review them with the user; they do not block filing"
+        )
+        return PreparedInvoice(
+            valid=True,
+            confirmation_token=token,
+            cif=resolved,
+            invoice_preview=invoice,
+            local_findings=report.findings,
+            xml=xml.decode("utf-8"),
+            message=f"composed; {note}. ANAF validates authoritatively on upload "
+            "(or pre-check with efactura_validate). Review the preview with the "
+            "user, then pass the returned xml and token to efactura_submit with "
+            "confirm=True.",
+        )
+
+    @mcp.tool(
+        title="e-Factura: Prepare XML filing",
+        annotations=MUTATING,
+        description="STEP 1 of filing an e-Factura invoice/credit note the caller "
+        "already has as complete UBL XML — the RECOMMENDED path when the user's "
+        "invoicing software produced it: return an easy-to-read invoice preview + "
+        "a confirmation token bound to this exact document and CIF; the bytes go "
+        "to ANAF verbatim. (To compose an invoice from structured fields instead, "
+        "use efactura_prepare_invoice.) Show the preview for approval; then call "
+        "efactura_submit with the same document, the token, and confirm=True. "
+        "Does NOT file; pre-check with efactura_validate if in doubt.",
+    )
+    async def efactura_prepare(
+        document: UblXmlInput, cif: str | None = None
+    ) -> PreparedInvoice:
+        try:
+            xml = resolve_xml(document)
+            resolved = cfg.require_cif(cif)
+        except AnafError as exc:
+            return PreparedInvoice(valid=False, message=str(exc))
+        preview = invoice_view(xml)
+        token = issue_token(
+            cfg.signing_key,
+            kind=_INVOICE_KIND,
+            payload=xml,
+            context=_invoice_context(resolved),
+        )
+        message = (
+            "not pre-validated (ANAF is authoritative; efactura_validate "
+            "pre-checks without filing). Review the preview with the user, then "
+            "submit with the confirmation token."
+            if preview is not None
+            else "the document did not parse into the flat invoice view — no "
+            "preview; review the XML carefully (efactura_validate pre-checks it) "
+            "before submitting with the confirmation token."
+        )
+        return PreparedInvoice(
+            valid=True,
+            confirmation_token=token,
+            cif=resolved,
+            invoice_preview=preview,
+            message=message,
+        )
+
+    @mcp.tool(
+        title="e-Factura: Submit filing",
+        annotations=MUTATING,
+        description="STEP 2 of filing an e-Factura document: upload the supplied "
+        "XML to ANAF and return the upload id (poll it with efactura_get_status). "
+        "Requires the confirmation_token from efactura_prepare or "
+        "efactura_prepare_invoice for the SAME document (for the composing tool, "
+        "document={'xml': <the xml it returned>}) and confirm=True.",
+    )
+    async def efactura_submit(
+        document: UblXmlInput,
+        confirmation_token: str,
+        confirm: bool = False,
+        cif: str | None = None,
+    ) -> SubmitResult:
+        if not confirm:
+            return SubmitResult(
+                accepted=False,
+                message="confirm=False — set confirm=True only after the user "
+                "approves the preview from efactura_prepare*.",
+            )
+        try:
+            xml = resolve_xml(document)
+            resolved = cfg.require_cif(cif)
+        except AnafError as exc:
+            return SubmitResult(accepted=False, errors=[str(exc)])
+        try:
+            expires_at = verify_token(
+                cfg.signing_key,
+                confirmation_token,
+                kind=_INVOICE_KIND,
+                payload=xml,
+                context=_invoice_context(resolved),
+            )
+        except ConfirmationError as exc:
+            return SubmitResult(accepted=False, message=str(exc))
+        # Resolve the client BEFORE consuming the token: missing credentials is a
+        # deterministic config error, and must not burn the human's approval.
+        client = ctx.efactura()
+        if not ctx.token_ledger.consume(confirmation_token, expires_at):
+            return SubmitResult(accepted=False, message=_TOKEN_USED_MESSAGE)
+        # The token is consumed BEFORE the upload, deliberately: on an ambiguous
+        # failure (e.g. a timeout after the request was sent) replaying the same
+        # token must not be able to double-file — the human re-approves instead.
+        try:
+            result = await client.upload(
+                xml, cif=resolved, standard=upload_standard(xml)
+            )
+        except AnafError as exc:
+            return SubmitResult(
+                accepted=False,
+                errors=[str(exc)],
+                message=(
+                    "the upload failed and the outcome is UNKNOWN — the request "
+                    "may or may not have reached ANAF. The confirmation token is "
+                    "spent. Before preparing this filing again, check whether it "
+                    "went through (efactura_list_messages, or efactura_get_status "
+                    "if an upload id is known) so it is not filed twice."
+                ),
+            )
+        return SubmitResult(
+            accepted=result.accepted,
+            upload_id=result.upload_id,
+            errors=result.errors,
+            message=(
+                f"filed — upload id {result.upload_id}; poll efactura_get_status "
+                "to a terminal state"
+                if result.accepted
+                else "ANAF rejected the document at submission"
+            ),
+        )
 
 
 def _parse_window_dt(value: str | None, *, field: str) -> datetime | None:

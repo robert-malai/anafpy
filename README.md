@@ -5,16 +5,22 @@ Typed Python clients for Romania's **ANAF** tax-authority web services —
 **public no-auth registries** (VAT/taxpayer lookups, financial statements) — plus a
 local MCP server that exposes them as [Claude Cowork](https://claude.com) skills.
 
-anafpy is a **thin transport client**, not invoicing software. For **e-Factura** you
-bring invoice XML that your own invoicing system produced, and anafpy validates it,
-files it with ANAF, tracks status, and pulls documents back — wrapping the XML you read
-back (your filings and invoices suppliers issued to you) in a friendly **flat read
-view** for easy display. (e-Factura is a filing endpoint; Romanian law presumes you
-already run an invoicing system.) **e-Transport is different**: there is usually no
-upstream software producing declaration XML, so anafpy translates ANAF's whole (small,
-fully enumerated) schema into friendly typed models — you author declarations, UIT
-deletions, confirmations, and vehicle changes from structured fields, no XML handling
-needed, and the same models render what you read back.
+anafpy is a **thin transport client** — no persistence, no accounting logic. For
+**e-Factura** there are two ways out: if you run invoicing software, bring the
+invoice XML it produced and anafpy validates it, files it with ANAF, tracks
+status, and pulls documents back (the strongly recommended path — your system's
+XML is never re-composed); if you don't, the **invoice authoring models** compose
+a complete CIUS-RO invoice or credit note from plain business fields — totals and
+the VAT breakdown computed for you, checked against a translated EN 16931 +
+CIUS-RO rule set before filing. Either way, remember that **ANAF's SPV is not
+invoice storage** — it purges filed messages after ~60 days — so your durable
+record must live on your side: your invoicing system's ledger, or, when you
+author with anafpy, the signed ZIPs you download and keep. Documents you read
+back (your filings and
+invoices suppliers issued to you) come wrapped in a friendly **flat read view**
+for easy display. **e-Transport** is fully translated too: you author
+declarations, UIT deletions, confirmations, and vehicle changes from structured
+fields, no XML handling needed, and the same models render what you read back.
 
 **Documentation: [anafpy.readthedocs.io](https://anafpy.readthedocs.io)** — the
 end-user setup walkthrough, the library guides, and the API reference.
@@ -35,15 +41,16 @@ no-auth services):
 - **Validate an invoice XML** against ANAF's authoritative server-side `validare`
   (CIUS-RO / BR-RO rules) — no filing.
 
-**Work your e-Factura inbox — read-only** (needs the certificate login):
+**Work your e-Factura inbox and file invoices** (needs the certificate login):
 
 - **List received and sent invoice messages** for a date window.
 - **Download an invoice** as an easy-to-read view, and **save the official signed ZIP
   and/or a rendered PDF** to disk — powering batch flows like "export last month's
   invoices as `<date> - <partner>.pdf`".
-
-> Issuing outbound invoices is deliberately **not** here — that comes from your
-> invoicing software, which files with ANAF directly. The e-Factura surface is read-only.
+- **File an invoice or credit note** — from the XML your invoicing software
+  exported (recommended when you have one), or **composed by Claude from plain
+  business fields** when you don't. Either way filing is two-step gated: you see
+  a preview and nothing reaches ANAF until you explicitly confirm.
 
 **Declare goods transport in e-Transport — with a confirmation step** (needs the login):
 
@@ -63,12 +70,12 @@ so downloaded invoices and PDFs land on your own filesystem. See the
 full Claude Desktop + ANAF setup.
 
 > Status: **early / alpha** (`0.x`), on PyPI as
-> [`anafpy`](https://pypi.org/project/anafpy/). The OAuth2 auth layer,
-> both async clients (with an easy-to-read flat view of downloaded documents), and the
-> MCP server (structured e-Transport filing and a read-only e-Factura surface —
-> inbox, download, validate) are implemented and tested.
-> Validation is ANAF's own server-side `validare` endpoint — there is no local rule
-> engine. See [`DESIGN.md`](DESIGN.md) for the full design and
+> [`anafpy`](https://pypi.org/project/anafpy/). The OAuth2 auth layer, both async
+> clients, the bidirectional invoice-authoring models, and the MCP server
+> (two-step gated filing for both services, inbox, download, validate) are
+> implemented and tested. ANAF's own server-side `validare` stays the
+> authoritative validator; the authoring models add a local translated rule
+> check for fast feedback. See [`DESIGN.md`](DESIGN.md) for the full design and
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
 > APIs.
 
@@ -79,12 +86,21 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
 - **OAuth2 auth layer** — Authorization-Code bootstrap (browser + qualified
   certificate), local token store, and headless refresh, exposed via the `anafpy` CLI
   and an `httpx.Auth` integration for the clients.
-- **`EFacturaClient`** (async) — `upload`, `get_status`, `download`,
+- **`EFacturaClient`** (async) — `upload` (ready-made XML) and `upload_invoice`
+  (an authored `InvoiceDocument`), `get_status`, `download`,
   `validate_signature` (checks the MF signature over a downloaded invoice), the
   `upload_and_wait` poll-until-terminal helper, and `list_messages` — a single async
   iterator that pages the message list under the hood (window by `days` or `start`/`end`;
   empty window → empty iterator, real ANAF errors → raise). `download` exposes three read
-  tiers: raw signed bytes, the full UBL model, and an easy-to-read `FlatInvoice` **view**.
+  tiers: raw signed bytes, the full UBL model, and the flat `InvoiceDocument` **view**
+  (the same authoring model, read full-fidelity from the wire).
+- **Invoice authoring** (`anafpy.efactura.authoring`) — bidirectional CIUS-RO
+  models: one `InvoiceDocument` covers invoice and credit note, totals and the
+  VAT breakdown are computed from the lines (explicit values preserved), and a
+  hand-translated EN 16931 + CIUS-RO rule set (`validate()`) reports findings
+  with the official BR-* ids before anything is filed. `render_invoice` emits
+  upload-ready XML; `parse_invoice`/`read_invoice` map wire XML back into the
+  same models with byte-stable round-trips.
 - **`ETransportClient`** (async) — `upload`, `get_status`, `info`, `upload_and_wait`,
   `list_notifications` (same async-iterator shape), and **`upload_document`**, which
   composes and files any of the four flat documents — a `FlatTransport`
@@ -100,17 +116,19 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   `transformare` PDF rendering); both are prod-only on ANAF's side and need no
   login. No credentials, no test/prod split; requests are paced client-side at
   ANAF's stated 1 req/s rule.
-- **Flat models** — `read_flat_invoice` projects UBL into a small, easy-to-read
-  `FlatInvoice` **read view** (lossy, with a `complete` flag); anafpy never composes
-  UBL from it. The e-Transport flat models are **bidirectional**: `read_flat_transport`
+- **Flat models** — the invoice authoring models above double as the inbox
+  read view (`DownloadedMessage.view`), so what you download and what you author
+  are the same shape. The
+  e-Transport flat models are **bidirectional**: `read_flat_transport`
   views a parsed document and `build_etransport` / `render_etransport` author one —
   full translation of ANAF's XSD, with enum-coded fields (counties, border points,
   customs offices, operation types...) accepted by name or code.
 - **Generated models** — UBL 2.1 / CIUS-RO (`from anafpy.efactura import Invoice,
   CreditNote`) and the proprietary e-Transport XSD, generated from vendored schemas.
 - **MCP server** (`anafpy[mcp]`) — a local stdio connector exposing the operations as
-  Cowork skills, with read-first, two-step gated e-Transport filing and a read-only
-  e-Factura surface (see below).
+  Cowork skills: read-first, with two-step gated filing for **both** services —
+  e-Factura invoices (ready-made XML or composed from structured fields) and
+  e-Transport declarations (see below).
 
 CI (GitHub Actions, gates on 3.12 + 3.13) and tag-triggered PyPI publishing are in
 place. (A sync facade was dropped as a goal — the clients are async-only.)
@@ -241,11 +259,13 @@ The surface is **read-first**: freely callable read tools (the `anaf_*` public
 lookups and `efactura_validate` need **no login at all**; `auth_status`, the
 e-Factura inbox — which can also save the signed ZIP and ANAF's official PDF
 rendering to disk — and the e-Transport reads need the one-time login) plus
-**two-step gated filing for e-Transport**: `etransport_prepare*` composes the
-declaration from structured fields and returns a preview + a single-use
-confirmation token bound to the exact document and CIF; `etransport_submit` files
-only with that token and `confirm=True`. **The e-Factura surface is read-only** —
-outbound invoices come from your invoicing software, which files with ANAF itself.
+**two-step gated filing for both services**: every `*_prepare*` tool returns a
+preview + a single-use confirmation token bound to the exact document and CIF,
+and the matching `*_submit` files only with that token and `confirm=True`.
+e-Factura filings arrive either as the XML your invoicing software produced
+(`efactura_prepare`, the recommended path) or composed from structured fields
+(`efactura_prepare_invoice` — no invoicing software needed); e-Transport
+declarations are composed from structured fields by `etransport_prepare*`.
 The compiled ANAF reference is served as read-only resources, and workflow
 playbooks (like `etransport-declare`, which takes a declaration from any source —
 an email, a PDF invoice, a CMR — through extract → prepare → your approval →

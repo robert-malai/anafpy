@@ -5,14 +5,17 @@ Typed Python clients for Romania's **ANAF** tax-authority web services —
 **public no-auth registries** (VAT/taxpayer lookups, financial statements) — plus a
 local MCP server that exposes them as [Claude Cowork](https://claude.com) skills.
 
-anafpy is a **thin transport client**, not invoicing software. For **e-Factura** you
-bring invoice XML that your own invoicing system produced, and anafpy validates it,
-files it with ANAF, tracks status, and pulls documents back — wrapping the XML you
-read back in a friendly **flat read view** for easy display. **e-Transport is
-different**: there is usually no upstream software producing declaration XML, so
-anafpy translates ANAF's whole (small, fully enumerated) schema into friendly typed
-models — you author declarations, UIT deletions, confirmations, and vehicle changes
-from structured fields, no XML handling needed.
+anafpy is a **thin transport client** — no persistence, no accounting logic. For
+**e-Factura** there are two ways out: bring the invoice XML your own invoicing
+system produced (the strongly recommended path — anafpy validates, files, tracks,
+and never re-composes it; ANAF's SPV purges filed messages after ~60 days, so
+your system of record stays yours), or, with no upstream system at all, compose a
+complete CIUS-RO invoice or credit note from plain business fields with the
+[authoring models](library/authoring.md) — totals and the VAT breakdown computed
+for you. Documents you read back come wrapped in a friendly **flat read view**
+for easy display. **e-Transport** is fully translated too: you author
+declarations, UIT deletions, confirmations, and vehicle changes from structured
+fields, no XML handling needed.
 
 Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**. Licensed
 [Apache-2.0](https://github.com/robert-malai/anafpy/blob/main/LICENSE) —

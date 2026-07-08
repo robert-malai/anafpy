@@ -17,13 +17,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import httpx
 import pytest
 
 from anafpy._transport.base import Environment
-from anafpy.auth import FileTokenStore, TokenProvider
+from anafpy.auth import TokenProvider, TokenStore
 from anafpy.efactura import EFacturaClient
 from anafpy.etransport import ETransportClient
 
@@ -38,12 +37,6 @@ pytestmark = [
 _HELLO_URL = "https://api.anaf.ro/TestOauth/jaxrs/hello"
 
 
-def _store_path() -> Path:
-    return Path(
-        os.environ.get("ANAFPY_TOKEN_STORE", "~/.anafpy/tokens.json")
-    ).expanduser()
-
-
 def _require(name: str) -> str:
     value = os.environ.get(name)
     if not value:
@@ -52,13 +45,12 @@ def _require(name: str) -> str:
 
 
 @pytest.fixture
-async def provider() -> AsyncIterator[TokenProvider]:
+async def provider(live_token_store: TokenStore) -> AsyncIterator[TokenProvider]:
     client_id = _require("ANAFPY_CLIENT_ID")
     client_secret = _require("ANAFPY_CLIENT_SECRET")
-    store = FileTokenStore(_store_path())
-    if store.load() is None:
-        pytest.skip("no token store — run `anafpy auth login` first")
-    prov = TokenProvider(client_id=client_id, client_secret=client_secret, store=store)
+    prov = TokenProvider(
+        client_id=client_id, client_secret=client_secret, store=live_token_store
+    )
     yield prov
     await prov.aclose()
 

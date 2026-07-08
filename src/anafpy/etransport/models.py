@@ -9,8 +9,8 @@ Key differences from e-Factura:
 - ``Notification`` mirrors the richer JSON returned by ``lista/{zile}/{cif}``, and
   ``InfoList`` / ``InfoItem`` cover the transporter-lookup endpoint; both read ANAF's
   terse wire names via aliases and expose descriptive field names instead.
-- **The flat models are bidirectional** — unlike e-Factura's read-only ``FlatInvoice``,
-  the ``Flat*`` shapes here both *view* a parsed declaration
+- **The flat models are bidirectional** — like e-Factura's authoring models, the
+  ``Flat*`` shapes here both *view* a parsed declaration
   (:func:`read_flat_transport`) and *author* one (:func:`build_etransport` /
   :func:`render_etransport`): e-Transport has no upstream authoring software the way
   invoicing does, and ANAF's XSD is small and fully enumerated, so anafpy translates
