@@ -217,7 +217,14 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
   Live-confirmed 2026-07-08: ANAF's `validare` answers `valid` for a
   maximal-surface authored invoice; one divergence found and mirrored — ANAF
   enforces BR-51 as a fatal `string-length(BT-87) <= 10`, not the EN 16931
-  digit-count warning.
+  digit-count warning. The same day, an authored invoice was **filed to TEST
+  end to end** via `upload_invoice` (accepted, `stare=ok`, downloaded, and read
+  back through the strict `view` cleanly); the live suite keeps both honest —
+  `test_efactura_roundtrip_live.py` re-files on demand, and its
+  `test_validare_agrees_with_local_rules` is the **drift tripwire** asserting
+  local `validate()` verdicts track ANAF's both ways, so a CIUS-RO revision
+  announces itself (re-vendor the `.sch` + regenerate the code lists when it
+  fires).
 - **The reader is strict and full-fidelity**: `read_invoice`/`parse_invoice`
   land every wire amount in the explicit fields (never recomputed), so
   round-trips are byte-stable and `validate()` can judge an upstream document's

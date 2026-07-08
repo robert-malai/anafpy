@@ -412,9 +412,19 @@ results.
   keeping anafpy's own rendered XML honest — (upload → `stareMesaj` → `lista` →
   `info`) and
   [tests/test_efactura_roundtrip_live.py](tests/test_efactura_roundtrip_live.py)
-  **files** a minimal CIUS-RO invoice (upload → `stareMesaj` → `descarcare` → list) —
+  **files** a minimal CIUS-RO invoice composed via the authoring models and
+  filed with `upload_invoice` (upload → `stareMesaj` → `descarcare` → list),
+  also proving the strict `DownloadedMessage.view` on ANAF's returned XML —
   **TEST only, never prod** — to keep the filing wire shapes honest; don't add uploads
-  to any other live file.
+  to any other live file. The same file's `test_validare_agrees_with_local_rules`
+  is the **drift tripwire**: it asserts local `authoring.validate()` verdicts
+  track ANAF's `validare` both ways (clean passes clean; a BR-CO-16 break is
+  flagged by both with the same rule id) — when a CIUS-RO revision lands, this
+  is the test that announces it (then: re-vendor the `.sch`, regenerate the code
+  lists, re-align the translated rules). All live suites resolve credentials
+  from the gitignored `.env` and the token store via the conftest
+  `live_token_store` fixture (file store if present, else the REAL OS keyring —
+  the one sanctioned exception to the autouse fake).
 - **Keep the docs in sync with the change.** When a change alters the public surface,
   status, layout, or conventions, update the affected docs in the same change:
   [README.md](README.md) (the GitHub/PyPI landing page — overview, install, quick
