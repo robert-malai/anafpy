@@ -35,7 +35,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    SW["Invoicing software's own UBL XML<br/>(recommended when you have one — never re-composed)"]
+    SW["Invoicing software's own UBL XML<br/>(strongly recommended when you have one — never re-composed;<br/>its ledger, not ANAF's SPV, keeps your durable record)"]
     AU["InvoiceDocument authored from business fields<br/>(no upstream system needed)"]
     AU -- "local rule check: authoring.validate()<br/>findings with official BR-* ids (informational)" --> AU
     SW -- "EFacturaClient.upload(xml)" --> UP["ANAF /upload → UploadResult (upload_id)"]

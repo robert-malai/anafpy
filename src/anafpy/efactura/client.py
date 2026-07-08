@@ -7,9 +7,11 @@ loops, polling the processing state with ``tenacity``. HTTP/auth failures raise;
 business outcomes (``nok``, upload rejections) are returned as values.
 
 Outbound documents arrive two ways: ``upload`` takes complete UBL XML exported by
-the caller's invoicing software (the recommended path when such software exists),
-and ``upload_invoice`` composes one from the flat authoring models
-(:mod:`anafpy.efactura.authoring`) for callers with no upstream system.
+the caller's invoicing software (the strongly recommended path when such software
+exists — ANAF's SPV purges filed messages after ~60 days, so the upstream system
+is what keeps the durable record), and ``upload_invoice`` composes one from the
+flat authoring models (:mod:`anafpy.efactura.authoring`) for callers with no
+upstream system, who then own archiving the signed downloads.
 
 The stateless document services ``validare`` and ``transformare`` are **public,
 no-auth, prod-only** and live on :class:`anafpy.public.client.PublicClient`

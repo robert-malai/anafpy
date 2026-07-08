@@ -3,10 +3,12 @@
 Both services file through the same two-step gate, and both offer the two input
 shapes. **XML pass-through** (:class:`UblXmlInput` / :class:`EtransportXmlInput`,
 ``{xml|path}``) carries a complete document the caller's software produced —
-the *recommended* e-Factura path when upstream invoicing software exists.
-**Structured composition** takes the client-layer flat models instead:
-``etransport_prepare_*`` (:class:`~anafpy.etransport.models.FlatTransport` and
-siblings) and — since 2026-07-08 — ``efactura_prepare_invoice``
+the *strongly recommended* e-Factura path when upstream invoicing software
+exists (``DESIGN.md`` §1 — ANAF's SPV purges filed messages after ~60 days;
+the upstream system keeps the durable record). **Structured composition**
+takes the client-layer flat models instead: ``etransport_prepare_*``
+(:class:`~anafpy.etransport.models.FlatTransport` and siblings) and
+``efactura_prepare_invoice``
 (:class:`~anafpy.efactura.authoring.InvoiceDocument`), for callers with no
 upstream system. The values the tools *return* (the prepared-submission gate,
 submit outcomes) live here; the easy-to-read previews reuse the client-layer flat

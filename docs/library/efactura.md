@@ -6,15 +6,20 @@ tracking processing, listing the message inbox, and downloading documents.
 
 ## Two outbound paths
 
-**Pass-through is the recommended path when you run invoicing software**: bring
-the complete UBL XML your system exported and anafpy moves it — validate, file,
-track, download — without ever re-composing it. Your invoicing system's document
-is authoritative; re-deriving it could only add drift.
+**Pass-through is the strongly recommended path when you run invoicing
+software**: bring the complete UBL XML your system exported and anafpy moves
+it — validate, file, track, download — without ever re-composing it. Your
+invoicing system's document is authoritative; re-deriving it could only add
+drift. Just as important, **ANAF's SPV is not invoice storage**: it purges
+filed messages after ~60 days, so the durable record must live in a system you
+own — which an invoicing system gives you for free.
 
 **Structured authoring** is the first-class alternative when there is no
 upstream system: the [`anafpy.efactura.authoring`](authoring.md) models compose
 a complete CIUS-RO invoice or credit note from business fields — totals and the
 VAT breakdown computed for you — and `upload_invoice` files it in one call.
+Archiving the signed documents is then on you: download each filing's ZIP and
+keep it, because after the retention window ANAF won't have it either.
 
 The generated UBL 2.1 / CIUS-RO models are available if you want typed access to
 a parsed document:

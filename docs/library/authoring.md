@@ -5,11 +5,15 @@ from business fields — no invoicing software and no UBL knowledge required. Th
 models are **bidirectional**: the same `InvoiceDocument` authors a filing and
 views a parsed one, with byte-stable round-trips.
 
-If your invoicing software already exports UBL XML, prefer the
+If your invoicing software already exports UBL XML, strongly prefer the
 [pass-through path](efactura.md#two-outbound-paths): its document is
-authoritative and anafpy never re-composes it. Authoring exists for everyone
-else — a freelancer, an agent drafting an invoice in a chat, a script issuing a
-handful of invoices a month.
+authoritative, anafpy never re-composes it, and — the part that outlives the
+filing — **ANAF's SPV is not invoice storage**: it purges filed messages after
+~60 days, and an invoicing system is what keeps your durable record. Authoring
+exists for everyone else — a freelancer, an agent drafting an invoice in a
+chat, a script issuing a handful of invoices a month — with one obligation
+attached: download and keep the signed ZIP of every filing, because your copy
+is the one that lasts.
 
 ## Composing an invoice
 

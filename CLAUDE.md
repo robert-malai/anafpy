@@ -11,12 +11,15 @@ documentation site (Read the Docs, `https://anafpy.readthedocs.io`).
 **e-Factura** (electronic invoicing), **e-Transport** (goods transport), and the
 **public no-auth services** (`anafpy.public`: registry lookups + financial
 statements). It is a **thin, stateless transport client** (no persistence, no
-accounting logic). **e-Factura outbound has two shapes** (revised 2026-07-08; was
-pass-through-only): **XML pass-through is the recommended path** when the caller
+accounting logic). **e-Factura outbound has two shapes** (DESIGN.md §1):
+**XML pass-through is the strongly recommended path** when the caller
 runs invoicing software — bring the complete UBL XML it exported; anafpy never
-re-composes an upstream system's document — and **structured authoring**
-(`anafpy.efactura.authoring`) is the first-class alternative for callers with no
-upstream system: bidirectional flat models (one `InvoiceDocument` covers invoice
+re-composes an upstream system's document, and ANAF's SPV is **not invoice
+storage** (it purges filed messages after ~60 days), so the durable record must
+live in a system the caller owns — and **structured authoring**
+(`anafpy.efactura.authoring`) is the first-class path for callers with no
+upstream system (they then own archiving the signed ZIPs): bidirectional flat
+models (one `InvoiceDocument` covers invoice
 + credit note; `kind` picks the render target) with computed totals/VAT breakdown
 (explicit overrides preserved), a hand-translated EN 16931 + CIUS-RO rule set
 (`validate()`, findings with official BR-* ids; ANAF stays authoritative),
@@ -24,8 +27,8 @@ upstream system: bidirectional flat models (one `InvoiceDocument` covers invoice
 `EFacturaClient.upload_invoice`. The same `InvoiceDocument` backs the
 e-Factura inbox: `DownloadedMessage.view` reads downloads through the strict
 `read_invoice` (never raising — `None` when the content is not representable;
-the lossy `FlatInvoice` view was removed 2026-07-08 when the strict reader
-proved to cover every ANAF-validated document). **e-Transport is fully
+strict reading covers every ANAF-validated document, and the raw bytes + full
+UBL model remain the fallback tiers). **e-Transport is fully
 translated** (decided 2026-07-03): the flat models are **bidirectional** — the
 same models author a filing (`build_etransport`/`render_etransport`,
 `upload_document`) and view a parsed one (`read_flat_transport`), covering all
@@ -98,7 +101,7 @@ src/anafpy/
     README.md            # module map: layer diagram (flat <-> generated UBL <-> wire),
                          # outbound/inbound flows, who-owns-what table
     ubl/                 # GENERATED UBL 2.1 models (xsdata-pydantic) — do not hand-edit
-    authoring/           # BIDIRECTIONAL CIUS-RO invoice models (2026-07-08):
+    authoring/           # BIDIRECTIONAL CIUS-RO invoice models:
                          #   models.py (InvoiceDocument + parts, computed totals/VAT),
                          #   rules.py (validate() -> findings with BR-* ids),
                          #   build.py / read.py (flat <-> UBL), codes.py,
@@ -219,11 +222,11 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   truth — never duplicate their content into the server; parsing is
   `python-frontmatter`'s (the `mcp` extra), with `skills.py` only enforcing that
   `name`/`description` are present (missing fields fail loudly at server start).
-- **e-Factura filing tools** (reinstated 2026-07-08 with the authoring package;
-  they had been removed 2026-07-03 while outbound invoices could only come from
-  third-party software). Two STEP-1 shapes feed one gate: `efactura_prepare`
-  takes complete UBL XML (`UblXmlInput {xml|path}`) verbatim — the recommended
-  path when upstream invoicing software produced the document — and
+- **e-Factura filing tools.** Two STEP-1 shapes feed one gate: `efactura_prepare`
+  takes complete UBL XML (`UblXmlInput {xml|path}`) verbatim — the strongly
+  recommended path when upstream invoicing software produced the document
+  (DESIGN.md §1: SPV purges after ~60 days; the durable record lives
+  upstream) — and
   `efactura_prepare_invoice` composes the XML from the client-layer
   `InvoiceDocument`. Prepare returns the invoice preview (strict read-back of
   the exact bytes), a confirmation token, and — composed path — informational
@@ -266,9 +269,9 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   `InvoiceDocument` family: `read_invoice` views full-fidelity,
   `build_invoice`/`render_invoice` author; wire amounts land in explicit fields
   so round-trips are byte-stable; `DownloadedMessage.view` wraps the reader
-  never-raising for the inbox (a lenient lossy `FlatInvoice` predecessor was
-  removed 2026-07-08 — strict reading covers every ANAF-validated document, and
-  the raw bytes + full UBL model remain the fallback tiers). The e-Transport
+  never-raising for the inbox (strict reading covers every ANAF-validated
+  document, and the raw bytes + full UBL model remain the fallback tiers).
+  The e-Transport
   `FlatTransport` / `FlatDeletion` / `FlatConfirmation` / `FlatVehicleChange`
   (union `FlatSubmission`) are a **full translation** of the XSD:
   `read_flat_transport` views, `build_etransport` / `render_etransport` author
@@ -294,7 +297,7 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   callable. `efactura_download` is also freely callable but carries honest
   annotations (`readOnlyHint=False`, idempotent, non-destructive) because it may
   write files at caller-given paths; the two-step gate is for ANAF filings only.
-  Filing — **both services** since 2026-07-08 — is split `*_prepare*` →
+  Filing — **both services** — is split `*_prepare*` →
   `*_submit`: prepare parses (or composes) the XML for a preview and returns an
   HMAC **confirmation token** (`mcp/tokens.py`) bound to the exact XML bytes and
   the CIF; submit requires that token (same document, same CIF) **and**

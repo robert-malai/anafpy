@@ -2,10 +2,11 @@
 
 Filing is the same two-step gate as e-Transport (``DESIGN.md`` §8), with two
 STEP-1 shapes: ``efactura_prepare`` takes complete UBL XML produced by the user's
-invoicing software (the recommended path when such software exists) and
-``efactura_prepare_invoice`` composes the XML from the flat
-:class:`~anafpy.efactura.authoring.InvoiceDocument` (reinstated 2026-07-08 — the
-authoring package lets an agent draft a full invoice with no upstream system).
+invoicing software (the strongly recommended path when such software exists —
+it, not ANAF's SPV, keeps the durable record; SPV purges filed messages after
+~60 days) and ``efactura_prepare_invoice`` composes the XML from the flat
+:class:`~anafpy.efactura.authoring.InvoiceDocument` — the authoring package
+lets an agent draft a full invoice with no upstream system.
 Prepare runs anafpy's translated CIUS-RO rule check for *informational*
 ``local_findings`` but never withholds the token — human review and ANAF's own
 validation stay the gates. ``efactura_download`` writes the signed ZIP /

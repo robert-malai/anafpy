@@ -8,11 +8,15 @@ local MCP server that exposes them as [Claude Cowork](https://claude.com) skills
 anafpy is a **thin transport client** — no persistence, no accounting logic. For
 **e-Factura** there are two ways out: if you run invoicing software, bring the
 invoice XML it produced and anafpy validates it, files it with ANAF, tracks
-status, and pulls documents back (the recommended path — your system's XML is
-never re-composed); if you don't, the **invoice authoring models** compose a
-complete CIUS-RO invoice or credit note from plain business fields — totals and
+status, and pulls documents back (the strongly recommended path — your system's
+XML is never re-composed); if you don't, the **invoice authoring models** compose
+a complete CIUS-RO invoice or credit note from plain business fields — totals and
 the VAT breakdown computed for you, checked against a translated EN 16931 +
-CIUS-RO rule set before filing. Documents you read back (your filings and
+CIUS-RO rule set before filing. Either way, remember that **ANAF's SPV is not
+invoice storage** — it purges filed messages after ~60 days — so your durable
+record must live on your side: your invoicing system's ledger, or, when you
+author with anafpy, the signed ZIPs you download and keep. Documents you read
+back (your filings and
 invoices suppliers issued to you) come wrapped in a friendly **flat read view**
 for easy display. **e-Transport** is fully translated too: you author
 declarations, UIT deletions, confirmations, and vehicle changes from structured

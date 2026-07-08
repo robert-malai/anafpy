@@ -13,24 +13,29 @@
 
 anafpy is a **thin, stateless transport client** for ANAF's **e-Factura** and
 **e-Transport** services, optimized **MCP/Claude-first**. It is not accounting
-software — no persistence, no reconciliation, no ledger — but since 2026-07-08 it
-**can fully author an e-Factura document**: the bidirectional flat models in
-`efactura.authoring` compose a complete CIUS-RO invoice or credit note from
-business fields, for callers (and agents) with no upstream invoicing system.
+software — no persistence, no reconciliation, no ledger — but it **can fully
+author an e-Factura document** (design update 2026-07-08): the bidirectional
+flat models in `efactura.authoring` compose a complete CIUS-RO invoice or
+credit note from business fields, for callers (and agents) with no upstream
+invoicing system.
 
-- **e-Factura outbound: XML pass-through recommended, structured authoring
-  supported** *(REVISED 2026-07-08; was pass-through-only)*. When the caller runs
-  invoicing software, they supply the **complete UBL XML** it exported and anafpy
-  never re-composes it — an upstream system's document is authoritative, and
-  re-deriving it adds only drift. That path stays the **recommendation**, no
-  longer the hard requirement: `efactura.authoring` is the first-class
-  alternative — one `InvoiceDocument` semantic model (kind picks the UBL
-  `Invoice`/`CreditNote` render target), totals and the VAT breakdown **computed
-  by default** with explicit overrides preserved, `render_invoice` → upload-ready
-  bytes, `read_invoice`/`parse_invoice` back from the wire (byte-stable
-  round-trips), and a translated EN 16931 + CIUS-RO rule set (`validate()`,
-  findings with official BR-* ids). `EFacturaClient.upload` files XML;
-  `upload_invoice` files an authored document.
+- **e-Factura outbound: structured authoring fully supported, upstream
+  invoicing software strongly recommended.** When the caller runs invoicing
+  software, they supply the **complete UBL XML** it exported and anafpy never
+  re-composes it — an upstream system's document is authoritative, re-deriving
+  it adds only drift, and — decisively — **ANAF's SPV is not invoice storage**:
+  it purges filed messages after ~60 days (e-Factura reference §3), so the
+  durable record must live in a system the caller owns, which an invoicing
+  system provides for free. Where no such system exists, `efactura.authoring`
+  is the first-class path — one `InvoiceDocument` semantic model (kind picks
+  the UBL `Invoice`/`CreditNote` render target), totals and the VAT breakdown
+  **computed by default** with explicit overrides preserved, `render_invoice` →
+  upload-ready bytes, `read_invoice`/`parse_invoice` back from the wire
+  (byte-stable round-trips), and a translated EN 16931 + CIUS-RO rule set
+  (`validate()`, findings with official BR-* ids) — archiving the signed
+  documents (download the ZIP) is then the caller's own job.
+  `EFacturaClient.upload` files XML; `upload_invoice` files an authored
+  document.
 - **e-Transport = full translation to typed models** *(REVISED 2026-07-03; was
   pass-through like e-Factura)*. The pass-through premise doesn't hold here: there
   is usually **no upstream software** producing declaration XML (firms fill ANAF's
@@ -45,8 +50,7 @@ business fields, for callers (and agents) with no upstream invoicing system.
   original zip/XML/PDF **as-is**, and parse received UBL into the flat
   `InvoiceDocument` view. e-Transport stays outbound + own-declaration status
   only.
-- **One e-Factura flat surface** *(consolidated 2026-07-08; the earlier lossy
-  `FlatInvoice` read view was removed the same day the authoring models landed)*.
+- **One e-Factura flat surface.**
   `authoring.InvoiceDocument` is the **strict, full-fidelity bidirectional
   model**: covers every EN 16931 business group CIUS-RO admits, enforces
   formats/lengths/code lists at construction, and maps both directions
@@ -67,9 +71,7 @@ pin is 3.13), **httpx**, **Pydantic v2**.
 Out of scope: local persistence of documents; reconciliation / accounting logic;
 inbound e-Transport; SPV; e-TVA; CII syntax; e-Transport API v1; a sync facade
 *(dropped 2026-07-03 — the consumers that exist are async: the MCP server and
-`asyncio.run` scripts; was to be generated via `unasync`)*. *(e-Factura invoice
-composition was out of scope until 2026-07-08 — now in scope via
-`efactura.authoring`, see above.)*
+`asyncio.run` scripts; was to be generated via `unasync`)*.
 
 ## 2. Cross-cutting architecture
 
@@ -187,11 +189,10 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
   transitive closure (not the ~80 other UBL document types). Vendored XSDs + a
   regeneration script. The client speaks these UBL models internally and publicly.
 - **Serialization**: `xsdata-pydantic`'s `XmlParser`/`XmlSerializer` — zero
-  serializer code (no marshmallow). Hand-written on top (since 2026-07-08): the
-  **authoring package** (`efactura/authoring/`), whose strict `build`/`read`
-  modules map `InvoiceDocument` ⇄ generated UBL both ways. (An earlier lossy
-  `FlatInvoice` reader was removed when the strict reader proved to cover every
-  ANAF-validated document.)
+  serializer code (no marshmallow). Hand-written on top: the **authoring
+  package** (`efactura/authoring/`), whose strict `build`/`read` modules map
+  `InvoiceDocument` ⇄ generated UBL both ways — strict reading covers every
+  ANAF-validated document.
 
 ### Authoring (`efactura.authoring`, added 2026-07-08)
 
@@ -283,7 +284,7 @@ so validation needs no OAuth credentials at all).
   heavy native dependency; vendored rulesets drift as ANAF revises CIUS-RO
   (~yearly), producing false failures; and the MCP `prepare` gate's strictness
   ended up depending on whether an optional extra was installed.
-- *(REVISED 2026-07-08)* Local validation returned in a different shape: the
+- Local validation exists today in a different shape: the
   authoring package's **hand-translated rule set** (`authoring.validate()`, pure
   Python, no XSLT engine, no new dependency) — see *Authoring* above. Its role is
   **developer/agent feedback with official rule ids**, not a gate: `validate()`
@@ -319,9 +320,8 @@ Mirrors e-Factura, with differences (see `docs/anaf-reference/etransport/api.md`
   form (`/upload/ETRANSP/{cif}/2`).
 - **Proprietary ANAF XSD** (`schema_ETR_v2_20230126.xsd`, not UBL) → generated via
   `xsdata-pydantic` into `etransport/schema/`.
-- **Structured authoring (ADDED 2026-07-03)** — originally the deliberate
-  exception to "outbound = XML pass-through"; since 2026-07-08 e-Factura offers
-  the same dual shape (§1, §4 Authoring). The flat models in `etransport/models.py`
+- **Structured authoring (ADDED 2026-07-03)** — e-Factura offers the same dual
+  shape (§1, §4 Authoring). The flat models in `etransport/models.py`
   are bidirectional and cover the XSD's four root operations — `FlatTransport`
   (a `notificare`, optionally a correction via `correction_of_uit`), `FlatDeletion`
   (`stergere`), `FlatConfirmation` (`confirmare`), `FlatVehicleChange`
@@ -411,21 +411,19 @@ the XML pass-through tool *inputs* (the friendly flat models come from the clien
 layer, §4/§5), reads the existing token store, and refreshes headlessly.
 *(Implemented.)*
 
-- **e-Factura filing tools** *(REVISED 2026-07-08; reinstated with authoring —
-  the history matters: the original pass-through pair was implemented, then
-  removed 2026-07-03 as "no MCP use case: outbound UBL comes from invoicing
-  software that files directly". The authoring package changes the premise —
-  an agent can now draft a complete invoice for a user with no invoicing
-  software, which IS an MCP use case.)* Two STEP-1 shapes feed one gate:
+- **e-Factura filing tools.** An agent can draft a complete invoice for a user
+  with no invoicing software — the MCP use case the authoring package (§4)
+  unlocked. Two STEP-1 shapes feed one gate:
   `efactura_prepare` takes complete UBL XML (`UblXmlInput {xml|path}`) verbatim —
-  the **recommended** path whenever upstream software produced the document —
+  the **strongly recommended** path whenever upstream software produced the
+  document (§1: SPV purges after ~60 days; the durable record lives upstream) —
   and `efactura_prepare_invoice` composes the XML from the client-layer
   `InvoiceDocument` (§4 Authoring). Both return the invoice preview (the strict
   read-back of the exact bytes), a confirmation token bound to those bytes + the
   CIF, and — for the composed path — informational `local_findings` from the
   translated rule set (never withholding the token). `efactura_submit` verifies
   the token, redeems it single-use, and uploads with the `standard` derived from
-  the XML (UBL/CN); `efactura_get_status` (reinstated with the filing pair)
+  the XML (UBL/CN); `efactura_get_status`
   polls to `ok`/`nok` and hands the `download_id` to `efactura_download`.
 - **e-Transport outbound = composed from structured fields** (§5).
   `etransport_prepare_declaration` takes the client-layer `FlatTransport` as tool

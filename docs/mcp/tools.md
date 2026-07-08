@@ -45,7 +45,7 @@ two ways in:
 
 | Tool | What it does |
 |---|---|
-| `efactura_prepare` | Gate ready-made UBL XML your invoicing software produced — the recommended path; the bytes go to ANAF verbatim |
+| `efactura_prepare` | Gate ready-made UBL XML your invoicing software produced — the strongly recommended path when you have such software (its ledger, not ANAF's SPV, is your durable record: SPV purges messages after ~60 days); the bytes go to ANAF verbatim |
 | `efactura_prepare_invoice` | Compose a complete CIUS-RO invoice or credit note from structured fields — no XML and no invoicing software needed; totals and the VAT breakdown are computed, and `local_findings` reports anafpy's translated rule check (informational — ANAF stays authoritative) |
 | `efactura_submit` | File a prepared document; returns the upload id for `efactura_get_status` |
 
