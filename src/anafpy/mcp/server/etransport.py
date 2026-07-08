@@ -26,7 +26,7 @@ from ...exceptions import AnafError
 from ..config import ServerConfig
 from ..context import AppContext
 from ..documents import resolve_xml, transport_view
-from ..models import EtransportXmlInput, PreparedSubmission, SubmitResult
+from ..models import EtransportXmlInput, PreparedTransport, SubmitResult
 from ..nomenclatures import nomenclature_entries
 from ..tokens import ConfirmationError, issue_token, verify_token
 from ._shared import MUTATING, READ_ONLY
@@ -130,7 +130,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     )
     async def etransport_prepare_declaration(
         declaration: FlatTransport, cif: str | None = None
-    ) -> PreparedSubmission:
+    ) -> PreparedTransport:
         return _prepare_composed_transport(cfg, declaration, cif=cif)
 
     @mcp.tool(
@@ -143,7 +143,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     )
     async def etransport_prepare_deletion(
         uit: str, cif: str | None = None, declarant_ref: str | None = None
-    ) -> PreparedSubmission:
+    ) -> PreparedTransport:
         return _prepare_composed_transport(
             cfg, FlatDeletion, cif=cif, uit=uit, declarant_ref=declarant_ref
         )
@@ -163,7 +163,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         note: str | None = None,
         cif: str | None = None,
         declarant_ref: str | None = None,
-    ) -> PreparedSubmission:
+    ) -> PreparedTransport:
         return _prepare_composed_transport(
             cfg,
             FlatConfirmation,
@@ -190,7 +190,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         note: str | None = None,
         cif: str | None = None,
         declarant_ref: str | None = None,
-    ) -> PreparedSubmission:
+    ) -> PreparedTransport:
         return _prepare_composed_transport(
             cfg,
             FlatVehicleChange,
@@ -216,7 +216,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     )
     async def etransport_prepare(
         document: EtransportXmlInput, cif: str | None = None
-    ) -> PreparedSubmission:
+    ) -> PreparedTransport:
         return _prepare_transport(ctx, cfg, document, cif=cif)
 
     @mcp.tool(
@@ -295,12 +295,12 @@ def _prepare_transport(
     document: EtransportXmlInput,
     *,
     cif: str | None = None,
-) -> PreparedSubmission:
+) -> PreparedTransport:
     try:
         xml = resolve_xml(document)
         resolved = cfg.require_cif(cif)
     except AnafError as exc:
-        return PreparedSubmission(valid=False, message=str(exc))
+        return PreparedTransport(valid=False, message=str(exc))
     preview = transport_view(xml)
     token = issue_token(
         cfg.signing_key,
@@ -308,7 +308,7 @@ def _prepare_transport(
         payload=xml,
         context=_transport_context(resolved),
     )
-    return PreparedSubmission(
+    return PreparedTransport(
         valid=True,
         confirmation_token=token,
         cif=resolved,
@@ -323,12 +323,12 @@ def _prepare_composed_transport(
     *,
     cif: str | None,
     **fields: Any,
-) -> PreparedSubmission:
+) -> PreparedTransport:
     """Compose a flat e-Transport document and gate it like any other filing.
 
     ``document`` is either a ready flat model or a flat-model class to construct
     from ``fields`` — construction failures (bad enum names, malformed UIT/plate)
-    come back as an invalid :class:`PreparedSubmission`, not a raised tool error.
+    come back as an invalid :class:`PreparedTransport`, not a raised tool error.
     The confirmation token is bound to the *rendered* bytes, which are echoed in
     ``xml`` for the submit step.
     """
@@ -344,14 +344,14 @@ def _prepare_composed_transport(
         )
         xml = render_etransport(model, declarant_code=resolved)
     except (AnafError, ValidationError) as exc:
-        return PreparedSubmission(valid=False, message=str(exc))
+        return PreparedTransport(valid=False, message=str(exc))
     token = issue_token(
         cfg.signing_key,
         kind=_TRANSPORT_KIND,
         payload=xml,
         context=_transport_context(resolved),
     )
-    return PreparedSubmission(
+    return PreparedTransport(
         valid=True,
         confirmation_token=token,
         cif=resolved,

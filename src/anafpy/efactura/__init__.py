@@ -1,9 +1,11 @@
-"""e-Factura: typed client and UBL 2.1 / CIUS-RO models.
+"""e-Factura: typed client, UBL 2.1 / CIUS-RO models, and invoice authoring.
 
 The :mod:`anafpy.efactura.ubl` subpackage is generated from the vendored OASIS UBL 2.1
 XSDs (see ``scripts/generate_ubl.py``). The two document roots used by e-Factura are
 re-exported here for convenience; richer component types live under
-``anafpy.efactura.ubl.common``.
+``anafpy.efactura.ubl.common``. The flat, bidirectional invoice models — authoring,
+the translated CIUS-RO rule set, and the strict wire reader backing
+``DownloadedMessage.view`` — live in :mod:`anafpy.efactura.authoring`.
 """
 
 from __future__ import annotations
@@ -12,9 +14,6 @@ from .client import EFacturaClient
 from .models import (
     DownloadedMessage,
     Filter,
-    FlatInvoice,
-    FlatInvoiceLine,
-    FlatParty,
     MessageListItem,
     MessageState,
     MessageStatus,
@@ -22,7 +21,6 @@ from .models import (
     UploadResult,
     UploadStandard,
     parse_ubl_document,
-    read_flat_invoice,
 )
 from .ubl.maindoc import CreditNote, CreditNoteType, Invoice, InvoiceType
 
@@ -32,9 +30,6 @@ __all__ = [
     "DownloadedMessage",
     "EFacturaClient",
     "Filter",
-    "FlatInvoice",
-    "FlatInvoiceLine",
-    "FlatParty",
     "Invoice",
     "InvoiceType",
     "MessageListItem",
@@ -44,5 +39,4 @@ __all__ = [
     "UploadResult",
     "UploadStandard",
     "parse_ubl_document",
-    "read_flat_invoice",
 ]

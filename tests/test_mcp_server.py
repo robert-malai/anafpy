@@ -19,6 +19,7 @@ import respx
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import GetPromptResult, TextContent
 
+from _authoring import make_invoice
 from _wire import build_flat_transport, credit_note_xml, invoice_xml, transport_xml
 from anafpy._transport.base import Environment
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenSet
@@ -351,20 +352,184 @@ async def test_efactura_validate_works_without_credentials(tmp_path: Path) -> No
     assert route.called
 
 
-# --- no e-Factura filing tools --------------------------------------------------------
+# --- gated filing: e-Factura ----------------------------------------------------------
+#
+# Reinstated 2026-07-08 with the authoring package: efactura_prepare_invoice composes
+# the CIUS-RO XML from the flat InvoiceDocument; efactura_prepare takes ready-made
+# XML (the recommended path when invoicing software exists); both feed the same
+# two-step gate as e-Transport.
 
 
-async def test_efactura_filing_tools_are_not_registered(tmp_path: Path) -> None:
-    # Removed 2026-07-03: outbound invoices come from third-party invoicing software
-    # that files with ANAF directly — the MCP e-Factura surface is read-only
-    # (inbox, download, validate). efactura_get_status went with the filing tools:
-    # an e-Factura upload id was only ever produced by them.
+def _flat_invoice(**overrides: Any) -> dict[str, Any]:
+    return make_invoice(**overrides).model_dump(mode="json")
+
+
+async def test_efactura_filing_tools_are_registered(tmp_path: Path) -> None:
     server = create_server(_config(tmp_path))
     names = {t.name for t in await server.list_tools()}
-    assert "efactura_prepare_invoice" not in names
-    assert "efactura_submit_invoice" not in names
-    assert "efactura_get_status" not in names
-    assert {"efactura_validate", "efactura_download", "etransport_submit"} <= names
+    assert {
+        "efactura_prepare_invoice",
+        "efactura_prepare",
+        "efactura_submit",
+        "efactura_get_status",
+    } <= names
+
+
+@respx.mock
+async def test_efactura_prepare_invoice_composes_and_submit_files(
+    tmp_path: Path,
+) -> None:
+    route = respx.post(f"{EFACTURA}/upload").mock(
+        return_value=httpx.Response(
+            200,
+            text='<header xmlns="mfp:anaf:dgti:spv:respUploadFisier:v1"'
+            ' ExecutionStatus="0" index_incarcare="3828"/>',
+        )
+    )
+    server = create_server(_config(tmp_path))
+    prepared = await _call(server, "efactura_prepare_invoice", invoice=_flat_invoice())
+    assert prepared["valid"] is True
+    assert prepared["cif"] == "123"
+    assert prepared["local_findings"] == []
+    assert prepared["invoice_preview"]["number"] == "INV-2026-0042"
+    assert prepared["xml"].startswith("<?xml")
+    # PreparedInvoice carries no e-Transport fields (per-service result models).
+    assert "transport_preview" not in prepared
+
+    out = await _call(
+        server,
+        "efactura_submit",
+        document={"xml": prepared["xml"]},
+        confirmation_token=prepared["confirmation_token"],
+        confirm=True,
+    )
+    assert out["accepted"] is True
+    assert out["upload_id"] == "3828"
+    assert route.calls.last.request.url.params["standard"] == "UBL"
+    assert route.calls.last.request.url.params["cif"] == "123"
+
+
+async def test_efactura_prepare_invoice_findings_never_withhold_the_token(
+    tmp_path: Path,
+) -> None:
+    # No due date and no payment terms -> BR-CO-25 is a fatal local finding, yet
+    # the token is still issued: findings inform the human, ANAF is the judge.
+    server = create_server(_config(tmp_path))
+    prepared = await _call(
+        server, "efactura_prepare_invoice", invoice=_flat_invoice(due_date=None)
+    )
+    assert prepared["valid"] is True
+    assert prepared["confirmation_token"]
+    rules = {finding["rule"] for finding in prepared["local_findings"]}
+    assert "BR-CO-25" in rules
+    assert "do not block filing" in prepared["message"]
+
+
+@respx.mock
+async def test_efactura_submit_credit_note_uses_cn_standard(tmp_path: Path) -> None:
+    route = respx.post(f"{EFACTURA}/upload").mock(
+        return_value=httpx.Response(200, text='<header index_incarcare="9"/>')
+    )
+    server = create_server(_config(tmp_path))
+    prepared = await _call(
+        server,
+        "efactura_prepare_invoice",
+        invoice=_flat_invoice(
+            kind="credit_note",
+            number="CN-1",
+            preceding_invoices=[{"number": "INV-2026-0042"}],
+        ),
+    )
+    out = await _call(
+        server,
+        "efactura_submit",
+        document={"xml": prepared["xml"]},
+        confirmation_token=prepared["confirmation_token"],
+        confirm=True,
+    )
+    assert out["accepted"] is True
+    assert route.calls.last.request.url.params["standard"] == "CN"
+
+
+async def test_efactura_prepare_xml_previews_the_document(tmp_path: Path) -> None:
+    from anafpy.efactura.authoring import render_invoice
+
+    server = create_server(_config(tmp_path))
+    xml = render_invoice(make_invoice()).decode()
+    prepared = await _call(server, "efactura_prepare", document={"xml": xml})
+    assert prepared["valid"] is True
+    assert prepared["invoice_preview"]["number"] == "INV-2026-0042"
+    assert prepared["confirmation_token"]
+
+
+async def test_efactura_prepare_unparseable_xml_still_issues_a_token(
+    tmp_path: Path,
+) -> None:
+    # Pass-through means the bytes go to ANAF verbatim even when the strict flat
+    # view cannot represent them; the message says there is no preview.
+    server = create_server(_config(tmp_path))
+    prepared = await _call(server, "efactura_prepare", document={"xml": "<NotUbl/>"})
+    assert prepared["valid"] is True
+    assert prepared["invoice_preview"] is None
+    assert "no preview" in prepared["message"]
+
+
+async def test_efactura_submit_requires_confirm_and_matching_token(
+    tmp_path: Path,
+) -> None:
+    server = create_server(_config(tmp_path))
+    prepared = await _call(server, "efactura_prepare_invoice", invoice=_flat_invoice())
+    out = await _call(
+        server,
+        "efactura_submit",
+        document={"xml": prepared["xml"]},
+        confirmation_token=prepared["confirmation_token"],
+        confirm=False,
+    )
+    assert out["accepted"] is False
+    assert "confirm=True" in out["message"]
+    tampered = prepared["xml"].replace("INV-2026-0042", "INV-9999")
+    out = await _call(
+        server,
+        "efactura_submit",
+        document={"xml": tampered},
+        confirmation_token=prepared["confirmation_token"],
+        confirm=True,
+    )
+    assert out["accepted"] is False
+    assert "does not match" in out["message"]
+
+
+@respx.mock
+async def test_efactura_submit_token_is_single_use(tmp_path: Path) -> None:
+    route = respx.post(f"{EFACTURA}/upload").mock(
+        return_value=httpx.Response(200, text='<header index_incarcare="7"/>')
+    )
+    server = create_server(_config(tmp_path))
+    prepared = await _call(server, "efactura_prepare_invoice", invoice=_flat_invoice())
+    args = {
+        "document": {"xml": prepared["xml"]},
+        "confirmation_token": prepared["confirmation_token"],
+        "confirm": True,
+    }
+    first = await _call(server, "efactura_submit", **args)
+    second = await _call(server, "efactura_submit", **args)
+    assert first["accepted"] is True
+    assert second["accepted"] is False
+    assert "already used" in second["message"]
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_efactura_get_status_returns_download_id(tmp_path: Path) -> None:
+    respx.get(f"{EFACTURA}/stareMesaj").mock(
+        return_value=httpx.Response(200, text='<header stare="ok" id_descarcare="55"/>')
+    )
+    server = create_server(_config(tmp_path))
+    out = await _call(server, "efactura_get_status", upload_id="3828")
+    assert out["state"] == "ok"
+    assert out["is_terminal"] is True
+    assert out["download_id"] == "55"
 
 
 # --- gated submit: e-Transport ------------------------------------------------------
@@ -407,6 +572,9 @@ async def test_submit_rejects_token_for_different_document(tmp_path: Path) -> No
     )
     server = create_server(_config(tmp_path))
     prepared = await _call(server, "etransport_prepare", document=_transport_doc())
+    # PreparedTransport carries no e-Factura fields (per-service result models).
+    assert "invoice_preview" not in prepared
+    assert "local_findings" not in prepared
     # A different document (different XML bytes) must not match the token.
     out = await _call(
         server,

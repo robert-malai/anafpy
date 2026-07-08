@@ -1,15 +1,20 @@
 # e-Factura
 
-`EFacturaClient` covers Romania's electronic-invoicing service: filing invoice
-XML, tracking its processing, listing the message inbox, and downloading
-documents.
+`EFacturaClient` covers Romania's electronic-invoicing service: filing invoices
+(as ready-made XML or composed from the [authoring models](authoring.md)),
+tracking processing, listing the message inbox, and downloading documents.
 
-## Pass-through, not composition
+## Two outbound paths
 
-anafpy does **not compose invoices**. e-Factura is a filing endpoint — Romanian
-law presumes you already run an invoicing system — so the client takes the
-complete UBL XML your own system produced and moves it: validate, file, track,
-download. There is no "invoice builder" and no flat→UBL write path, by design.
+**Pass-through is the recommended path when you run invoicing software**: bring
+the complete UBL XML your system exported and anafpy moves it — validate, file,
+track, download — without ever re-composing it. Your invoicing system's document
+is authoritative; re-deriving it could only add drift.
+
+**Structured authoring** is the first-class alternative when there is no
+upstream system: the [`anafpy.efactura.authoring`](authoring.md) models compose
+a complete CIUS-RO invoice or credit note from business fields — totals and the
+VAT breakdown computed for you — and `upload_invoice` files it in one call.
 
 The generated UBL 2.1 / CIUS-RO models are available if you want typed access to
 a parsed document:
@@ -30,10 +35,14 @@ async with EFacturaClient(provider) as efactura:
 - `upload` files the XML and returns an `UploadResult` — a rejection (BR-RO
   findings and all) comes back as `accepted is False` with the findings attached,
   **not** as an exception (see the [error model](errors.md)).
+- `upload_invoice` takes an authored
+  [`InvoiceDocument`](authoring.md) instead of XML: it renders the document
+  (running the local rule set first — `skip_validation=True` opts out) and
+  uploads with the right `standard` for an invoice or credit note.
 - `get_status` reports the processing state (`MessageStatus`).
-- `upload_and_wait` combines the two: it polls `get_status` until the message
-  leaves the "processing" state, retrying only on that business state — never on
-  transport errors.
+- `upload_and_wait` combines upload and polling: it polls `get_status` until the
+  message leaves the "processing" state, retrying only on that business state —
+  never on transport errors.
 
 ## The inbox: `list_messages`
 
@@ -59,14 +68,17 @@ levels:
 
 1. **Raw signed bytes** — ANAF's ZIP archive, the authoritative artifact.
 2. **The full UBL model** — the parsed, typed document.
-3. **`FlatInvoice`** — an easy-to-read **view** (`DownloadedMessage.view`):
-   parties, lines, totals, references, projected from the UBL by
-   `read_flat_invoice`.
+3. **`InvoiceDocument`** — the flat **view** (`DownloadedMessage.view`):
+   parties, lines, totals, references, projected from the UBL by the strict
+   [authoring reader](authoring.md).
 
-`FlatInvoice` is **lossy by design** — it is a read view for display and
-extraction, never a source to regenerate XML from. When it can't represent
-something it says so: check `complete` and `dropped_fields`. The raw bytes and
-the UBL model stay authoritative.
+The view is **full-fidelity and renderable back** — the same model you author
+with, so drafting a credit note from a received invoice is one step away. It is
+strict on purpose: every inbox document already passed ANAF's validation, whose
+rules the models mirror, so a representable document always reads. When the
+content is not a representable invoice (a rejection-errors file, a buyer
+message, rule drift), `view` is `None` — never an exception — and the raw bytes
+plus the UBL model stay authoritative.
 
 `validate_signature` checks the Ministry of Finance signature over a downloaded
 archive.
@@ -80,5 +92,8 @@ public, no-auth, and prod-only on ANAF's side, so they live on
 on `EFacturaClient`. Use them freely: they work with no OAuth credentials
 configured at all.
 
-There is deliberately **no local rule engine** — validation verdicts come from
-ANAF's own validator, which is authoritative by definition.
+ANAF's validator is **authoritative by definition**. The
+[authoring models](authoring.md) additionally run a translated EN 16931 +
+CIUS-RO rule set locally (`validate()`, findings with the official BR-* rule
+ids) for fast feedback while composing — a clean local report is a strong
+signal, never a guarantee.

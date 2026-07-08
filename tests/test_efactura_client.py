@@ -17,6 +17,7 @@ import respx
 from xsdata.models.datatype import XmlDate
 from xsdata_pydantic.bindings import XmlSerializer
 
+from _authoring import make_invoice
 from anafpy._transport.base import Environment
 from anafpy.auth import MemoryTokenStore, TokenProvider, TokenSet
 from anafpy.auth.oauth import TOKEN_URL
@@ -28,6 +29,7 @@ from anafpy.efactura import (
     MessageState,
     UploadStandard,
 )
+from anafpy.efactura.authoring import InvoiceValidationError, PrecedingInvoice
 from anafpy.efactura.ubl.common.ubl_common_aggregate_components_2_1 import (
     AccountingCustomerParty,
     AccountingSupplierParty,
@@ -132,6 +134,50 @@ async def test_upload_optional_flags_become_query_params() -> None:
     assert params["extern"] == "DA"
     assert params["autofactura"] == "DA"
     assert "executare" not in params
+
+
+@respx.mock
+async def test_upload_invoice_composes_and_picks_the_standard() -> None:
+    # The authored path: a flat InvoiceDocument is rendered to CIUS-RO UBL and
+    # uploaded with the standard matching its kind (UBL / CN).
+    route = respx.post(f"{BASE}/upload").mock(
+        return_value=httpx.Response(200, text='<header index_incarcare="42"/>')
+    )
+    async with _client() as client:
+        result = await client.upload_invoice(make_invoice(), cif="123")
+        assert result.accepted
+        assert result.upload_id == "42"
+        req = route.calls.last.request
+        assert dict(req.url.params) == {"standard": "UBL", "cif": "123"}
+        assert req.content.startswith(b"<?xml")
+
+        credit_note = make_invoice(
+            kind="credit_note",
+            number="CN-1",
+            preceding_invoices=[PrecedingInvoice(number="INV-2026-0042")],
+        )
+        await client.upload_invoice(credit_note, cif="123")
+        assert route.calls.last.request.url.params["standard"] == "CN"
+
+
+async def test_upload_invoice_validates_unless_skipped() -> None:
+    # No due date / payment terms -> fatal BR-CO-25; the render gate raises before
+    # any request unless the caller opts out and lets ANAF judge.
+    faulty = make_invoice(due_date=None)
+    async with _client() as client:
+        with pytest.raises(InvoiceValidationError, match="BR-CO-25"):
+            await client.upload_invoice(faulty, cif="123")
+
+    with respx.mock:
+        route = respx.post(f"{BASE}/upload").mock(
+            return_value=httpx.Response(200, text='<header index_incarcare="1"/>')
+        )
+        async with _client() as client:
+            result = await client.upload_invoice(
+                faulty, cif="123", skip_validation=True
+            )
+        assert result.accepted
+        assert route.call_count == 1
 
 
 @respx.mock

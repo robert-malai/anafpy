@@ -1,16 +1,18 @@
 """Resolve XML pass-through inputs, project them to read views (``DESIGN.md`` §8).
 
-The XML-taking tools (``efactura_validate``, ``etransport_prepare``) take a *complete*
-document; this module turns an ``xml`` / ``path`` input into bytes and — for the
-``prepare`` preview — parses those bytes into the client-layer flat read view. Nothing
-is composed here: the bytes go to ANAF verbatim, and
-parsing is best-effort (an unparseable document yields ``None``, not an error).
+The XML-taking tools (``efactura_validate``, ``efactura_prepare``,
+``etransport_prepare``) take a *complete* document; this module turns an ``xml`` /
+``path`` input into bytes and — for the ``prepare`` previews — parses those bytes
+into the client-layer flat views. Nothing is composed here: the bytes go to ANAF
+verbatim, and parsing is best-effort (an unparseable document yields ``None``,
+not an error).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from ..efactura.authoring import InvoiceDocument, read_invoice
 from ..efactura.models import UploadStandard, parse_ubl_document
 from ..efactura.ubl.maindoc import CreditNote
 from ..etransport.models import (
@@ -21,7 +23,7 @@ from ..etransport.models import (
 from ..exceptions import AnafConfigError
 from .models import EtransportXmlInput, UblXmlInput
 
-__all__ = ["resolve_xml", "transport_view", "upload_standard"]
+__all__ = ["invoice_view", "resolve_xml", "transport_view", "upload_standard"]
 
 
 def resolve_xml(document: UblXmlInput | EtransportXmlInput) -> bytes:
@@ -50,6 +52,23 @@ def upload_standard(xml: bytes) -> UploadStandard:
     else ``UBL``. Unparseable bytes default to ``UBL`` (ANAF rejects them anyway)."""
     doc = parse_ubl_document(xml)
     return UploadStandard.CN if isinstance(doc, CreditNote) else UploadStandard.UBL
+
+
+def invoice_view(xml: bytes) -> InvoiceDocument | None:
+    """Full-fidelity flat projection of e-Factura UBL, or ``None`` if it does not
+    parse or the strict authoring reader cannot represent it.
+
+    Used for the ``efactura_prepare`` preview; wire amounts land in the explicit
+    fields, never recomputed. A ``None`` preview does not block the filing — the
+    bytes go to ANAF verbatim either way.
+    """
+    doc = parse_ubl_document(xml)
+    if doc is None:
+        return None
+    try:
+        return read_invoice(doc)
+    except ValueError:
+        return None
 
 
 def transport_view(xml: bytes) -> FlatSubmission | None:

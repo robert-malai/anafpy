@@ -28,16 +28,23 @@ Filing is a two-step, human-gated flow:
   2. show the preview to the user, get explicit approval, then call the matching
      `*_submit*` tool with that token and confirm=True.
 
-Filing tools exist for e-Transport only. e-Factura is READ-ONLY here (inbox,
-download, validate): outbound invoices are filed by the user's invoicing software
-directly, not through these tools. e-Transport
-declarations ARE composed here, from structured fields — no XML needed:
-`etransport_prepare_declaration` (new declaration or, with correction_of_uit, a
-correction), `etransport_prepare_deletion`, `etransport_prepare_confirmation`,
-and `etransport_prepare_vehicle_change`. Each returns the composed XML — pass it
-back to `etransport_submit` verbatim as document={"xml": ...}. Enum-coded fields
-accept ANAF codes or member names ('TTN', 'CLUJ', 'NADLAC'); list them with
-`etransport_nomenclature`. `etransport_prepare` still accepts ready-made XML.
+Both services file through that gate, and both take two input shapes:
+- Ready-made XML: `efactura_prepare` / `etransport_prepare` take a complete
+  document the user's software produced ({"xml": ...} or {"path": ...}). For
+  invoices this is the RECOMMENDED path whenever invoicing software exists —
+  never re-compose what an upstream system already exported.
+- Structured fields, no XML needed: `efactura_prepare_invoice` composes a full
+  CIUS-RO invoice or credit note from the flat invoice model (totals and the VAT
+  breakdown are computed from the lines; local_findings reports anafpy's
+  translated rule check, informationally). e-Transport composes with
+  `etransport_prepare_declaration` (new declaration or, with correction_of_uit,
+  a correction), `etransport_prepare_deletion`, `etransport_prepare_confirmation`
+  and `etransport_prepare_vehicle_change`; enum-coded fields accept ANAF codes or
+  member names ('TTN', 'CLUJ', 'NADLAC') — list them with
+  `etransport_nomenclature`.
+Each composing tool returns the exact XML it rendered — pass it back to the
+matching `*_submit` tool verbatim as document={"xml": ...}. After an e-Factura
+submit, poll `efactura_get_status` to `ok`/`nok`.
 
 Confirmation tokens are single-use and bound to the exact document and the CIF — to
 file again (or for another CIF), run the prepare step again.
