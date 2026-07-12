@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hmac
 import ssl
+import sys
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -151,8 +152,15 @@ class CallbackListener:
                 finally:
                     done.set()
 
+        class Server(ThreadingHTTPServer):
+            # http.server enables SO_REUSEADDR by default. On POSIX that only
+            # allows rebinding a TIME_WAIT port (good — a retried login works);
+            # on Windows it lets a second socket bind an ACTIVELY bound port,
+            # i.e. another local process could hijack the OAuth callback.
+            allow_reuse_address = sys.platform != "win32"
+
         try:
-            self._server = ThreadingHTTPServer((host, port), Handler)
+            self._server = Server((host, port), Handler)
             if ssl_context is not None:
                 self._server.socket = ssl_context.wrap_socket(
                     self._server.socket, server_side=True

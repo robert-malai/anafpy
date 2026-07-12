@@ -278,7 +278,9 @@ async def test_requests_are_paced_by_min_interval() -> None:
         await client.lookup_taxpayers([1])
         await client.lookup_taxpayers([2])
         elapsed = loop.time() - start
-    assert elapsed >= 0.05
+    # Windows timers can wake a sleep a few ms early; assert the pacing
+    # happened, not clock-perfect precision.
+    assert elapsed >= 0.04
 
 
 # --- RO e-Factura register ----------------------------------------
