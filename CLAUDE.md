@@ -327,7 +327,12 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   `spv_cerere` (per-type param validation at the `ReportRequest` model;
   **in-process same-day dedupe** in `AppContext.spv_request_log` guards agent
   loops — the persistent-cache idea was rejected, the library stays stateless).
-  `spv_nomenclature` lists the report types with per-type params and the fixed
+  `spv_nomenclature` lists the report types — each with a one-line English
+  description (`ReportType.description`: members are `(value, description)`
+  tuples via the enum-with-attributes pattern, carried from the reference's
+  §4.1 tables; a member without one fails at import) so the model can map
+  "my VAT return for March" onto `D300` — with per-type
+  params, a CAF-not-requestable note, and the fixed
   `Adeverinte Venit` `motiv` list — the model is **meant** to map the user's
   stated purpose onto the exact entry (decided 2026-07-13; an MCP-elicitation
   host-side picker was parked: Claude Desktop/Cowork answers

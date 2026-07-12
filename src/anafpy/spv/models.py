@@ -34,6 +34,7 @@ __all__ = [
     "SpvEnvelope",
     "SpvMessage",
     "english_error_hint",
+    "optional_parameters",
     "required_parameters",
 ]
 
@@ -150,46 +151,156 @@ class ReportRequestResult(SpvEnvelope):
 class ReportType(StrEnum):
     """``tip`` values accepted by ``cerere`` (vendored README, verbatim casing).
 
-    Members are named after ANAF's own report names, per the repo convention for
-    ANAF-code enums. ``CAF`` is deliberately absent — the README states it is not
-    yet requestable via the web service.
+    Members are named after ANAF's own report names, per the repo convention
+    for ANAF-code enums, and are declared ``(value, description)`` — the
+    stdlib enum-with-attributes pattern. :attr:`description` is a one-line
+    English rendering of the README's per-type explanation (api.md §4.1) so a
+    caller choosing a report — the MCP model in particular — sees what each
+    one is, not just the bare declaration code; timing and natural-/legal-
+    person scope are folded in where the README states them, and parameter
+    names are avoided (the library and the MCP tool spell them differently).
+    A member declared without a description fails at import time.
+    ``CAF`` is deliberately absent — the README states it is not yet
+    requestable via the web service.
     """
 
-    D112CONTRIB = "D112Contrib"
-    OBLIGATII_DE_PLATA = "Obligatii de plata"
-    NOTA_OBLIGATIILOR_DE_PLATA = "Nota obligatiilor de plata"
-    ISTORIC_SPATIU_VIRTUAL = "Istoric Spatiu Virtual"
-    REGISTRU_INTRARI_IESIRI = "Registru intrari-iesiri"
-    BILANT_ANUAL = "Bilant anual"
-    D300 = "D300"
-    ISTORIC_DECLARATII = "Istoric declaratii"
-    D390 = "D390"
-    D100 = "D100"
-    BILANT_SEMESTRIAL = "Bilant semestrial"
-    ISTORIC_BILANT = "Istoric bilant"
-    D205 = "D205"
-    D120 = "D120"
-    D101 = "D101"
-    D130 = "D130"
-    D112 = "D112"
-    DATE_IDENTIFICARE = "DATE IDENTIFICARE"
-    VECTOR_FISCAL = "VECTOR FISCAL"
-    SITUATIE_SINTETICA = "Situatie Sintetica"
-    D208 = "D208"
-    D301 = "D301"
-    INTEROGARI_BANCI = "InterogariBanci"
-    FISA_ROL = "Fisa Rol"
-    D394 = "D394"
-    D392 = "D392"
-    D393 = "D393"
-    D180 = "D180"
-    D311 = "D311"
-    D106 = "D106"
-    DUPLICAT_RECIPISA = "Duplicat Recipisa"
-    ADEVERINTE_VENIT = "Adeverinte Venit"
-    D212 = "D212"
-    NECONCORDANTE_D112_CNP = "NeconcordanteD112CNP"
-    NECONCORDANTE_D394 = "NeconcordanteD394"
+    #: What the report returns, for callers choosing one.
+    description: str
+
+    def __new__(cls, value: str, description: str) -> Self:
+        member = str.__new__(cls, value)
+        member._value_ = value
+        member.description = description
+        return member
+
+    D112CONTRIB = (
+        "D112Contrib",
+        "Social contributions declared by employers in D112 for the natural person",
+    )
+    OBLIGATII_DE_PLATA = (
+        "Obligatii de plata",
+        "Unpaid fiscal obligations at the end of the previous month",
+    )
+    NOTA_OBLIGATIILOR_DE_PLATA = (
+        "Nota obligatiilor de plata",
+        "Payment note usable at the treasury counter or for remote payment",
+    )
+    ISTORIC_SPATIU_VIRTUAL = (
+        "Istoric Spatiu Virtual",
+        "SPV activity history — profile changes and document downloads",
+    )
+    REGISTRU_INTRARI_IESIRI = (
+        "Registru intrari-iesiri",
+        "SPV activity history — the register of documents in and out",
+    )
+    BILANT_ANUAL = (
+        "Bilant anual",
+        "Annual financial statements for the selected year (the month is "
+        "chosen automatically)",
+    )
+    D300 = ("D300", "VAT return (includes D305)")
+    ISTORIC_DECLARATII = (
+        "Istoric declaratii",
+        "Every valid declaration filed for the selected year — the aggregate "
+        "filing history (covers D100, D101, D102, D103, D112, D120, D130, "
+        "D300, D301, D390, D394, D710, D205)",
+    )
+    D390 = (
+        "D390",
+        "Recapitulative statement of intra-community supplies and acquisitions",
+    )
+    D100 = (
+        "D100",
+        "State-budget payment obligations (includes valid D100 and D710)",
+    )
+    BILANT_SEMESTRIAL = (
+        "Bilant semestrial",
+        "Half-year financial reports for the selected year",
+    )
+    ISTORIC_BILANT = (
+        "Istoric bilant",
+        "History of filed financial statements and half-year reports (latest "
+        "valid of each)",
+    )
+    D205 = (
+        "D205",
+        "Withholding-tax informative declaration, per income beneficiary",
+    )
+    D120 = ("D120", "Excise-duty return")
+    D101 = ("D101", "Corporate income tax declaration")
+    D130 = ("D130", "Domestic-crude-oil tax return")
+    D112 = (
+        "D112",
+        "Social contributions, income tax and insured-persons declaration "
+        "for the selected month",
+    )
+    DATE_IDENTIFICARE = (
+        "DATE IDENTIFICARE",
+        "The legal person's identification data in ANAF's records at generation time",
+    )
+    VECTOR_FISCAL = (
+        "VECTOR FISCAL",
+        "The legal person's fiscal vector at generation time",
+    )
+    SITUATIE_SINTETICA = (
+        "Situatie Sintetica",
+        "Debit situation for the previous month; only generated until the "
+        "10th of the current month",
+    )
+    D208 = (
+        "D208",
+        "Real-estate-transfer withholding tax; half-yearly — month 6 for "
+        "semester 1, month 12 for semester 2",
+    )
+    D301 = ("D301", "Special VAT return")
+    INTEROGARI_BANCI = (
+        "InterogariBanci",
+        "Banks' queries to ANAF about the natural person's income",
+    )
+    FISA_ROL = (
+        "Fisa Rol",
+        "Taxpayer sheet from the local tax administration; an optional "
+        "branch/working-point CUI narrows it",
+    )
+    D394 = (
+        "D394",
+        "Informative declaration on domestic supplies and acquisitions",
+    )
+    D392 = ("D392", "Informative declaration on goods deliveries and services")
+    D393 = (
+        "D393",
+        "Informative declaration on international road passenger transport "
+        "ticket income",
+    )
+    D180 = ("D180", "Certification note by an active fiscal consultant")
+    D311 = (
+        "D311",
+        "VAT owed by taxpayers whose VAT registration code was cancelled",
+    )
+    D106 = ("D106", "Informative declaration on shareholder dividends")
+    DUPLICAT_RECIPISA = (
+        "Duplicat Recipisa",
+        "Duplicate of an e-filing receipt named by its registration number, "
+        "regenerated at request time",
+    )
+    ADEVERINTE_VENIT = (
+        "Adeverinte Venit",
+        "Income certificate for a natural person; the reason (printed on the "
+        "certificate) must match ANAF's fixed list exactly",
+    )
+    D212 = (
+        "D212",
+        "Duplicate of the natural person's last filed single declaration "
+        "(per chapter, latest rectifications)",
+    )
+    NECONCORDANTE_D112_CNP = (
+        "NeconcordanteD112CNP",
+        "Details of D112 vs REVISAL mismatches for the natural person",
+    )
+    NECONCORDANTE_D394 = (
+        "NeconcordanteD394",
+        "Details of D394 mismatches for the selected start..end month range",
+    )
 
 
 #: Accepted ``motiv`` values for ``Adeverinte Venit``, verbatim from the README

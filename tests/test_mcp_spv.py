@@ -245,9 +245,14 @@ async def test_nomenclature_lists_report_types_with_their_parameters(
     assert by_tip["Fisa Rol"]["optional"] == ["cui_pui"]
     assert by_tip["VECTOR FISCAL"] == {
         "tip": "VECTOR FISCAL",
+        "description": "The legal person's fiscal vector at generation time",
         "required": ["cui"],
         "optional": [],
     }
+    # Every type carries selection guidance, and the one type ANAF does not
+    # serve through the web service (CAF) is called out.
+    assert all(entry["description"] for entry in result["entries"])
+    assert "CAF" in result["note"]
 
 
 async def test_nomenclature_lists_the_income_certificate_reasons(

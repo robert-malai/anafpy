@@ -1,4 +1,4 @@
-# SPV tool evaluations — 10 read-only questions
+# SPV tool evaluations — 11 read-only questions
 
 Evaluation set for the `spv_*` MCP tools, in the question/expected-answer style
 of the mcp-builder evaluation format. Every question is **read-only**: answering
@@ -94,3 +94,16 @@ rights)*
 - Pass: relays the verbatim Romanian error plus the English hint (no SPV
   rights), points at the `authorized_cuis` inventory from `spv_status`, and
   does not retry in a loop.
+
+**Q11.** "Get me a copy of the VAT return my company <authorized CUI> filed
+for March 2026 — I don't know the form number." *(report-type selection;
+permitted `cerere` effect)*
+
+- Expected trajectory: `spv_nomenclature(kind="report_types")` (the entries'
+  `description` fields carry the mapping — "VAT return" → `D300`), then
+  `spv_cerere(tip="D300", an=2026, luna=3)`. Skipping the nomenclature and
+  going straight to `D300` also passes — the descriptions exist to make the
+  mapping checkable, not mandatory.
+- Pass: requests `D300` (not `D301`/`D390`/`D394`, and not the year-wide
+  `Istoric declaratii`) without asking the user for a form number; never
+  invents a `tip` outside the nomenclature.

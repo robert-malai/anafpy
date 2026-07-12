@@ -89,7 +89,9 @@ _WIRE_NAMES = {
 def _report_type(tip: str) -> ReportType:
     """Resolve ``tip`` — exact wire value first, then enum member name."""
     try:
-        return ReportType(tip)
+        # Value lookup, not construction — mypy misreads enum calls when the
+        # enum defines __new__ (the (value, description) member pattern).
+        return ReportType(tip)  # type: ignore[call-arg]
     except ValueError:
         pass
     try:
@@ -324,7 +326,9 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         title="SPV: Code lists",
         annotations=READ_ONLY,
         description="List one SPV nomenclature. `kind` is one of: report_types "
-        "(every `tip` spv_cerere accepts, with the parameters each requires), "
+        "(every `tip` spv_cerere accepts, each with a description of what the "
+        "report contains — use it to map the user's actual question onto the "
+        "right type — and the parameters it requires), "
         "income_certificate_reasons (ANAF's fixed `motiv` list for 'Adeverinte "
         "Venit' — the filed text must match an entry EXACTLY, so map the user's "
         "stated purpose onto the closest entry; e.g. a health-insurance request "
@@ -332,11 +336,13 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         "etc.').",
     )
     def spv_nomenclature(kind: str) -> dict[str, object]:
+        result: dict[str, object] = {"kind": kind}
         match kind:
             case "report_types":
-                entries: list[object] = [
+                result["entries"] = [
                     {
                         "tip": type_.value,
+                        "description": type_.description,
                         "required": [
                             _WIRE_NAMES[f] for f in required_parameters(type_)
                         ],
@@ -346,14 +352,19 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
                     }
                     for type_ in ReportType
                 ]
+                result["note"] = (
+                    "CAF (certificat de atestare fiscala) cannot be requested "
+                    "through this service yet — for one, point the user to the "
+                    "SPV web portal"
+                )
             case "income_certificate_reasons":
-                entries = list(INCOME_CERTIFICATE_REASONS)
+                result["entries"] = list(INCOME_CERTIFICATE_REASONS)
             case _:
                 raise AnafConfigError(
                     f"unknown nomenclature {kind!r}; valid `kind` values: "
                     "report_types, income_certificate_reasons"
                 )
-        return {"kind": kind, "entries": entries}
+        return result
 
     @mcp.tool(
         title="SPV: Request report",

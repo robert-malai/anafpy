@@ -101,7 +101,7 @@ fresh login rather than failing obscurely.
 | `spv_status` | Session smoke test; reports the certificate's CNP/serial and `authorized_cuis` — every CUI/CNP it has SPV rights for |
 | `spv_lista_mesaje` | Inbox messages from the last N days, filterable by CUI and message kind, paged |
 | `spv_descarca` | Download one message's PDF to a path you name (never into context; existing files never replaced without `overwrite`) |
-| `spv_nomenclature` | The SPV code lists: every report type `spv_cerere` accepts with its per-type parameters, and ANAF's fixed reason (`motiv`) list for income certificates — Claude maps your stated purpose onto the exact wording ANAF prints on the certificate |
+| `spv_nomenclature` | The SPV code lists: every report type `spv_cerere` accepts, each with a plain-language description of what it contains (so "my VAT return for March" finds `D300` without you knowing the code) and its per-type parameters, and ANAF's fixed reason (`motiv`) list for income certificates — Claude maps your stated purpose onto the exact wording ANAF prints on the certificate |
 | `spv_cerere` | Request a report — `VECTOR FISCAL`, `Obligatii de plata`, `Istoric declaratii`, the `D1xx`/`D3xx` duplicates, `Duplicat Recipisa`, `Adeverinte Venit`, … Parameters are validated per report type before anything is sent; identical same-day repeats are deduped |
 | `spv_asteapta_raport` | Wait for a requested report to land in the inbox and save its PDF; a `pending` answer just means "call again later" |
 

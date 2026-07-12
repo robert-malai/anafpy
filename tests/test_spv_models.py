@@ -113,6 +113,19 @@ def test_required_parameters_per_group() -> None:
     )
 
 
+def test_every_report_type_has_a_description() -> None:
+    # A member declared without a description fails at import (the enum's
+    # __new__ requires one); this guards the content — real selection
+    # guidance, not placeholders — and that the str value stays the wire tip.
+    for type_ in ReportType:
+        assert len(type_.description) > 10, type_
+    assert ReportType.D300.description == "VAT return (includes D305)"
+    # Value lookup still works despite the two-argument __new__ (mypy misreads
+    # the enum call, hence the ignore).
+    assert ReportType("D300") is ReportType.D300  # type: ignore[call-arg]
+    assert str(ReportType.D300) == "D300"
+
+
 def test_cui_only_report_accepts_cui_and_rejects_extras() -> None:
     request = ReportRequest(type_=ReportType.VECTOR_FISCAL, cui="8000000000")
     assert request.wire_params() == {"tip": "VECTOR FISCAL", "cui": "8000000000"}
