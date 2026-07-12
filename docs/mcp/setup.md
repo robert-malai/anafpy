@@ -262,6 +262,36 @@ and shows you a preview, and **nothing is filed until you explicitly approve it*
 — then it submits and reports the UIT. Try it by asking Claude to declare a
 transport from an invoice or CMR you have at hand.
 
+## Step 7 (optional) — Unlock the SPV mailbox tools
+
+The `spv_*` tools let Claude read your **SPV mailbox** (receipts, decisions,
+notifications) and request official reports — fiscal vector, outstanding
+obligations, filing history, declaration duplicates, income certificates. They
+are **read-only**: nothing can be submitted through them.
+
+SPV authenticates with your **qualified certificate directly** (the same one
+you used in step 4's browser login), so this is a separate, equally one-time-ish
+step — the difference is that SPV sessions are short-lived (under an hour of
+idle time), so you re-run the login when you next need SPV, not yearly.
+
+In a terminal, in the anafpy folder:
+
+```bash
+uv run anafpy spv certs                  # lists your certificates
+uv run anafpy spv select <thumbprint>    # pick yours (the hex id from `certs`)
+uv run anafpy spv login                  # answer your token's PIN / 2FA prompt
+```
+
+USB-token and cloud certificates (e.g. certSIGN vToken) appear in `certs` via
+their own middleware — it must be installed and running, exactly as for SPV in
+the browser. The login can occasionally fail on ANAF's side; just run it again
+(your PIN/2FA prompt fires on every attempt — that is normal).
+
+Then ask Claude: *"What's my SPV status?"* — it should report your certificate
+and the list of companies (CUIs) it may query. When the session expires, the
+tools answer with "run `anafpy spv login`" instead of data; one login brings
+them back.
+
 ## Good to know
 
 - **Production vs. test**: the server talks to **production** ANAF by default. To
@@ -277,6 +307,9 @@ transport from an invoice or CMR you have at hand.
   `--store-backend file` added and put `"ANAFPY_TOKEN_STORE_BACKEND": "file"`
   next to the other `env` entries in the Claude config; the tokens then live in
   `~/.anafpy/tokens.json` — protect that folder.
+- **SPV sessions are short**: unlike the OAuth tokens (yearly), the SPV cookie
+  session idles out in well under an hour. That is ANAF's setting, not yours;
+  `anafpy spv login` any time the `spv_*` tools ask for it.
 - **Yearly renewal**: when tools start failing with a "run `anafpy auth login`"
   message after ~a year, repeat step 4. Nothing else needs to change.
 - **Signing out** (leaving a shared computer, handing it back to IT): run

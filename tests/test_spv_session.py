@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import stat
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,8 +27,8 @@ def test_file_store_roundtrip_with_owner_only_permissions(tmp_path: Path) -> Non
     store = FileSessionStore(tmp_path / "spv-session.json")
     assert store.load() is None
     store.save(_session())
-    mode = stat.S_IMODE(store.path.stat().st_mode)
-    assert mode == 0o600
+    if sys.platform != "win32":  # Windows has no POSIX modes; chmod is a no-op
+        assert stat.S_IMODE(store.path.stat().st_mode) == 0o600
     loaded = store.load()
     assert loaded is not None
     assert loaded.cookies == {"MRHSession": "abc", "F5_ST": "1z"}

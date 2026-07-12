@@ -149,6 +149,9 @@ src/anafpy/
 skills/                  # workflow skills, served by the MCP server as same-name
                          # prompts (etransport-declare: source data -> FlatTransport
                          # -> prepare -> approval -> submit -> status)
+evals/                   # MCP tool evaluation sets (spv.md: 10 read-only questions
+                         # with expected tool trajectories — run manually against a
+                         # connected client, not in CI)
 schemas/                 # vendored XSDs + EN16931 Schematron sources (git-tracked,
                          # NOT shipped in the wheel; the .sch feed the codelist codegen)
 scripts/                 # codegen scripts
@@ -506,8 +509,10 @@ results.
   Claude are out of scope (DESIGN.md §11, decided 2026-07-04).
 - Don't commit, push, or create branches/PRs unless asked.
 - The remote is `github.com/robert-malai/anafpy`. CI is GitHub Actions:
-  `.github/workflows/ci.yml` runs the three code gates on 3.12 + 3.13 plus a
-  strict docs build for every
+  `.github/workflows/ci.yml` runs pytest on 3.12 + 3.13 across
+  ubuntu/macos/windows (the SPV layer has platform seams; the suite itself is
+  respx-mocked and credential-free everywhere) with ruff / mypy --strict / the
+  strict docs build on the ubuntu leg for every
   push/PR; `release.yml` re-runs them on a `v*` tag, checks the tag against
   `pyproject.toml`'s version, builds, and publishes to PyPI via trusted
   publishing (OIDC, environment `pypi` — no stored token). The version is

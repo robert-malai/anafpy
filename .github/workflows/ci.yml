@@ -1,6 +1,9 @@
 # Credential-free gates on every push/PR: the respx-mocked test suite, ruff
 # lint + format, and mypy --strict, across the supported Python versions.
-# The live-marked tests stay opt-in (ANAFPY_LIVE=1) and never run here.
+# The test suite additionally runs on macOS and Windows — the SPV layer has
+# platform-specific seams (Keychain/SecureTransport vs CertStore/Schannel) and
+# its shared code must stay green on both. Real-certificate integration tests
+# stay opt-in (ANAFPY_LIVE=1) and never run here.
 name: CI
 
 on:
@@ -10,10 +13,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
@@ -25,11 +29,16 @@ jobs:
         run: uv sync --all-extras
       - name: Tests
         run: uv run pytest -q
+      # The static gates are platform-independent; run them once per Python.
       - name: Ruff lint
+        if: runner.os == 'Linux'
         run: uv run ruff check .
       - name: Ruff format
+        if: runner.os == 'Linux'
         run: uv run ruff format --check .
       - name: Mypy (strict)
+        if: runner.os == 'Linux'
         run: uv run mypy
       - name: Docs build (strict)
+        if: runner.os == 'Linux'
         run: uv run mkdocs build --strict
