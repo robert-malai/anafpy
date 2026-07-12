@@ -23,6 +23,14 @@ repeating an identical request gets the id it already got today instead of
 filing again; ``force=true`` overrides. The dedupe is deliberately not
 persisted — the library client stays stateless, and a repeat after a server
 restart is harmless (a second inbox message).
+
+``spv_nomenclature`` exposes the SPV code lists to the model — the report
+types with their per-type parameters, and the fixed ``motiv`` list for
+'Adeverinte Venit'. The model is MEANT to map the user's stated purpose onto
+the closest motiv entry (decided 2026-07-13); MCP elicitation was considered
+for a host-side picker and parked — Claude Desktop/Cowork answers
+``elicitation/create`` with a synthetic instant cancel (claude-code#56243),
+so a description-guided visible list is the portable design.
 """
 
 from __future__ import annotations
@@ -34,6 +42,7 @@ from mcp.server.fastmcp import FastMCP
 from ..._transport.base import ROMANIA_TZ
 from ...exceptions import AnafAuthError, AnafConfigError, AnafError
 from ...spv import (
+    INCOME_CERTIFICATE_REASONS,
     CurlBootstrapper,
     FileSessionStore,
     MessageList,
@@ -43,6 +52,8 @@ from ...spv import (
     discover_identities,
     identity_by_thumbprint,
     load_selected_identity,
+    optional_parameters,
+    required_parameters,
     save_selected_identity,
 )
 from ..config import ServerConfig
@@ -60,6 +71,19 @@ _LOGIN_HINT = (
 # One page of spv_lista_mesaje output; SPV inboxes can hold hundreds of entries
 # and the model needs counts, not a context-flooding dump.
 _PAGE_LIMIT = 50
+
+
+# ReportRequest model-field names -> the wire names the spv_cerere tool takes.
+_WIRE_NAMES = {
+    "cui": "cui",
+    "year": "an",
+    "month": "luna",
+    "reason": "motiv",
+    "registration_number": "numar_inregistrare",
+    "branch_cui": "cui_pui",
+    "start_month": "lunai",
+    "end_month": "lunas",
+}
 
 
 def _report_type(tip: str) -> ReportType:
@@ -297,15 +321,56 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         return (await ctx.spv().download_document(mesaj_id)).content
 
     @mcp.tool(
+        title="SPV: Code lists",
+        annotations=READ_ONLY,
+        description="List one SPV nomenclature. `kind` is one of: report_types "
+        "(every `tip` spv_cerere accepts, with the parameters each requires), "
+        "income_certificate_reasons (ANAF's fixed `motiv` list for 'Adeverinte "
+        "Venit' — the filed text must match an entry EXACTLY, so map the user's "
+        "stated purpose onto the closest entry; e.g. a health-insurance request "
+        "is 'Sanatate', a bank loan is 'Institutie financiar bancara asigurare "
+        "etc.').",
+    )
+    def spv_nomenclature(kind: str) -> dict[str, object]:
+        match kind:
+            case "report_types":
+                entries: list[object] = [
+                    {
+                        "tip": type_.value,
+                        "required": [
+                            _WIRE_NAMES[f] for f in required_parameters(type_)
+                        ],
+                        "optional": [
+                            _WIRE_NAMES[f] for f in optional_parameters(type_)
+                        ],
+                    }
+                    for type_ in ReportType
+                ]
+            case "income_certificate_reasons":
+                entries = list(INCOME_CERTIFICATE_REASONS)
+            case _:
+                raise AnafConfigError(
+                    f"unknown nomenclature {kind!r}; valid `kind` values: "
+                    "report_types, income_certificate_reasons"
+                )
+        return {"kind": kind, "entries": entries}
+
+    @mcp.tool(
         title="SPV: Request report",
         annotations=READ_ONLY,
         description="Ask ANAF to generate an official report/document (cerere). "
         "`tip` is the report name exactly as ANAF spells it — e.g. 'VECTOR "
         "FISCAL', 'Obligatii de plata', 'Istoric declaratii', 'D300', 'Duplicat "
-        "Recipisa', 'Adeverinte Venit', 'NeconcordanteD394'. Parameters vary per "
-        "type (year `an`, month `luna`, reason `motiv`, `numar_inregistrare`, "
-        "branch `cui_pui`, period `lunai`/`lunas`) and are validated before the "
-        "wire call. The report is generated ASYNCHRONOUSLY (no SLA): the result "
+        "Recipisa', 'Adeverinte Venit', 'NeconcordanteD394'; the full list with "
+        "per-type parameters is spv_nomenclature('report_types'). Parameters "
+        "vary per type (year `an`, month `luna`, reason `motiv`, "
+        "`numar_inregistrare`, branch `cui_pui`, period `lunai`/`lunas`) and are "
+        "validated before the wire call. For 'Adeverinte Venit', `motiv` must be "
+        "one of ANAF's fixed reasons verbatim — it is printed on the issued "
+        "certificate; get the list with "
+        "spv_nomenclature('income_certificate_reasons') and pick the entry "
+        "matching the user's stated purpose. The report is generated "
+        "ASYNCHRONOUSLY (no SLA): the result "
         "returns an `id_solicitare` — wait for delivery with spv_asteapta_raport, "
         "or match it later against messages' `request_id`. An identical request "
         "already filed today returns the same id (deduped) unless force=true.",

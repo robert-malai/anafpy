@@ -150,7 +150,9 @@ def test_income_certificate_reason_is_matched_exactly() -> None:
         year=2025,
         reason="Altele",
     )
-    with pytest.raises(ValidationError, match="motiv list"):
+    # The error enumerates the accepted values so a caller (or agent) can map
+    # the stated purpose onto one of them without a second lookup.
+    with pytest.raises(ValidationError, match=r"motiv list.*accepted values: Sanatate"):
         ReportRequest(
             type_=ReportType.ADEVERINTE_VENIT,
             cui="1111111111118",

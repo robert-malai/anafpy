@@ -296,6 +296,13 @@ def _allowed_parameters(type_: ReportType) -> frozenset[str]:
     return allowed
 
 
+def optional_parameters(type_: ReportType) -> tuple[str, ...]:
+    """The parameters ``type_`` accepts but does not require (model-field
+    names) — today only ``Fisa Rol``'s optional ``branch_cui``.
+    """
+    return tuple(sorted(_allowed_parameters(type_) - set(required_parameters(type_))))
+
+
 class ReportRequest(BaseModel):
     """A validated ``cerere`` — invalid parameter combinations fail here, before
     any wire call.
@@ -356,11 +363,13 @@ class ReportRequest(BaseModel):
         if self.type_ is ReportType.ADEVERINTE_VENIT:
             assert self.reason is not None
             if self.reason not in INCOME_CERTIFICATE_REASONS:
+                # Enumerate the accepted values: the caller (human or agent)
+                # must map the stated purpose onto one of them, so the error
+                # has to carry the list, not just point at it.
                 raise ValueError(
                     f"reason {self.reason!r} is not in ANAF's fixed motiv list "
-                    "for Adeverinte Venit (see "
-                    "anafpy.spv.INCOME_CERTIFICATE_REASONS; the text must match "
-                    "exactly)"
+                    "for Adeverinte Venit (the text must match exactly); "
+                    "accepted values: " + "; ".join(INCOME_CERTIFICATE_REASONS)
                 )
         if (
             self.start_month is not None

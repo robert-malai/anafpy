@@ -215,6 +215,57 @@ async def test_cerere_validates_parameters_before_the_wire(tmp_path: Path) -> No
         await _call(server, "spv_cerere", tip="NO SUCH REPORT")
 
 
+async def test_cerere_wrong_motiv_enumerates_the_accepted_values(
+    tmp_path: Path,
+) -> None:
+    # The self-healing path: an agent that guessed a motiv gets the whole fixed
+    # list back and can re-map without asking the user for ANAF's exact wording.
+    server = create_server(_config(tmp_path))
+    with pytest.raises(ToolError, match="accepted values: Sanatate"):
+        await _call(
+            server,
+            "spv_cerere",
+            tip="Adeverinte Venit",
+            an=2026,
+            motiv="Casa de sanatate",
+        )
+
+
+# --- spv_nomenclature -----------------------------------------------------------------
+
+
+async def test_nomenclature_lists_report_types_with_their_parameters(
+    tmp_path: Path,
+) -> None:
+    server = create_server(_config(tmp_path))
+    result = await _call(server, "spv_nomenclature", kind="report_types")
+    by_tip = {entry["tip"]: entry for entry in result["entries"]}
+    assert by_tip["Adeverinte Venit"]["required"] == ["cui", "an", "motiv"]
+    assert by_tip["NeconcordanteD394"]["required"] == ["cui", "an", "lunai", "lunas"]
+    assert by_tip["Fisa Rol"]["optional"] == ["cui_pui"]
+    assert by_tip["VECTOR FISCAL"] == {
+        "tip": "VECTOR FISCAL",
+        "required": ["cui"],
+        "optional": [],
+    }
+
+
+async def test_nomenclature_lists_the_income_certificate_reasons(
+    tmp_path: Path,
+) -> None:
+    server = create_server(_config(tmp_path))
+    result = await _call(server, "spv_nomenclature", kind="income_certificate_reasons")
+    assert "Sanatate" in result["entries"]
+    assert "Altele" in result["entries"]
+    assert len(result["entries"]) == 30
+
+
+async def test_nomenclature_unknown_kind_is_actionable(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    with pytest.raises(ToolError, match="valid `kind` values"):
+        await _call(server, "spv_nomenclature", kind="counties")
+
+
 # --- spv_asteapta_raport --------------------------------------------------------------
 
 

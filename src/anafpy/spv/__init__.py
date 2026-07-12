@@ -31,6 +31,7 @@ from .models import (
     SpvEnvelope,
     SpvMessage,
     english_error_hint,
+    optional_parameters,
     required_parameters,
 )
 from .session import (
@@ -69,6 +70,7 @@ __all__ = [
     "list_keychain_identities",
     "list_windows_identities",
     "load_selected_identity",
+    "optional_parameters",
     "required_parameters",
     "save_selected_identity",
 ]

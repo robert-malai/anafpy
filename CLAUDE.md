@@ -327,6 +327,12 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   `spv_cerere` (per-type param validation at the `ReportRequest` model;
   **in-process same-day dedupe** in `AppContext.spv_request_log` guards agent
   loops — the persistent-cache idea was rejected, the library stays stateless).
+  `spv_nomenclature` lists the report types with per-type params and the fixed
+  `Adeverinte Venit` `motiv` list — the model is **meant** to map the user's
+  stated purpose onto the exact entry (decided 2026-07-13; an MCP-elicitation
+  host-side picker was parked: Claude Desktop/Cowork answers
+  `elicitation/create` with a synthetic instant cancel), and a wrong `motiv`
+  errors with the full accepted list so the flow self-heals.
   Certificate selection is `spv_list_certificates` + `spv_select_certificate`
   (persists to `ANAFPY_SPV_IDENTITY_FILE`). The certificate/2FA login IS a tool
   (`spv_login`, added 2026-07-13 reversing the M2 stance): unlike the OAuth
