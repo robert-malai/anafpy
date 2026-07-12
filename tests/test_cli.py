@@ -165,3 +165,70 @@ def test_logout_clears_the_keyring_backend(
     assert main(["auth", "logout", "--store-backend", "keyring"]) == 0
     assert fake_keyring.entries == {}
     assert "Logged out" in capsys.readouterr().out
+
+
+# --- spv ------------------------------------------------------------------------------
+
+
+def _spv_args(tmp_path: Path) -> list[str]:
+    return [
+        "--session",
+        str(tmp_path / "spv-session.json"),
+        "--identity-file",
+        str(tmp_path / "spv-identity.json"),
+    ]
+
+
+def test_spv_status_without_session(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["spv", "status", *_spv_args(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "anafpy spv login" in out
+
+
+def test_spv_logout_clears_the_session_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from datetime import UTC, datetime
+
+    from anafpy.spv import FileSessionStore, SpvSession
+
+    store = FileSessionStore(tmp_path / "spv-session.json")
+    store.save(
+        SpvSession(cookies={"MRHSession": "x"}, established_at=datetime.now(tz=UTC))
+    )
+    assert main(["spv", "logout", *_spv_args(tmp_path)]) == 0
+    assert store.load() is None
+    assert "removed" in capsys.readouterr().out
+
+
+def test_spv_select_and_certs_roundtrip(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anafpy.spv import StoreIdentity
+
+    identity = StoreIdentity(
+        name="MIHAI-ROBERT MALAI",
+        sha1_thumbprint="C5E18AB56B0AC30A05BE8D526610F17BB2EF9E7D",
+        platform="darwin",
+    )
+    monkeypatch.setattr("anafpy.spv.certs.discover_identities", lambda: [identity])
+    monkeypatch.setattr("anafpy.cli.main.discover_identities", lambda: [identity])
+    assert main(["spv", "select", identity.sha1_thumbprint, *_spv_args(tmp_path)]) == 0
+    assert "Selected" in capsys.readouterr().out
+    assert main(["spv", "certs", *_spv_args(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "(selected)" in out
+
+
+def test_spv_login_without_identity_or_selection_is_actionable(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("anafpy.cli.main.discover_identities", lambda: [])
+    assert main(["spv", "login", *_spv_args(tmp_path)]) == 1
+    assert "anafpy spv certs" in capsys.readouterr().err

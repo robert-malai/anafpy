@@ -946,7 +946,7 @@ async def test_every_tool_has_a_service_prefixed_title(tmp_path: Path) -> None:
     # Human-facing display names follow "Service: operation"; clients that render
     # titles (per spec, over the snake_case name) group the tools by service.
     server = create_server(_config(tmp_path))
-    prefixes = ("e-Factura: ", "e-Transport: ", "ANAF Info: ", "ANAF: ")
+    prefixes = ("e-Factura: ", "e-Transport: ", "ANAF Info: ", "SPV: ", "ANAF: ")
     for tool in await server.list_tools():
         assert tool.title is not None, f"{tool.name} has no title"
         assert tool.title.startswith(prefixes), f"{tool.name}: {tool.title!r}"

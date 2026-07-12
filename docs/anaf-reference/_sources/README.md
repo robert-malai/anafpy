@@ -64,6 +64,27 @@ retrieved 2026-07-02.
 > Note: unlike `mfinante.gov.ro`, `static.anaf.ro` serves these to plain curl.
 > `index_cult_v2.html` has mojibake NBSP runs in the original — preserved verbatim.
 
+## SPV web services — `clientspv/`
+
+ANAF's **only** documentation for the SPV web services (`webserviced.anaf.ro/SPVWS2/rest/`
+— mTLS with a qualified certificate) is the example Java client repository
+[github.com/MfpAnaf/ClientSPV](https://github.com/MfpAnaf/ClientSPV) — no PDF, no
+swagger. Vendored verbatim (README + MIT LICENSE, required when vendoring + the Java
+sources, which carry the transport facts: PKCS#11 token mTLS, CookieManager). All files
+pinned to the repo head commit **`949ea92c2b4abe99d531a5a094af288e6f662c26`**
+(2019-05-07 — the upstream is dormant; on drift, re-fetch, diff, and update this
+pin), retrieved 2026-07-12.
+
+| File | Source URL (at pinned commit) |
+|---|---|
+| `clientspv/README.md` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/README.md |
+| `clientspv/LICENSE` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/LICENSE |
+| `clientspv/pom.xml` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/pom.xml |
+| `clientspv/src/ApelSPV.java` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/src/main/java/sqw/apelspv/ApelSPV.java |
+| `clientspv/src/CertificateChooserImpl.java` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/src/main/java/sqw/apelspv/CertificateChooserImpl.java |
+| `clientspv/src/CertificateChooser.java` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/src/main/java/sqw/certificat/CertificateChooser.java |
+| `clientspv/src/Sign.java` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/src/main/java/sqw/certificat/Sign.java |
+
 ## Related ANAF artifacts, deliberately not vendored here
 
 - **CIUS-RO validation artifacts** — `ro16931-ubl-1.0.9.zip` (Schematron + XSD):

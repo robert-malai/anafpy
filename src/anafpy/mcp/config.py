@@ -49,6 +49,11 @@ class ServerConfig(BaseSettings):
         skills_dir: directory of workflow skills exposed as MCP prompts
             (``ANAFPY_SKILLS_DIR``); defaults to the repo's ``skills/`` when
             present.
+        spv_session_path: the SPV cookie-session store written by
+            ``anafpy spv login`` (``ANAFPY_SPV_SESSION``).
+        spv_identity_path: the persisted certificate selection written by
+            ``spv_select_certificate`` / ``anafpy spv login``
+            (``ANAFPY_SPV_IDENTITY_FILE``).
         signing_key: per-process secret backing the confirmation tokens issued by the
             two-step ``prepare`` → ``submit`` flow. Defaults to a fresh random key, so
             tokens are only valid within the lifetime of one server process.
@@ -72,6 +77,14 @@ class ServerConfig(BaseSettings):
     default_cif: str | None = Field(default=None, validation_alias="ANAFPY_CIF")
     docs_dir: Path | None = Field(default=None, validation_alias="ANAFPY_DOCS_DIR")
     skills_dir: Path | None = Field(default=None, validation_alias="ANAFPY_SKILLS_DIR")
+    spv_session_path: Path = Field(
+        default=Path("~/.anafpy/spv-session.json"),
+        validation_alias="ANAFPY_SPV_SESSION",
+    )
+    spv_identity_path: Path = Field(
+        default=Path("~/.anafpy/spv-identity.json"),
+        validation_alias="ANAFPY_SPV_IDENTITY_FILE",
+    )
     # A private attribute, not a settings field: BaseSettings populates fields from
     # the environment by name, and the signing key must never come from a stray
     # `SIGNING_KEY` env var — it is a fresh per-process secret each run.
@@ -82,7 +95,9 @@ class ServerConfig(BaseSettings):
         """Per-process secret backing the confirmation tokens (never from env)."""
         return self._signing_key
 
-    @field_validator("store_path", "docs_dir", "skills_dir")
+    @field_validator(
+        "store_path", "docs_dir", "skills_dir", "spv_session_path", "spv_identity_path"
+    )
     @classmethod
     def _expand_path(cls, value: Path | None) -> Path | None:
         return value.expanduser() if value is not None else None

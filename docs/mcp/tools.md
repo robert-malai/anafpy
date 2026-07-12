@@ -79,6 +79,28 @@ that token and `confirm=true`, and each token is **single-use** — so a
 non-idempotent upload can never be repeated on one approval, and any mangling of
 the document between prepare and submit fails closed.
 
+## SPV — the taxpayer's mailbox, read-only
+
+The `spv_*` tools read **SPV (Spațiul Privat Virtual)** — receipts, decisions,
+notifications — and request official reports. They authenticate with your
+**qualified certificate**, not the OAuth application, and are read-only by
+design: no declaration submission of any kind.
+
+The certificate step is host-side, like the OAuth login: pick a certificate
+(`spv_list_certificates` / `spv_select_certificate`, or `anafpy spv certs` +
+`anafpy spv select`), then run **`anafpy spv login`** — your token/2FA prompt
+fires once and the resulting session is what the tools ride, prompt-free.
+
+| Tool | What it does |
+|---|---|
+| `spv_list_certificates` | Certificates usable for SPV in the OS key store (Keychain / CertStore), token and cloud-HSM ones included |
+| `spv_select_certificate` | Persist which certificate `anafpy spv login` uses |
+| `spv_status` | Session smoke test; reports the certificate's CNP/serial and `authorized_cuis` — every CUI/CNP it has SPV rights for |
+| `spv_lista_mesaje` | Inbox messages from the last N days, filterable by CUI and message kind, paged |
+| `spv_descarca` | Download one message's PDF to a path you name (never into context; existing files never replaced without `overwrite`) |
+| `spv_cerere` | Request a report — `VECTOR FISCAL`, `Obligatii de plata`, `Istoric declaratii`, the `D1xx`/`D3xx` duplicates, `Duplicat Recipisa`, `Adeverinte Venit`, … Parameters are validated per report type before anything is sent; identical same-day repeats are deduped |
+| `spv_asteapta_raport` | Wait for a requested report to land in the inbox and save its PDF; a `pending` answer just means "call again later" |
+
 ## Resources and prompts
 
 The compiled [ANAF API reference](../anaf-reference/README.md) is served as
@@ -97,7 +119,11 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_TOKEN_STORE` | Token file path for the `file` backend (default `~/.anafpy/tokens.json`) |
 | `ANAFPY_DOCS_DIR` | ANAF reference served as resources (defaults to the repo's `docs/anaf-reference/`) |
 | `ANAFPY_SKILLS_DIR` | Workflow skills served as prompts (defaults to the repo's `skills/`) |
+| `ANAFPY_SPV_SESSION` | SPV cookie-session store written by `anafpy spv login` (default `~/.anafpy/spv-session.json`) |
+| `ANAFPY_SPV_IDENTITY_FILE` | Persisted SPV certificate selection (default `~/.anafpy/spv-identity.json`) |
 
-The server never drives the certificate/browser login — that stays the host-side
-`anafpy auth login` CLI ([authentication](../library/auth.md)); the server only
-reads and headlessly refreshes the token store it wrote.
+The server never drives an interactive login — the OAuth certificate/browser
+step stays the host-side `anafpy auth login` CLI
+([authentication](../library/auth.md)), and the SPV certificate/2FA handshake
+stays `anafpy spv login` ([SPV](../library/spv.md)); the server only reads the
+stores those wrote (and refreshes the OAuth tokens headlessly).

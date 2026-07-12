@@ -14,7 +14,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ..config import ServerConfig
 from ..context import AppContext, AuthStatus
-from . import efactura, etransport, prompts, public, resources
+from . import efactura, etransport, prompts, public, resources, spv
 from ._shared import READ_ONLY
 
 __all__ = ["create_server", "main"]
@@ -65,6 +65,17 @@ without filing (authoritative; public and no-auth, so it needs no login). e-Tran
 has no standalone validator — ANAF validates on upload. If a tool reports "not
 authenticated", the user must run `anafpy auth login` host-side.
 
+The `spv_*` tools read the taxpayer's SPV (Spațiul Privat Virtual) mailbox —
+receipts, decisions, notifications — and request official reports (VECTOR FISCAL,
+Obligatii de plata, Istoric declaratii, declaration duplicates, ...). SPV is
+READ-ONLY here (no declaration submission) and authenticates with the user's
+qualified certificate, not OAuth: the login is host-side (`anafpy spv login`,
+fires the user's PIN/2FA) and the tools ride the resulting session. Start with
+`spv_status` — it also reports `authorized_cuis`, the CUIs/CNPs the certificate
+may query. Reports are asynchronous: `spv_cerere` returns an `id_solicitare`,
+`spv_asteapta_raport` waits and saves the PDF; a 'pending' answer is normal, not
+an error. Downloads always go to disk at caller-given paths, never into context.
+
 The `anaf_*` lookup tools query ANAF's PUBLIC no-auth services and work even without
 a login: the taxpayer/VAT registry (`anaf_lookup_taxpayers` answers "is this CUI
 VAT-registered / e-Factura-registered" and more, in one call — use it to sanity-check
@@ -104,6 +115,7 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     efactura.register(mcp, ctx, cfg)
     etransport.register(mcp, ctx, cfg)
     public.register(mcp, ctx)
+    spv.register(mcp, ctx, cfg)
     resources.register(mcp, cfg)
     prompts.register(mcp, cfg)
     return mcp

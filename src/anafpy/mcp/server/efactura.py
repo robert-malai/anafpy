@@ -17,7 +17,6 @@ model's context.
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
@@ -31,7 +30,7 @@ from ..context import AppContext
 from ..documents import invoice_view, resolve_xml, upload_standard
 from ..models import PreparedInvoice, SubmitResult, UblXmlInput
 from ..tokens import ConfirmationError, issue_token, verify_token
-from ._shared import ARTIFACT_SAVING, MUTATING, READ_ONLY
+from ._shared import ARTIFACT_SAVING, MUTATING, READ_ONLY, write_artifact
 
 __all__ = ["register"]
 
@@ -124,7 +123,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
                 pdf_error = "the message has no XML content to render"
             else:
                 try:
-                    pdf_path = _write_artifact(
+                    pdf_path = write_artifact(
                         save_pdf_as,
                         await _render_pdf(ctx, msg.content_xml),
                         overwrite=overwrite,
@@ -135,9 +134,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         zip_error: str | None = None
         if save_zip_as is not None:
             try:
-                zip_path = _write_artifact(
-                    save_zip_as, msg.raw_zip, overwrite=overwrite
-                )
+                zip_path = write_artifact(save_zip_as, msg.raw_zip, overwrite=overwrite)
             except AnafError as exc:
                 zip_error = str(exc)
         return {
@@ -388,24 +385,6 @@ def _transform_standard(xml: bytes) -> TransformStandard:
     if upload_standard(xml) is UploadStandard.CN:
         return TransformStandard.CREDIT_NOTE
     return TransformStandard.INVOICE
-
-
-def _write_artifact(target: str, data: bytes, *, overwrite: bool) -> str:
-    """Write a downloaded artifact to a caller-given path, creating parent dirs.
-
-    An existing file is never silently replaced: a batch flow naming files from
-    invoice metadata ("<date> - <partner>.pdf") must not lose one invoice to a
-    name collision. Raises :class:`AnafConfigError` unless ``overwrite`` is set.
-    """
-    path = Path(target).expanduser()
-    if path.exists() and not overwrite:
-        raise AnafConfigError(
-            f"refusing to overwrite existing file {path} — pick another name, or "
-            "pass overwrite=true to replace it deliberately"
-        )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    return str(path)
 
 
 async def _render_pdf(ctx: AppContext, xml: bytes) -> bytes:
