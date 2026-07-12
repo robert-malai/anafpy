@@ -49,7 +49,9 @@ if (-not $curl) { throw 'curl.exe not found. Windows 10 1803+ ships it in System
 $curlVersion = & $curl.Source -V
 Write-Log "curl: $($curl.Source)"
 Write-Log ($curlVersion | Select-Object -First 1)
-if ($curlVersion -notmatch 'Schannel') {
+# -notmatch on the whole (multi-line) output is truthy when ANY line lacks the
+# word; test the version line alone.
+if (($curlVersion | Select-Object -First 1) -notmatch 'Schannel') {
     Write-Warning ("This curl.exe is NOT built against Schannel - CertStore " +
         "--cert syntax will not work. Use C:\Windows\System32\curl.exe explicitly.")
 }
