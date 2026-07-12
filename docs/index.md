@@ -1,6 +1,5 @@
-# anafpy
-
-![anafpy — Python client for ANAF e-Factura & e-Transport](assets/anafpy-social-preview.png)
+![anafpy](assets/anafpy-logo.svg#only-light){ .hero-logo }
+![anafpy](assets/anafpy-logo-dark.svg#only-dark){ .hero-logo }
 
 Typed Python clients for Romania's **ANAF** tax-authority web services —
 **e-Factura** (electronic invoicing), **e-Transport** (goods transport), and the

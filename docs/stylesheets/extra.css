@@ -1,0 +1,18 @@
+/* Landing-page wordmark hero (docs/index.md). */
+.hero-logo {
+  display: block;
+  margin: 1.25rem auto 2rem;
+  width: min(24rem, 85%);
+}
+
+/* The landing page has no Markdown h1 (the wordmark is the visual title), so
+   Material auto-inserts one from the nav label; keep it for screen readers
+   but hide it visually. */
+.md-content h1:has(+ p > .hero-logo) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

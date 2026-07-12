@@ -137,14 +137,15 @@ skills/                  # workflow skills, served by the MCP server as same-nam
 schemas/                 # vendored XSDs + EN16931 Schematron sources (git-tracked,
                          # NOT shipped in the wheel; the .sch feed the codelist codegen)
 scripts/                 # codegen scripts
-imgs/                    # brand assets (icon SVG/PNGs, wordmark, social preview) —
-                         # README's top banner hotlinks the social preview from here
-                         # (raw.githubusercontent URL so PyPI renders it too);
-                         # docs-site copies live in docs/assets/
+imgs/                    # brand assets (icon SVG/PNGs, wordmark SVG light/dark variants
+                         # + PNG, social preview) — README's top banner hotlinks the
+                         # social preview from here (raw.githubusercontent URL so PyPI
+                         # renders it too); docs-site copies live in docs/assets/
 docs/                    # MkDocs source tree for the docs site (mkdocs.yml at repo root,
                          # .readthedocs.yaml drives the RTD build via uv)
   assets/                # site images (copies from imgs/): icon SVG = theme logo +
-                         # favicon (mkdocs.yml), social preview = index.md hero
+                         # favicon (mkdocs.yml), wordmark SVGs = index.md hero via
+                         # Material #only-light/#only-dark + stylesheets/extra.css
   index.md               # site landing page (two-audience split: MCP users / library users)
   mcp/                   # setup.md (the end-user walkthrough, ex-INSTALL.md), tools.md, skills.md
   library/               # quickstart, auth, efactura, etransport, public, errors guides

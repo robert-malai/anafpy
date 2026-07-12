@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 256" role="img" aria-label="anafpy">
+  <!-- anafpy wordmark, light-background variant: icon + navy "anaf" / red "py" -->
+  <rect width="256" height="256" rx="52" fill="#101C33"/>
+  <!-- document body with cut corner -->
+  <path d="M70 48 h84 l36 36 v112 a12 12 0 0 1 -12 12 H70 a12 12 0 0 1 -12 -12 V60 a12 12 0 0 1 12 -12 Z" fill="#F5F3EC"/>
+  <!-- dog-ear fold -->
+  <path d="M154 48 v24 a12 12 0 0 0 12 12 h24 Z" fill="#D8D3C4"/>
+  <!-- tricolor margin stripe -->
+  <path d="M58 60 a12 12 0 0 1 12 -12 h2 v160 h-2 a12 12 0 0 1 -12 -12 Z" fill="#002B7F"/>
+  <rect x="72" y="48" width="9" height="160" fill="#FCD116"/>
+  <rect x="81" y="48" width="9" height="160" fill="#CE1126"/>
+  <!-- invoice lines -->
+  <rect x="104" y="106" width="72" height="10" rx="5" fill="#101C33" opacity="0.85"/>
+  <rect x="104" y="128" width="52" height="10" rx="5" fill="#101C33" opacity="0.40"/>
+  <rect x="104" y="150" width="62" height="10" rx="5" fill="#101C33" opacity="0.40"/>
+  <!-- prompt chevron + total -->
+  <path d="M104 182 l11 8 -11 8" stroke="#CE1126" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <rect x="126" y="177" width="46" height="10" rx="5" fill="#101C33"/>
+  <!-- wordmark -->
+  <text x="300" y="181" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="150" font-weight="800" letter-spacing="2" fill="#101C33">anaf<tspan fill="#CE1126">py</tspan></text>
+</svg>
