@@ -288,9 +288,11 @@ the browser. The login can occasionally fail on ANAF's side; just run it again
 (your PIN/2FA prompt fires on every attempt — that is normal).
 
 Then ask Claude: *"What's my SPV status?"* — it should report your certificate
-and the list of companies (CUIs) it may query. When the session expires, the
-tools answer with "run `anafpy spv login`" instead of data; one login brings
-them back.
+and the list of companies (CUIs) it may query. When the session expires (they
+idle out in under an hour), you can simply tell Claude *"log me in to SPV"* —
+it asks for your confirmation, then your token's PIN/2FA prompt fires as usual;
+approving it on your device completes the login. The terminal command keeps
+working too.
 
 ## Good to know
 

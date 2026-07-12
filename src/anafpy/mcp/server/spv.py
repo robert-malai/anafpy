@@ -1,8 +1,14 @@
 """SPV (Spațiul Privat Virtual) MCP tools — read-only mailbox access.
 
-Everything here rides the cookie session established host-side by
-``anafpy spv login`` (the certificate/2FA step never runs from a tool — same
-convention as the OAuth browser flow). Reads are freely callable;
+Everything here rides the cookie session established by ``anafpy spv login``
+or the ``spv_login`` tool. Unlike the OAuth browser flow (which structurally
+needs host-side UI and stays a CLI), the SPV login needs no host UI at all —
+the human gate is the out-of-band PIN/2FA approval on the owner's device — so
+it IS exposed as a tool (decided 2026-07-13, reversing the M2 stance: APM
+sessions die in under an hour, and bouncing a Cowork user to a terminal every
+hour would kill the feature). ``spv_login`` is explicitly gated: it requires
+``confirm=true`` relaying the user's ask, so an agent cannot fire the owner's
+2FA on its own initiative. Reads are freely callable;
 ``spv_descarca`` / ``spv_asteapta_raport`` carry the honest artifact-saving
 annotations because they write PDFs at caller-given paths, and
 ``spv_select_certificate`` is the one deliberate local mutation (it persists
@@ -23,11 +29,14 @@ from datetime import datetime
 from mcp.server.fastmcp import FastMCP
 
 from ..._transport.base import ROMANIA_TZ
-from ...exceptions import AnafAuthError, AnafConfigError
+from ...exceptions import AnafAuthError, AnafConfigError, AnafError
 from ...spv import (
+    CurlBootstrapper,
+    FileSessionStore,
     MessageList,
     ReportRequest,
     ReportType,
+    SpvSessionProvider,
     discover_identities,
     identity_by_thumbprint,
     load_selected_identity,
@@ -35,12 +44,14 @@ from ...spv import (
 )
 from ..config import ServerConfig
 from ..context import AppContext
-from ._shared import ARTIFACT_SAVING, READ_ONLY, write_artifact
+from ._shared import ARTIFACT_SAVING, MUTATING, READ_ONLY, write_artifact
 
 __all__ = ["register"]
 
 _LOGIN_HINT = (
-    "run `anafpy spv login` host-side (interactive: certificate + PIN/2FA), then retry"
+    "log in first: ask the user for approval and call spv_login with "
+    "confirm=true (fires their certificate PIN/2FA), or have them run "
+    "`anafpy spv login` in a terminal — then retry"
 )
 
 # One page of spv_lista_mesaje output; SPV inboxes can hold hundreds of entries
@@ -104,6 +115,69 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             "selected": selected.model_dump(mode="json"),
             "next_step": _LOGIN_HINT,
         }
+
+    @mcp.tool(
+        title="SPV: Log in",
+        annotations=MUTATING,
+        description="Establish a fresh SPV session with the selected certificate "
+        "(spv_select_certificate / `anafpy spv select`). This FIRES THE USER'S "
+        "PIN/2FA prompt on their token or phone — call it only when the user "
+        "explicitly asked to log in (or approved doing so), and pass "
+        "confirm=true to attest that. One attempt per call; the handshake is "
+        "occasionally flaky on ANAF's side, so a failed attempt just means ask "
+        "the user and try again (their prompt fires anew). On success reports "
+        "the certificate's identity and `authorized_cuis`.",
+    )
+    async def spv_login(
+        confirm: bool = False, timeout_s: float = 180.0
+    ) -> dict[str, object]:
+        if not confirm:
+            raise AnafConfigError(
+                "spv_login fires the user's certificate PIN/2FA prompt — get "
+                "their explicit approval in the conversation, then call again "
+                "with confirm=true"
+            )
+        selected = load_selected_identity(config.spv_identity_path)
+        if selected is None:
+            raise AnafConfigError(
+                "no certificate selected — list them with spv_list_certificates "
+                "and pick one with spv_select_certificate first"
+            )
+        # A throwaway provider over the SAME store: the long-lived client's
+        # provider treats the store as the single source of truth, so it picks
+        # the fresh session up on its next request.
+        provider = SpvSessionProvider(
+            store=FileSessionStore(config.spv_session_path),
+            bootstrapper=CurlBootstrapper(
+                selected.bootstrap_identity,
+                timeout=min(max(timeout_s, 30.0), 300.0),
+            ),
+        )
+        try:
+            await provider.login()
+        except AnafAuthError as exc:
+            return {
+                "logged_in": False,
+                "detail": str(exc),
+                "next_step": "the login is occasionally flaky on ANAF's side — "
+                "confirm the user's certificate middleware is running, then "
+                "(with their go-ahead) call spv_login again; their PIN/2FA "
+                "prompt fires on every attempt",
+            }
+        # Best-effort identity probe: the login itself already succeeded and the
+        # session is saved — a probe hiccup must not report it as failed
+        # (observed live 2026-07-13: the probe raised right after a good login).
+        result: dict[str, object] = {"logged_in": True, "identity": selected.name}
+        try:
+            listing = await ctx.spv().list_messages(60)
+        except AnafError as exc:
+            result["probe_error"] = (
+                f"session established, but the identity probe failed: {exc} — "
+                "spv_status will report the details"
+            )
+            return result
+        result.update(_identity_summary(listing))
+        return result
 
     @mcp.tool(
         title="SPV: Status",

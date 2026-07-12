@@ -86,15 +86,18 @@ notifications — and request official reports. They authenticate with your
 **qualified certificate**, not the OAuth application, and are read-only by
 design: no declaration submission of any kind.
 
-The certificate step is host-side, like the OAuth login: pick a certificate
-(`spv_list_certificates` / `spv_select_certificate`, or `anafpy spv certs` +
-`anafpy spv select`), then run **`anafpy spv login`** — your token/2FA prompt
-fires once and the resulting session is what the tools ride, prompt-free.
+Pick a certificate once (`spv_list_certificates` / `spv_select_certificate`,
+or `anafpy spv certs` + `anafpy spv select`), then establish a session either
+by asking Claude to log in (**`spv_login`** — gated on your explicit approval,
+because it fires your token/2FA prompt) or by running **`anafpy spv login`**
+in a terminal. Sessions idle out in under an hour; the tools then ask for a
+fresh login rather than failing obscurely.
 
 | Tool | What it does |
 |---|---|
 | `spv_list_certificates` | Certificates usable for SPV in the OS key store (Keychain / CertStore), token and cloud-HSM ones included |
-| `spv_select_certificate` | Persist which certificate `anafpy spv login` uses |
+| `spv_select_certificate` | Persist which certificate the SPV login uses |
+| `spv_login` | Establish a fresh SPV session — requires your explicit approval (`confirm=true`) since it fires your certificate PIN/2FA |
 | `spv_status` | Session smoke test; reports the certificate's CNP/serial and `authorized_cuis` — every CUI/CNP it has SPV rights for |
 | `spv_lista_mesaje` | Inbox messages from the last N days, filterable by CUI and message kind, paged |
 | `spv_descarca` | Download one message's PDF to a path you name (never into context; existing files never replaced without `overwrite`) |
@@ -122,8 +125,8 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_SPV_SESSION` | SPV cookie-session store written by `anafpy spv login` (default `~/.anafpy/spv-session.json`) |
 | `ANAFPY_SPV_IDENTITY_FILE` | Persisted SPV certificate selection (default `~/.anafpy/spv-identity.json`) |
 
-The server never drives an interactive login — the OAuth certificate/browser
-step stays the host-side `anafpy auth login` CLI
-([authentication](../library/auth.md)), and the SPV certificate/2FA handshake
-stays `anafpy spv login` ([SPV](../library/spv.md)); the server only reads the
-stores those wrote (and refreshes the OAuth tokens headlessly).
+The OAuth certificate/browser login stays host-side (`anafpy auth login` —
+it structurally needs a browser; the server only reads and headlessly
+refreshes the token store it wrote). The SPV login is the one interactive step
+exposed as a tool: it needs no host UI — the human gate is your out-of-band
+PIN/2FA approval — and `spv_login` demands your explicit go-ahead per attempt.

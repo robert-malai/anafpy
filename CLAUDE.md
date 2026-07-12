@@ -325,9 +325,17 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   **in-process same-day dedupe** in `AppContext.spv_request_log` guards agent
   loops — the persistent-cache idea was rejected, the library stays stateless).
   Certificate selection is `spv_list_certificates` + `spv_select_certificate`
-  (persists to `ANAFPY_SPV_IDENTITY_FILE`); the certificate/2FA login itself is
-  never a tool — `anafpy spv login` host-side establishes the session the tools
-  ride. No two-step gate: SPV files nothing (reports are information requests).
+  (persists to `ANAFPY_SPV_IDENTITY_FILE`). The certificate/2FA login IS a tool
+  (`spv_login`, added 2026-07-13 reversing the M2 stance): unlike the OAuth
+  browser flow it needs no host UI — the human gate is the out-of-band PIN/2FA
+  approval — and APM sessions die in under an hour, so terminal round-trips per
+  hour would kill the Cowork UX. It is gated on `confirm=true` (the model must
+  relay the user's explicit ask; one attempt per call, flaky-handshake failures
+  come back as `logged_in=false` + retry guidance, not exceptions), uses a
+  throwaway `SpvSessionProvider` over the shared store (single source of truth
+  — the long-lived client picks the session up on its next read), and
+  `anafpy spv login` remains the CLI path. No two-step gate on the reads: SPV
+  files nothing (reports are information requests).
 - **Flat models live at the client layer**
   ([efactura/authoring/](src/anafpy/efactura/authoring/),
   [etransport/models.py](src/anafpy/etransport/models.py)) — the MCP layer only

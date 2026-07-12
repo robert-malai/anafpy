@@ -69,10 +69,12 @@ The `spv_*` tools read the taxpayer's SPV (Spațiul Privat Virtual) mailbox —
 receipts, decisions, notifications — and request official reports (VECTOR FISCAL,
 Obligatii de plata, Istoric declaratii, declaration duplicates, ...). SPV is
 READ-ONLY here (no declaration submission) and authenticates with the user's
-qualified certificate, not OAuth: the login is host-side (`anafpy spv login`,
-fires the user's PIN/2FA) and the tools ride the resulting session. Start with
-`spv_status` — it also reports `authorized_cuis`, the CUIs/CNPs the certificate
-may query. Reports are asynchronous: `spv_cerere` returns an `id_solicitare`,
+qualified certificate, not OAuth. SPV sessions are short-lived (under an hour
+idle): when they lapse, ask the user for permission and call `spv_login` with
+confirm=true — it fires THEIR PIN/2FA prompt, so never call it uninvited — or
+have them run `anafpy spv login` in a terminal. Start with `spv_status` — it
+also reports `authorized_cuis`, the CUIs/CNPs the certificate may query.
+Reports are asynchronous: `spv_cerere` returns an `id_solicitare`,
 `spv_asteapta_raport` waits and saves the PDF; a 'pending' answer is normal, not
 an error. Downloads always go to disk at caller-given paths, never into context.
 

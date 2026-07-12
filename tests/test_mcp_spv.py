@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import pytest
 import respx
@@ -280,3 +280,122 @@ async def test_select_unknown_thumbprint_is_actionable(
     server = create_server(_config(tmp_path))
     with pytest.raises(ToolError, match="no usable identity"):
         await _call(server, "spv_select_certificate", thumbprint="AB" * 20)
+
+
+# --- spv_login ------------------------------------------------------------------------
+
+
+def _select_identity(tmp_path: Path) -> None:
+    from anafpy.spv import save_selected_identity
+
+    save_selected_identity(_IDENTITY, tmp_path / "spv-identity.json")
+
+
+class FakeCurlBootstrapper:
+    """Stands in for CurlBootstrapper inside the spv_login tool."""
+
+    instances: ClassVar[list[FakeCurlBootstrapper]] = []
+    fail_with: ClassVar[str | None] = None
+
+    def __init__(self, identity: str, *, timeout: float = 240.0) -> None:
+        self.identity = identity
+        self.timeout = timeout
+        FakeCurlBootstrapper.instances.append(self)
+
+    async def bootstrap(self) -> SpvSession:
+        from anafpy.exceptions import AnafAuthError
+
+        if FakeCurlBootstrapper.fail_with is not None:
+            raise AnafAuthError(FakeCurlBootstrapper.fail_with)
+        return SpvSession(
+            cookies={"MRHSession": "fresh-from-login"},
+            established_at=datetime.now(tz=UTC),
+        )
+
+
+@pytest.fixture(autouse=True)
+def _reset_fake_bootstrapper() -> None:
+    FakeCurlBootstrapper.instances = []
+    FakeCurlBootstrapper.fail_with = None
+
+
+async def test_login_without_confirm_is_refused(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path, with_session=False))
+    with pytest.raises(ToolError, match="explicit approval"):
+        await _call(server, "spv_login")
+
+
+async def test_login_without_a_selected_certificate_is_actionable(
+    tmp_path: Path,
+) -> None:
+    server = create_server(_config(tmp_path, with_session=False))
+    with pytest.raises(ToolError, match="spv_select_certificate"):
+        await _call(server, "spv_login", confirm=True)
+
+
+@respx.mock
+async def test_login_establishes_the_session_and_reports_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("anafpy.mcp.server.spv.CurlBootstrapper", FakeCurlBootstrapper)
+    respx.get(f"{BASE}/listaMesaje").respond(json=LISTING_BODY)
+    config = _config(tmp_path, with_session=False)
+    _select_identity(tmp_path)
+    server = create_server(config)
+
+    result = await _call(server, "spv_login", confirm=True)
+    assert result["logged_in"] is True
+    assert result["identity"] == "MIHAI-ROBERT MALAI"
+    assert result["authorized_cuis"] == ["8000000000", "8000000001"]
+    # macOS selection: the bootstrapper gets the Keychain NAME.
+    assert FakeCurlBootstrapper.instances[0].identity == "MIHAI-ROBERT MALAI"
+    # The shared store now holds the fresh session (single source of truth).
+    saved = FileSessionStore(tmp_path / "spv-session.json").load()
+    assert saved is not None
+    assert saved.cookies == {"MRHSession": "fresh-from-login"}
+
+
+async def test_login_flaky_handshake_is_a_graceful_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("anafpy.mcp.server.spv.CurlBootstrapper", FakeCurlBootstrapper)
+    FakeCurlBootstrapper.fail_with = "SPV handshake timed out after 180s"
+    config = _config(tmp_path, with_session=False)
+    _select_identity(tmp_path)
+    server = create_server(config)
+
+    result = await _call(server, "spv_login", confirm=True)
+    assert result["logged_in"] is False
+    assert "timed out" in result["detail"]
+    assert "again" in result["next_step"]
+
+
+async def test_login_timeout_is_clamped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("anafpy.mcp.server.spv.CurlBootstrapper", FakeCurlBootstrapper)
+    FakeCurlBootstrapper.fail_with = "flaky"  # short-circuit before any probe
+    config = _config(tmp_path, with_session=False)
+    _select_identity(tmp_path)
+    server = create_server(config)
+    await _call(server, "spv_login", confirm=True, timeout_s=9999)
+    assert FakeCurlBootstrapper.instances[0].timeout == 300.0
+
+
+@respx.mock
+async def test_login_success_survives_a_failed_identity_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Observed live: the bootstrap succeeded (session saved) but the follow-up
+    # probe raised — the tool must still report the login as successful.
+    monkeypatch.setattr("anafpy.mcp.server.spv.CurlBootstrapper", FakeCurlBootstrapper)
+    respx.get(f"{BASE}/listaMesaje").respond(500, content=b"hiccup")
+    config = _config(tmp_path, with_session=False)
+    _select_identity(tmp_path)
+    server = create_server(config)
+
+    result = await _call(server, "spv_login", confirm=True)
+    assert result["logged_in"] is True
+    assert "probe" in result["probe_error"]
+    saved = FileSessionStore(tmp_path / "spv-session.json").load()
+    assert saved is not None and saved.cookies == {"MRHSession": "fresh-from-login"}
