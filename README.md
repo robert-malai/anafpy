@@ -1,3 +1,10 @@
+<p align="center">
+  <a href="https://anafpy.readthedocs.io">
+    <img src="https://raw.githubusercontent.com/robert-malai/anafpy/main/imgs/anafpy-social-preview.png"
+         alt="anafpy — Python client for ANAF e-Factura &amp; e-Transport" width="720">
+  </a>
+</p>
+
 # anafpy
 
 Typed Python clients for Romania's **ANAF** tax-authority web services —

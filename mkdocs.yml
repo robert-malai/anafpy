@@ -11,6 +11,8 @@ repo_name: robert-malai/anafpy
 
 theme:
   name: material
+  logo: assets/anafpy-icon.svg
+  favicon: assets/anafpy-icon.svg
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
