@@ -166,6 +166,17 @@ async def test_descarca_requires_a_destination(tmp_path: Path) -> None:
         await _call(server, "spv_descarca", mesaj_id="100")
 
 
+@respx.mock
+async def test_spv_message_pdf_resource(tmp_path: Path) -> None:
+    respx.get(f"{BASE}/descarcare").respond(content=b"%PDF-1.7 doc")
+    server = create_server(_config(tmp_path))
+    templates = await server.list_resource_templates()
+    assert "spvmsg://{mesaj_id}/pdf" in {t.uriTemplate for t in templates}
+    contents = list(await server.read_resource("spvmsg://100/pdf"))
+    assert contents[0].content == b"%PDF-1.7 doc"
+    assert contents[0].mime_type == "application/pdf"
+
+
 # --- spv_cerere ---------------------------------------------------------------------
 
 

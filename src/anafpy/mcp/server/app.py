@@ -77,6 +77,8 @@ also reports `authorized_cuis`, the CUIs/CNPs the certificate may query.
 Reports are asynchronous: `spv_cerere` returns an `id_solicitare`,
 `spv_asteapta_raport` waits and saves the PDF; a 'pending' answer is normal, not
 an error. Downloads always go to disk at caller-given paths, never into context.
+A message's document also exists as the resource `spvmsg://<mesaj_id>/pdf`;
+never read it into context when a file on disk is what the user wants.
 
 The `anaf_*` lookup tools query ANAF's PUBLIC no-auth services and work even without
 a login: the taxpayer/VAT registry (`anaf_lookup_taxpayers` answers "is this CUI

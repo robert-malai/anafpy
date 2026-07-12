@@ -320,7 +320,10 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   (session smoke test — surfaces `authorized_cuis`, the certificate's
   authorization inventory), `spv_lista_mesaje` (paged, `tip`-filterable),
   `spv_descarca` / `spv_asteapta_raport` (PDFs to caller-given paths via the
-  shared `write_artifact` collision guard — ARTIFACT_SAVING annotations), and
+  shared `write_artifact` collision guard — ARTIFACT_SAVING annotations; a
+  message's document is also the resource template `spvmsg://{mesaj_id}/pdf`,
+  the SPV sibling of `anafmsg://` — needs an active session, since a resource
+  read can't prompt a login), and
   `spv_cerere` (per-type param validation at the `ReportRequest` model;
   **in-process same-day dedupe** in `AppContext.spv_request_log` guards agent
   loops — the persistent-cache idea was rejected, the library stays stateless).

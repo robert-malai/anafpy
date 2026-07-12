@@ -12,7 +12,10 @@ hour would kill the feature). ``spv_login`` is explicitly gated: it requires
 ``spv_descarca`` / ``spv_asteapta_raport`` carry the honest artifact-saving
 annotations because they write PDFs at caller-given paths, and
 ``spv_select_certificate`` is the one deliberate local mutation (it persists
-the certificate choice).
+the certificate choice). A message's document is also the resource template
+``spvmsg://{mesaj_id}/pdf`` (mirroring e-Factura's ``anafmsg://``, and simpler:
+``descarcare`` already returns a PDF, no conversion) — a disk-free path for
+hosts with resource UX; ``spv_descarca`` remains the save-to-disk path.
 
 ``spv_cerere`` files a report request with ANAF. It is guarded by an
 **in-process same-day dedupe** (``AppContext.spv_request_log``): an agent loop
@@ -258,7 +261,8 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         "the saved path — the binary never enters the context. Name the file with "
         "`save_as` (full path), or pass `dest_dir` to use the generated name "
         "'spv-<mesaj_id>.pdf'. An existing file is never replaced unless "
-        "overwrite=true. `mesaj_id` is a message `id` from spv_lista_mesaje.",
+        "overwrite=true. `mesaj_id` is a message `id` from spv_lista_mesaje. The "
+        "document is also readable as the resource spvmsg://{mesaj_id}/pdf.",
     )
     async def spv_descarca(
         mesaj_id: str,
@@ -280,6 +284,17 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             "media_type": document.media_type,
             "is_pdf": document.is_pdf,
         }
+
+    @mcp.resource(
+        "spvmsg://{mesaj_id}/pdf",
+        name="SPV message document",
+        description="One SPV message's document (PDF, by `id` from "
+        "spv_lista_mesaje), fetched on read. Needs an active SPV session — "
+        "the read cannot trigger a login; spv_descarca saves to disk instead.",
+        mime_type="application/pdf",
+    )
+    async def spv_message_pdf(mesaj_id: str) -> bytes:
+        return (await ctx.spv().download_document(mesaj_id)).content
 
     @mcp.tool(
         title="SPV: Request report",

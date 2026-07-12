@@ -104,6 +104,11 @@ fresh login rather than failing obscurely.
 | `spv_cerere` | Request a report — `VECTOR FISCAL`, `Obligatii de plata`, `Istoric declaratii`, the `D1xx`/`D3xx` duplicates, `Duplicat Recipisa`, `Adeverinte Venit`, … Parameters are validated per report type before anything is sent; identical same-day repeats are deduped |
 | `spv_asteapta_raport` | Wait for a requested report to land in the inbox and save its PDF; a `pending` answer just means "call again later" |
 
+Like the e-Factura PDF, a message's document is also available as the MCP
+resource `spvmsg://<mesaj_id>/pdf` — a disk-free path for hosts with resource
+UX. It needs an active SPV session (a resource read can't ask for a login);
+`spv_descarca` remains the save-to-disk path.
+
 ## Resources and prompts
 
 The compiled [ANAF API reference](../anaf-reference/README.md) is served as
