@@ -127,11 +127,18 @@ src/anafpy/
                          # the ONLY step that touches the certificate (APM login)
     session.py           # SpvSession (APM cookie set = bearer credential) +
                          # SessionStore protocol, FileSessionStore (0600)
+    auth.py              # SpvSessionProvider (mirrors TokenProvider; owns login)
+                         # + SpvAuth (httpx.Auth: attach cookies, follow
+                         # /my.policy_nonce hops, login wall -> AnafAuthError;
+                         # deliberately NO auto re-login — that fires the 2FA)
     certs.py             # Keychain identity discovery (`security find-identity`)
-    client.py            # SpvClient (async, httpx over cookies): listaMesaje,
+    client.py            # SpvClient (async; takes an SpvSessionProvider like the
+                         # OAuth clients take a TokenProvider): listaMesaje,
                          # descarcare, cerere, wait_for_report
-    models.py            # SpvMessage/MessageList, ReportType nomenclature +
-                         # ReportRequest (per-type param validation), error hints
+    models.py            # SpvEnvelope (shared identity stamp: title/cnp/serial) ->
+                         # MessageList, ReportRequestResult; SpvMessage, ReportType
+                         # nomenclature + ReportRequest (per-type param validation),
+                         # error hints
   mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2
     config.py            # ServerConfig.from_env (creds, store path, env, default CIF)
     context.py           # AppContext: TokenProvider + lazy clients + token ledger; auth_status

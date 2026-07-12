@@ -19,7 +19,7 @@ from ..efactura.client import EFacturaClient
 from ..etransport.client import ETransportClient
 from ..exceptions import AnafConfigError
 from ..public.client import PublicClient
-from ..spv import FileSessionStore, SpvClient
+from ..spv import FileSessionStore, SpvClient, SpvSessionProvider
 from .config import ServerConfig
 from .tokens import TokenLedger
 
@@ -105,12 +105,13 @@ class AppContext:
     def spv(self) -> SpvClient:
         """The SPV client over the persisted cookie session.
 
-        Built without a bootstrapper: the certificate/2FA login is interactive
-        and stays host-side (``anafpy spv login``), like the OAuth browser flow.
+        The provider carries no bootstrapper: the certificate/2FA login is
+        interactive and stays host-side (``anafpy spv login``), like the OAuth
+        browser flow.
         """
         if self._spv is None:
             self._spv = SpvClient(
-                session_store=FileSessionStore(self.config.spv_session_path)
+                SpvSessionProvider(store=FileSessionStore(self.config.spv_session_path))
             )
         return self._spv
 

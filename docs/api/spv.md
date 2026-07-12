@@ -1,8 +1,11 @@
 # SPV API
 
-The SPV client, session bootstrap, certificate discovery, and value types.
+The SPV client, session auth layer, bootstrap, certificate discovery, and
+value types.
 
 ::: anafpy.spv.client
+
+::: anafpy.spv.auth
 
 ::: anafpy.spv.bootstrap
 

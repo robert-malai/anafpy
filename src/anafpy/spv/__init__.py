@@ -8,6 +8,7 @@ compiled service reference.
 
 from __future__ import annotations
 
+from .auth import SpvAuth, SpvSessionProvider
 from .bootstrap import SPV_BASE_URL, CurlBootstrapper, SessionBootstrapper
 from .certs import (
     SelectedIdentity,
@@ -27,6 +28,7 @@ from .models import (
     ReportRequestResult,
     ReportType,
     SpvDocument,
+    SpvEnvelope,
     SpvMessage,
     english_error_hint,
     required_parameters,
@@ -53,10 +55,13 @@ __all__ = [
     "SelectedIdentity",
     "SessionBootstrapper",
     "SessionStore",
+    "SpvAuth",
     "SpvClient",
     "SpvDocument",
+    "SpvEnvelope",
     "SpvMessage",
     "SpvSession",
+    "SpvSessionProvider",
     "StoreIdentity",
     "discover_identities",
     "english_error_hint",

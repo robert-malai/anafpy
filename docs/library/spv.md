@@ -25,9 +25,12 @@ ANAF fronts SPV with an F5 APM **cookie session** (see the
    prompts. Polling never wakes your token.
 
 The session is a bearer credential, persisted like the OAuth tokens: an
-owner-only (`0600`) JSON file, `~/.anafpy/spv-session.json` by default. When
-it expires, the next call raises `AnafAuthError` telling you to log in again —
-the client never re-runs the interactive login on its own.
+owner-only (`0600`) JSON file, `~/.anafpy/spv-session.json` by default. The
+layering mirrors the OAuth clients exactly — `SpvClient` takes an
+`SpvSessionProvider` the way `EFacturaClient` takes a `TokenProvider`, and an
+`SpvAuth` (`httpx.Auth`) flow attaches the cookies to every request. When the
+session expires, the next call raises `AnafAuthError` telling you to log in
+again — the client never re-runs the interactive login on its own.
 
 ## Logging in
 
@@ -42,7 +45,7 @@ anafpy spv logout                 # remove the stored session (local only)
 ```
 
 Programmatically, the same flow is `discover_identities()` +
-`SpvClient(session_store=FileSessionStore(), bootstrapper=CurlBootstrapper(...))`
+`SpvClient(SpvSessionProvider(store=FileSessionStore(), bootstrapper=CurlBootstrapper(...)))`
 and `await spv.login()`. `CurlBootstrapper` takes the Keychain identity **name**
 on macOS and the certificate's SHA-1 **thumbprint** on Windows
 (`CurrentUser\MY` store). The login is occasionally flaky on ANAF's side even
@@ -52,9 +55,10 @@ rather than hanging, and retrying (which re-fires the prompt) is safe.
 ## Reading the inbox
 
 ```python
-from anafpy.spv import FileSessionStore, SpvClient
+from anafpy.spv import FileSessionStore, SpvClient, SpvSessionProvider
 
-async with SpvClient(session_store=FileSessionStore()) as spv:
+provider = SpvSessionProvider(store=FileSessionStore())
+async with SpvClient(provider) as spv:
     listing = await spv.list_messages(30)
     print("certificate may query:", listing.authorized_cuis)
     for message in listing.messages:

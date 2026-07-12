@@ -16,6 +16,7 @@ from anafpy.spv import (
     ReportType,
     SpvClient,
     SpvSession,
+    SpvSessionProvider,
 )
 
 BASE = "https://webserviced.anaf.ro/SPVWS2/rest"
@@ -51,25 +52,30 @@ def _session() -> SpvSession:
     )
 
 
-def _client(**kwargs: object) -> SpvClient:
-    kwargs.setdefault("session", _session())
-    return SpvClient(**kwargs)  # type: ignore[arg-type]
+def _client(session: SpvSession | None = None) -> SpvClient:
+    store = MemorySessionStore(session if session is not None else _session())
+    return SpvClient(SpvSessionProvider(store=store))
 
 
 # --- session handling -----------------------------------------------------------------
 
 
 async def test_no_session_anywhere_raises_auth_error() -> None:
-    async with SpvClient(session_store=MemorySessionStore()) as client:
+    async with SpvClient(SpvSessionProvider(store=MemorySessionStore())) as client:
         with pytest.raises(AnafAuthError, match="login"):
             await client.list_messages(5)
 
 
 @respx.mock
-async def test_session_loads_lazily_from_the_store() -> None:
+async def test_session_loads_from_the_store_per_request() -> None:
+    # The store is the source of truth: a login by another process (the CLI)
+    # is picked up without rebuilding the client.
     respx.get(f"{BASE}/listaMesaje").respond(json=NO_MESSAGES_BODY)
-    store = MemorySessionStore(_session())
-    async with SpvClient(session_store=store) as client:
+    store = MemorySessionStore()
+    async with SpvClient(SpvSessionProvider(store=store)) as client:
+        with pytest.raises(AnafAuthError):
+            await client.list_messages(5)
+        store.save(_session())
         listing = await client.list_messages(5)
     assert listing.note == "Nu exista mesaje in ultimele 5 zile"
 
@@ -90,7 +96,7 @@ async def test_rotated_cookies_are_persisted_to_the_store() -> None:
         json=NO_MESSAGES_BODY,
         headers={"Set-Cookie": "MRHSession=rotated;path=/;secure"},
     )
-    async with SpvClient(session_store=store) as client:
+    async with SpvClient(SpvSessionProvider(store=store)) as client:
         await client.list_messages(5)
     saved = store.load()
     assert saved is not None
@@ -140,9 +146,8 @@ async def test_login_bootstraps_and_saves_the_session() -> None:
 
     store = MemorySessionStore()
     respx.get(f"{BASE}/listaMesaje").respond(json=NO_MESSAGES_BODY)
-    async with SpvClient(
-        session_store=store, bootstrapper=FakeBootstrapper()
-    ) as client:
+    provider = SpvSessionProvider(store=store, bootstrapper=FakeBootstrapper())
+    async with SpvClient(provider) as client:
         await client.login()
         await client.list_messages(5)
     saved = store.load()

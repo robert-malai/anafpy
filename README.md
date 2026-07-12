@@ -275,9 +275,11 @@ Reading SPV takes one interactive login (`anafpy spv certs` → `anafpy spv sele
 <thumbprint>` → `anafpy spv login`, which fires your token PIN / 2FA once), then:
 
 ```python
-from anafpy.spv import FileSessionStore, ReportRequest, ReportType, SpvClient
+from anafpy.spv import (
+    FileSessionStore, ReportRequest, ReportType, SpvClient, SpvSessionProvider,
+)
 
-async with SpvClient(session_store=FileSessionStore()) as spv:
+async with SpvClient(SpvSessionProvider(store=FileSessionStore())) as spv:
     inbox = await spv.list_messages(30)
     print(inbox.authorized_cuis)  # every CUI/CNP your certificate may query
     result = await spv.request_report(

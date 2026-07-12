@@ -39,6 +39,7 @@ from ..spv import (
     FileSessionStore,
     MessageList,
     SpvClient,
+    SpvSessionProvider,
     discover_identities,
     identity_by_thumbprint,
     load_selected_identity,
@@ -293,10 +294,11 @@ def _cmd_spv_login(args: argparse.Namespace) -> int:
     identity = _resolve_spv_identity(args)
 
     async def run() -> MessageList:
-        async with SpvClient(
-            session_store=FileSessionStore(args.session),
+        provider = SpvSessionProvider(
+            store=FileSessionStore(args.session),
             bootstrapper=CurlBootstrapper(identity, timeout=args.timeout),
-        ) as spv:
+        )
+        async with SpvClient(provider) as spv:
             await spv.login()
             # 60-day window: the identity fields (CNP/serial/authorized CUIs)
             # only ride responses that contain messages.
@@ -312,7 +314,8 @@ def _cmd_spv_login(args: argparse.Namespace) -> int:
 
 def _cmd_spv_status(args: argparse.Namespace) -> int:
     async def run() -> MessageList:
-        async with SpvClient(session_store=FileSessionStore(args.session)) as spv:
+        provider = SpvSessionProvider(store=FileSessionStore(args.session))
+        async with SpvClient(provider) as spv:
             return await spv.list_messages(60)
 
     try:

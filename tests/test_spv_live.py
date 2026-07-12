@@ -7,12 +7,15 @@ interactive (certificate + 2FA), e.g.::
 
     uv run python -c "
     import asyncio
-    from anafpy.spv import CurlBootstrapper, FileSessionStore, SpvClient
+    from anafpy.spv import (
+        CurlBootstrapper, FileSessionStore, SpvClient, SpvSessionProvider,
+    )
     async def main() -> None:
-        async with SpvClient(
-            session_store=FileSessionStore(),
+        provider = SpvSessionProvider(
+            store=FileSessionStore(),
             bootstrapper=CurlBootstrapper('<your Keychain identity name>'),
-        ) as client:
+        )
+        async with SpvClient(provider) as client:
             await client.login()
     asyncio.run(main())
     "
@@ -26,7 +29,7 @@ import os
 
 import pytest
 
-from anafpy.spv import FileSessionStore, SpvClient
+from anafpy.spv import FileSessionStore, SpvClient, SpvSessionProvider
 
 pytestmark = pytest.mark.live
 
@@ -47,7 +50,7 @@ def _store_or_skip() -> FileSessionStore:
 
 async def test_lista_mesaje_shape_live() -> None:
     """Re-confirms the wire shape documented in docs/anaf-reference/spv/api.md §2."""
-    async with SpvClient(session_store=_store_or_skip()) as client:
+    async with SpvClient(SpvSessionProvider(store=_store_or_skip())) as client:
         listing = await client.list_messages(5)
     # Either the no-results note or a populated listing with identity fields.
     if listing.note is not None:

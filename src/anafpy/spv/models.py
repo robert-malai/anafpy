@@ -31,6 +31,7 @@ __all__ = [
     "ReportRequestResult",
     "ReportType",
     "SpvDocument",
+    "SpvEnvelope",
     "SpvMessage",
     "english_error_hint",
     "required_parameters",
@@ -87,25 +88,35 @@ def _split_csv(value: object) -> object:
     return value
 
 
-class MessageList(BaseModel):
-    """Outcome of ``listaMesaje``.
+class SpvEnvelope(BaseModel):
+    """The identity stamp ANAF puts on every authenticated SPV response.
 
-    ``authorized_cuis`` (the wire's comma-separated ``cui``) is the certificate's
-    **authorization inventory** — every CUI/CNP it may query. A benign "no
-    messages in the window" answer yields empty ``messages`` with the note kept
-    in ``note``; that shape carries no identity fields, hence the optionals.
+    ``cnp`` and ``certificate_serial`` identify the certificate the session was
+    established with; ``title`` is the response's ``titlu``. All optional: the
+    benign no-results ``listaMesaje`` shape carries no identity fields at all.
     """
 
     model_config = ConfigDict(populate_by_name=True)
 
     title: str | None = Field(default=None, validation_alias="titlu")
-    messages: list[SpvMessage] = Field(default_factory=list, validation_alias="mesaje")
     #: Certificate holder's identifier.
     cnp: _StrNone = None
+    certificate_serial: _StrNone = Field(default=None, validation_alias="serial")
+
+
+class MessageList(SpvEnvelope):
+    """Outcome of ``listaMesaje``.
+
+    ``authorized_cuis`` (the wire's comma-separated ``cui``) is the certificate's
+    **authorization inventory** — every CUI/CNP it may query; ``listaMesaje`` is
+    the only endpoint that returns it. A benign "no messages in the window"
+    answer yields empty ``messages`` with the note kept in ``note``.
+    """
+
+    messages: list[SpvMessage] = Field(default_factory=list, validation_alias="mesaje")
     authorized_cuis: Annotated[list[str], BeforeValidator(_split_csv)] = Field(
         default_factory=list, validation_alias="cui"
     )
-    certificate_serial: _StrNone = Field(default=None, validation_alias="serial")
     #: The benign no-results note, when ANAF answered with one.
     note: str | None = None
 
@@ -122,21 +133,18 @@ class SpvDocument(BaseModel):
         return self.content.startswith(b"%PDF")
 
 
-class ReportRequestResult(BaseModel):
+class ReportRequestResult(SpvEnvelope):
     """Outcome of ``cerere`` — the request was **accepted**, not answered.
 
     The report itself arrives asynchronously as an inbox message whose
     ``request_id`` equals this ``request_id``; download it via ``descarcare``.
+    (``cerere`` echoes the envelope's ``cnp``/``serial`` but, unlike
+    ``listaMesaje``, no ``cui`` authorization list.)
     """
-
-    model_config = ConfigDict(populate_by_name=True)
 
     request_id: _Str = Field(validation_alias="id_solicitare")
     #: Query parameters echoed back by ANAF.
     parameters: _StrNone = Field(default=None, validation_alias="parametri")
-    cnp: _StrNone = None
-    certificate_serial: _StrNone = Field(default=None, validation_alias="serial")
-    title: str | None = Field(default=None, validation_alias="titlu")
 
 
 class ReportType(StrEnum):
@@ -184,53 +192,6 @@ class ReportType(StrEnum):
     NECONCORDANTE_D394 = "NeconcordanteD394"
 
 
-# Parameter groups per the vendored README's example calls (api.md §4.1 — the
-# groupings are inferred from the examples; ANAF's own validation stays the
-# authority on any discrepancy).
-_CUI_ONLY = frozenset(
-    {
-        ReportType.D112CONTRIB,
-        ReportType.OBLIGATII_DE_PLATA,
-        ReportType.NOTA_OBLIGATIILOR_DE_PLATA,
-        ReportType.ISTORIC_SPATIU_VIRTUAL,
-        ReportType.REGISTRU_INTRARI_IESIRI,
-        ReportType.DATE_IDENTIFICARE,
-        ReportType.VECTOR_FISCAL,
-        ReportType.SITUATIE_SINTETICA,
-        ReportType.INTEROGARI_BANCI,
-        ReportType.ISTORIC_BILANT,
-        ReportType.NECONCORDANTE_D112_CNP,
-    }
-)
-_CUI_AND_YEAR = frozenset(
-    {
-        ReportType.BILANT_ANUAL,
-        ReportType.ISTORIC_DECLARATII,
-        ReportType.D205,
-        ReportType.D120,
-        ReportType.D130,
-        ReportType.D101,
-        ReportType.D392,
-        ReportType.D393,
-        ReportType.D106,
-        ReportType.BILANT_SEMESTRIAL,
-        ReportType.D212,
-    }
-)
-_CUI_YEAR_MONTH = frozenset(
-    {
-        ReportType.D300,
-        ReportType.D390,
-        ReportType.D100,
-        ReportType.D112,
-        ReportType.D208,
-        ReportType.D394,
-        ReportType.D301,
-        ReportType.D180,
-        ReportType.D311,
-    }
-)
-
 #: Accepted ``motiv`` values for ``Adeverinte Venit``, verbatim from the README
 #: (which states the text is matched exactly; its own example uses lowercase
 #: ``altele`` — until live-verified, this list is enforced as written).
@@ -271,19 +232,61 @@ INCOME_CERTIFICATE_REASONS: tuple[str, ...] = (
 
 def required_parameters(type_: ReportType) -> tuple[str, ...]:
     """The parameters a :class:`ReportRequest` must carry for ``type_``
-    (model-field names, not wire names)."""
-    if type_ in _CUI_ONLY or type_ is ReportType.FISA_ROL:
-        return ("cui",)
-    if type_ in _CUI_AND_YEAR:
-        return ("cui", "year")
-    if type_ in _CUI_YEAR_MONTH:
-        return ("cui", "year", "month")
-    if type_ is ReportType.DUPLICAT_RECIPISA:
-        return ("cui", "registration_number")
-    if type_ is ReportType.ADEVERINTE_VENIT:
-        return ("cui", "year", "reason")
-    assert type_ is ReportType.NECONCORDANTE_D394
-    return ("cui", "year", "start_month", "end_month")
+    (model-field names, not wire names).
+
+    Groups per the vendored README's example calls (api.md §4.1 — the groupings
+    are inferred from the examples; ANAF's own validation stays the authority
+    on any discrepancy). The match is exhaustive over :class:`ReportType`, so
+    ``mypy --strict`` flags an unclassified new member as a missing return.
+    """
+    match type_:
+        case (
+            ReportType.D112CONTRIB
+            | ReportType.OBLIGATII_DE_PLATA
+            | ReportType.NOTA_OBLIGATIILOR_DE_PLATA
+            | ReportType.ISTORIC_SPATIU_VIRTUAL
+            | ReportType.REGISTRU_INTRARI_IESIRI
+            | ReportType.DATE_IDENTIFICARE
+            | ReportType.VECTOR_FISCAL
+            | ReportType.SITUATIE_SINTETICA
+            | ReportType.INTEROGARI_BANCI
+            | ReportType.ISTORIC_BILANT
+            | ReportType.NECONCORDANTE_D112_CNP
+            | ReportType.FISA_ROL
+        ):
+            return ("cui",)
+        case (
+            ReportType.BILANT_ANUAL
+            | ReportType.ISTORIC_DECLARATII
+            | ReportType.D205
+            | ReportType.D120
+            | ReportType.D130
+            | ReportType.D101
+            | ReportType.D392
+            | ReportType.D393
+            | ReportType.D106
+            | ReportType.BILANT_SEMESTRIAL
+            | ReportType.D212
+        ):
+            return ("cui", "year")
+        case (
+            ReportType.D300
+            | ReportType.D390
+            | ReportType.D100
+            | ReportType.D112
+            | ReportType.D208
+            | ReportType.D394
+            | ReportType.D301
+            | ReportType.D180
+            | ReportType.D311
+        ):
+            return ("cui", "year", "month")
+        case ReportType.DUPLICAT_RECIPISA:
+            return ("cui", "registration_number")
+        case ReportType.ADEVERINTE_VENIT:
+            return ("cui", "year", "reason")
+        case ReportType.NECONCORDANTE_D394:
+            return ("cui", "year", "start_month", "end_month")
 
 
 def _allowed_parameters(type_: ReportType) -> frozenset[str]:

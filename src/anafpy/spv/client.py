@@ -8,12 +8,14 @@ Transport model (see ``docs/anaf-reference/spv/api.md`` §1.1): the certificate
 is involved **only** in the interactive session bootstrap
 (:class:`~anafpy.spv.bootstrap.CurlBootstrapper` — drive it via
 :meth:`SpvClient.login`); every request here is plain httpx riding the APM
-cookies. Mid-session the APM occasionally bounces through
-``/my.policy_nonce`` — followed transparently — while a redirect to bare
-``/my.policy`` means the session is gone and raises
-:class:`~anafpy.exceptions.AnafAuthError` (the client never re-runs the
-bootstrap on its own: that fires the owner's 2FA, which must stay a deliberate
-act).
+cookies. The cookie credential lives in :mod:`anafpy.spv.auth` — construct the
+client with a :class:`~anafpy.spv.auth.SpvSessionProvider`, mirroring how the
+OAuth clients take a ``TokenProvider``. The :class:`~anafpy.spv.auth.SpvAuth`
+flow attaches the cookies, follows the APM's occasional ``/my.policy_nonce``
+revalidation bounces transparently, and raises
+:class:`~anafpy.exceptions.AnafAuthError` on a redirect to bare ``/my.policy``
+(the client never re-runs the bootstrap on its own: that fires the owner's
+2FA, which must stay a deliberate act).
 
 Unlike the OAuth clients' no-retry stance, the SPV reads (``listaMesaje``,
 ``descarcare``) retry transient network failures with exponential backoff and
@@ -26,10 +28,8 @@ deliberately a caller concern — the MCP layer guards agent loops.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from types import TracebackType
 from typing import Self
-from urllib.parse import urljoin, urlparse
 
 import httpx
 from tenacity import (
@@ -44,12 +44,12 @@ from tenacity import (
 
 from .._transport.base import as_text, is_empty_result_message, raise_for_status
 from ..exceptions import (
-    AnafAuthError,
     AnafConfigError,
     AnafResponseError,
     AnafTransportError,
 )
-from .bootstrap import SPV_BASE_URL, SessionBootstrapper
+from .auth import SpvAuth, SpvSessionProvider
+from .bootstrap import SPV_BASE_URL
 from .models import (
     MessageList,
     ReportRequest,
@@ -58,25 +58,9 @@ from .models import (
     SpvMessage,
     english_error_hint,
 )
-from .session import SessionStore, SpvSession
+from .session import SpvSession
 
 __all__ = ["SpvClient"]
-
-_SPV_HOST = urlparse(SPV_BASE_URL).netloc
-
-# The APM login-wall paths (docs/anaf-reference/spv/api.md §1.1): a bounce to the
-# nonce revalidation is routine and followed; the bare policy page or the hangup
-# path means the cookie session is gone.
-_REVALIDATION_PATH = "/my.policy_nonce"
-_LOGIN_WALL_PATHS = ("/my.policy", "/vdesk/")
-
-# Defensive bound on followed redirects; the observed chains are 2-3 hops.
-_MAX_REDIRECT_HOPS = 8
-
-_SESSION_EXPIRED = (
-    "SPV session missing or expired — establish one with SpvClient.login() "
-    "(fires the certificate 2FA)"
-)
 
 
 def _business_error(operation: str, eroare: str, body: bytes) -> AnafResponseError:
@@ -91,31 +75,24 @@ def _business_error(operation: str, eroare: str, body: bytes) -> AnafResponseErr
 class SpvClient:
     """Talks to a taxpayer's SPV over an established APM cookie session.
 
-    Construct with a :class:`~anafpy.spv.session.SessionStore` holding a session
-    from an earlier :meth:`login` (or pass ``session`` directly). The client
-    owns an ``httpx.AsyncClient`` (unless one is injected) and should be used
-    as an async context manager. Cookie rotations are saved back to the store
+    Construct with a :class:`~anafpy.spv.auth.SpvSessionProvider` over the
+    session store an earlier :meth:`login` filled. The client owns an
+    ``httpx.AsyncClient`` (unless one is injected — it must then carry
+    :class:`~anafpy.spv.auth.SpvAuth` itself) and should be used as an async
+    context manager. Cookie rotations are saved back to the store
     transparently.
     """
 
     def __init__(
         self,
+        provider: SpvSessionProvider,
         *,
-        session: SpvSession | None = None,
-        session_store: SessionStore | None = None,
-        bootstrapper: SessionBootstrapper | None = None,
         http: httpx.AsyncClient | None = None,
         timeout: float = 60.0,
     ) -> None:
-        self._store = session_store
-        self._bootstrapper = bootstrapper
+        self._provider = provider
         self._owns_http = http is None
-        self._http = http or httpx.AsyncClient(timeout=timeout)
-        self._session_loaded = False
-        self._established_at: datetime | None = None
-        self._saved_cookies: dict[str, str] = {}
-        if session is not None:
-            self._adopt_session(session)
+        self._http = http or httpx.AsyncClient(auth=SpvAuth(provider), timeout=timeout)
 
     async def __aenter__(self) -> Self:
         return self
@@ -134,102 +111,38 @@ class SpvClient:
 
     # -- session -----------------------------------------------------------------------
 
-    def _adopt_session(self, session: SpvSession) -> None:
-        for name, value in session.cookies.items():
-            self._http.cookies.set(name, value, domain=_SPV_HOST, path="/")
-        self._established_at = session.established_at
-        self._saved_cookies = dict(session.cookies)
-        self._session_loaded = True
-
-    def _ensure_session(self) -> None:
-        if self._session_loaded:
-            return
-        if self._store is not None and (session := self._store.load()) is not None:
-            self._adopt_session(session)
-            return
-        raise AnafAuthError(_SESSION_EXPIRED)
-
-    def _cookie_snapshot(self) -> dict[str, str]:
-        return {
-            cookie.name: cookie.value
-            for cookie in self._http.cookies.jar
-            if cookie.value is not None
-            and _SPV_HOST.endswith(cookie.domain.lstrip("."))
-        }
-
-    def _persist_cookies(self) -> None:
-        """Save the session back when the APM rotated a cookie mid-flight."""
-        current = self._cookie_snapshot()
-        if current != self._saved_cookies:
-            self._saved_cookies = current
-            if self._store is not None:
-                self._store.save(
-                    SpvSession(
-                        cookies=current,
-                        established_at=self._established_at or datetime.now(tz=UTC),
-                    )
-                )
-
     async def login(self) -> SpvSession:
-        """Establish a fresh APM session via the configured bootstrapper.
+        """Establish a fresh APM session (delegates to the provider).
 
         Interactive: the certificate middleware's PIN/2FA prompt fires. The new
-        session replaces the client's cookies and is saved to the store.
+        session is saved to the provider's store, where the next request picks
+        it up.
 
         Raises:
-            AnafConfigError: the client was built without a ``bootstrapper``.
+            AnafConfigError: the provider was built without a ``bootstrapper``.
             AnafAuthError: the handshake failed or timed out (retryable — the
                 bootstrap is intermittently flaky; the prompt fires again).
         """
-        if self._bootstrapper is None:
-            raise AnafConfigError(
-                "SpvClient.login() needs a bootstrapper (e.g. CurlBootstrapper "
-                "with your certificate identity)"
-            )
-        session = await self._bootstrapper.bootstrap()
-        self._http.cookies.clear()
-        self._adopt_session(session)
-        if self._store is not None:
-            self._store.save(session)
-        return session
+        return await self._provider.login()
 
     # -- transport ---------------------------------------------------------------------
-
-    async def _send(self, url: str, params: dict[str, str] | None) -> httpx.Response:
-        try:
-            return await self._http.get(url, params=params, follow_redirects=False)
-        except httpx.HTTPError as exc:  # connect/read/timeout/etc.
-            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
 
     async def _get(
         self, path: str, params: dict[str, str] | None = None
     ) -> httpx.Response:
-        """One GET, following the APM's revalidation redirects with cookies."""
-        self._ensure_session()
-        url = f"{SPV_BASE_URL}/{path}"
-        for _hop in range(_MAX_REDIRECT_HOPS):
-            response = await self._send(url, params)
-            if response.is_redirect:
-                location = urljoin(url, response.headers.get("Location", ""))
-                parsed = urlparse(location)
-                if parsed.netloc != _SPV_HOST:
-                    raise AnafResponseError(
-                        f"SPV redirected off-host to {location!r}",
-                        status_code=response.status_code,
-                    )
-                if any(parsed.path.startswith(p) for p in _LOGIN_WALL_PATHS) and not (
-                    parsed.path.startswith(_REVALIDATION_PATH)
-                ):
-                    raise AnafAuthError(_SESSION_EXPIRED)
-                url, params = location, None
-                continue
-            raise_for_status(response)
-            self._persist_cookies()
-            return response
-        raise AnafResponseError(
-            f"SPV redirect chain exceeded {_MAX_REDIRECT_HOPS} hops",
-            status_code=302,
-        )
+        """One GET; cookie attach and revalidation hops live in ``SpvAuth``.
+
+        ``follow_redirects=False`` is essential: the auth flow must see the raw
+        302s to tell a revalidation hop from the login wall.
+        """
+        try:
+            response = await self._http.get(
+                f"{SPV_BASE_URL}/{path}", params=params, follow_redirects=False
+            )
+        except httpx.HTTPError as exc:  # connect/read/timeout/etc.
+            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        raise_for_status(response)
+        return response
 
     async def _get_retrying(
         self, path: str, params: dict[str, str] | None = None
