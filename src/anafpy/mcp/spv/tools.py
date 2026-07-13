@@ -120,10 +120,12 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: Select certificate",
         annotations=ARTIFACT_SAVING,
-        description="Persist which certificate `anafpy spv login` should use, by "
-        "SHA-1 thumbprint (see spv_list_certificates). Writes a local config file "
-        "only — nothing is sent to ANAF. The user must still run `anafpy spv "
-        "login` host-side to establish a session (fires their PIN/2FA).",
+        description="Persist which certificate SPV logins should use, by SHA-1 "
+        "thumbprint (see spv_list_certificates). Writes a local config file "
+        "only — nothing is sent to ANAF, and an existing session still belongs "
+        "to the previously used certificate. A session with the new one takes a "
+        "login: spv_login (with the user's approval — it fires their PIN/2FA) "
+        "or `anafpy spv login` in a terminal.",
     )
     async def spv_select_certificate(thumbprint: str) -> dict[str, object]:
         identity = await asyncio.to_thread(identity_by_thumbprint, thumbprint)

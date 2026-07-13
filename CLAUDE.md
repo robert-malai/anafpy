@@ -171,9 +171,6 @@ src/anafpy/
 skills/                  # workflow skills, served by the MCP server as same-name
                          # prompts (etransport-declare: source data -> FlatTransport
                          # -> prepare -> approval -> submit -> status)
-evals/                   # MCP tool evaluation sets (spv.md: 10 read-only questions
-                         # with expected tool trajectories — run manually against a
-                         # connected client, not in CI)
 schemas/                 # vendored XSDs + EN16931 Schematron sources (git-tracked,
                          # NOT shipped in the wheel; the .sch feed the codelist codegen)
 scripts/                 # codegen scripts
