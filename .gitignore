@@ -18,6 +18,7 @@ uv.lock.bak
 .ruff_cache/
 .pytest_cache/
 .coverage
+coverage.xml
 htmlcov/
 
 # OS / editor

@@ -96,8 +96,10 @@ src/anafpy/
   etransport/      # generated XSD models + client + bidirectional flat models
   public/          # PublicClient: no-auth lookups + financial statements (§6)
   cli/             # `anafpy auth login|status|logout`
-  mcp/             # MCP server (extra: anafpy[mcp]) — tools, resources, prompts,
-                   # confirmation tokens, nomenclatures, UN/ECE unit codes
+  mcp/             # MCP server (extra: anafpy[mcp]) — split by service
+                   # (efactura/, etransport/, public/, spv/: each owns its tools,
+                   # models, nomenclatures) over a shared core (app, config,
+                   # context, the two-step gate, artifacts, resources, prompts)
 skills/            # workflow skills, served by the MCP server as same-name prompts
 docs/anaf-reference/   # agent-compiled local reference (+ _sources/)
 ```
@@ -256,8 +258,11 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
 - **The client does no transport retry** — single transparent calls (never repeat
   the non-idempotent `upload` POST). Consumers bring their own retry. On 429 the
   client raises `AnafRateLimitError` exposing `retry_after`; no auto-backoff.
-- **`tenacity` is used in exactly one place**: the `upload_and_wait` poll loop
-  (retry on the *business* processing state, not transport errors).
+- **`tenacity` appears in the poll loops and one documented deviation**: the
+  `upload_and_wait` / `wait_for_report` polls retry on the *business* processing
+  state, not transport errors; the SPV client's reads (idempotent GETs) retry
+  plain network failures with backoff — received HTTP answers, 429 included,
+  still surface immediately.
 - **Hybrid error model**: exceptions for transport/auth/programming errors
   (`AnafError` → `AnafAuthError`, `AnafRateLimitError`, `AnafTransportError`, …);
   **business outcomes** (`nok`, BR-RO findings) are **typed return values**

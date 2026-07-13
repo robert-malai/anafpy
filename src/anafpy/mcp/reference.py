@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from ..config import ServerConfig
+from .config import ServerConfig
 
 __all__ = ["register"]
 
@@ -33,7 +33,7 @@ def register(mcp: FastMCP, cfg: ServerConfig) -> None:
 
 
 def _docs_dir(cfg: ServerConfig) -> Path | None:
-    default = Path(__file__).resolve().parents[4] / "docs" / "anaf-reference"
+    default = Path(__file__).resolve().parents[3] / "docs" / "anaf-reference"
     docs = cfg.docs_dir or default
     return docs if docs.is_dir() else None
 

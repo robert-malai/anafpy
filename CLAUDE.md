@@ -76,7 +76,9 @@ CLI honours the same variable and `--store-backend`),
 `ANAFPY_ENV` (`test`/`prod`, default `prod`), `ANAFPY_CIF` (default fiscal code), `ANAFPY_DOCS_DIR`
 (reference resources, defaults to the repo `docs/anaf-reference/`),
 `ANAFPY_SKILLS_DIR` (workflow skills re-served as MCP prompts, defaults to the repo
-`skills/`).
+`skills/`), `ANAFPY_SPV_SESSION` (SPV cookie-session store, default
+`~/.anafpy/spv-session.json`), `ANAFPY_SPV_IDENTITY_FILE` (persisted SPV
+certificate selection, default `~/.anafpy/spv-identity.json`).
 
 Codegen (only when re-vendoring XSDs / Schematron sources — see below):
 
@@ -96,7 +98,8 @@ src/anafpy/
   exceptions.py          # AnafError hierarchy (see "Error model")
   _transport/base.py     # Environment, Service, service_base_url + shared error raising
   auth/                  # OAuth2 layer: models, store, oauth, provider, callback
-  cli/main.py            # `anafpy auth login|status|logout`
+  cli/main.py            # `anafpy auth login|status|logout` +
+                         # `anafpy spv certs|select|login|status|logout`
   efactura/
     README.md            # module map: layer diagram (flat <-> generated UBL <-> wire),
                          # outbound/inbound flows, who-owns-what table
@@ -118,22 +121,55 @@ src/anafpy/
                          # + the stateless e-Factura document services (validare/transformare)
     models.py            # lookup value types (TaxpayerRecord, RegistryLookup[...], ...)
                          # + TransformStandard, RemoteValidationResult
-  mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2
+  spv/                   # SPV (Spațiul Privat Virtual) read-only client — cert mTLS
+    bootstrap.py         # SessionBootstrapper protocol + CurlBootstrapper (OS curl
+                         # subprocess: macOS SecureTransport / Windows Schannel) —
+                         # the ONLY step that touches the certificate (APM login)
+    session.py           # SpvSession (APM cookie set = bearer credential) +
+                         # SessionStore protocol, FileSessionStore (0600)
+    auth.py              # SpvSessionProvider (mirrors TokenProvider; owns login)
+                         # + SpvAuth (httpx.Auth: attach cookies, follow
+                         # /my.policy_nonce hops, login wall -> AnafAuthError;
+                         # deliberately NO auto re-login — that fires the 2FA)
+    certs.py             # Keychain identity discovery (`security find-identity`)
+    client.py            # SpvClient (async; takes an SpvSessionProvider like the
+                         # OAuth clients take a TokenProvider): listaMesaje,
+                         # descarcare, cerere, wait_for_report
+    models.py            # SpvEnvelope (shared identity stamp: title/cnp/serial) ->
+                         # MessageList, ReportRequestResult; SpvMessage, ReportType
+                         # nomenclature + ReportRequest (per-type param validation),
+                         # error hints
+  mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2, split BY SERVICE:
+                         # each service package owns its tools + models + helpers;
+                         # the shared core is only what 2+ services genuinely use
+    app.py               # composition root: `create_server`, `main`, server
+                         # instructions, auth_status tool
     config.py            # ServerConfig.from_env (creds, store path, env, default CIF)
-    context.py           # AppContext: TokenProvider + lazy clients + token ledger; auth_status
-    models.py            # UBL XML pass-through inputs + prepared-submission gate
-    documents.py         # resolve XML input -> bytes; parse bytes -> client flat models
-    nomenclatures.py     # e-Transport code lists (from the XSD enums) for the model
-    skills.py            # skills/*/SKILL.md loader (frontmatter + body) for MCP prompts
-    tokens.py            # HMAC confirmation tokens for two-step gated mutations
-    server/              # FastMCP server package: app.py (`create_server`, `main`,
-                         # auth_status + instructions), tool modules efactura.py /
-                         # etransport.py / public.py, resources.py (ANAF reference),
-                         # prompts.py (skills), _shared.py (tool annotations)
+    context.py           # AppContext: TokenProvider + lazy clients + token ledger
+                         # + SPV same-day request log; auth_status
+    gate.py              # the two-step filing gate shared by both filing services:
+                         # HMAC confirmation tokens + TokenLedger, XmlInput base
+                         # ({xml|path} -> bytes), PreparedSubmission/SubmitResult,
+                         # run_submit (the STEP-2 skeleton with its two orderings)
+    artifacts.py         # tool annotations + collision-guarded write_artifact
+    reference.py         # docs/anaf-reference/ as anafref:// resources
+    prompts.py           # skills/*/SKILL.md loader + same-name MCP prompts
+    efactura/            # tools.py (tools + anafmsg:// resource), models.py
+                         # (UblXmlInput, PreparedInvoice), documents.py (previews,
+                         # upload standards, transformare PDF rendering)
+    etransport/          # tools.py, models.py (EtransportXmlInput, PreparedTransport,
+                         # transport_view), nomenclature.py (XSD code lists) +
+                         # unitcodes.py (UN/ECE Rec 20/21)
+    public/              # tools.py — the no-auth anaf_* lookup tools
+    spv/                 # tools.py (+ spvmsg:// resource), nomenclature.py
+                         # (report types + per-type wire params)
     __main__.py          # `python -m anafpy.mcp` (stdio)
 skills/                  # workflow skills, served by the MCP server as same-name
                          # prompts (etransport-declare: source data -> FlatTransport
                          # -> prepare -> approval -> submit -> status)
+evals/                   # MCP tool evaluation sets (spv.md: 10 read-only questions
+                         # with expected tool trajectories — run manually against a
+                         # connected client, not in CI)
 schemas/                 # vendored XSDs + EN16931 Schematron sources (git-tracked,
                          # NOT shipped in the wheel; the .sch feed the codelist codegen)
 scripts/                 # codegen scripts
@@ -150,9 +186,10 @@ docs/                    # MkDocs source tree for the docs site (mkdocs.yml at r
   mcp/                   # setup.md (the end-user walkthrough, ex-INSTALL.md), tools.md, skills.md
   library/               # quickstart, auth, efactura, etransport, public, errors guides
   api/                   # mkdocstrings pages over the hand-written public modules
-  anaf-reference/        # compiled ANAF API reference (oauth/efactura/etransport/public);
+  anaf-reference/        # compiled ANAF API reference (oauth/efactura/etransport/public/spv;
+                         # spv sources = vendored MfpAnaf/ClientSPV repo under _sources/clientspv/);
                          # ALSO served as MCP resources (ANAFPY_DOCS_DIR default) — don't move it
-tests/                   # respx-mocked unit tests (+ opt-in live: test_public_live.py, test_oauth_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST)
+tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-in live: test_public_live.py, test_oauth_live.py, test_spv_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST)
 ```
 
 ## Architecture & conventions
@@ -174,6 +211,27 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   (moved from `EFacturaClient` 2026-07-04 so validation works with no OAuth
   credentials configured); only the MF signature check (`validate_signature`, on
   `api.anaf.ro`) stays on `EFacturaClient`.
+- **SPV is the certificate-auth outlier** (`anafpy.spv`, added 2026-07-12,
+  read-only by design — no submissions). It lives on `webserviced.anaf.ro`
+  behind an F5 APM **cookie session**: the qualified certificate (USB token /
+  cloud HSM, keys non-exportable — Python's `ssl` cannot present them) is used
+  only by the interactive `SpvClient.login()` bootstrap, which drives the
+  **OS-shipped curl** against the platform key store (macOS SecureTransport by
+  Keychain name; Windows Schannel by thumbprint; NSURLSession hangs on the APM
+  renegotiation — don't go back there). All other calls are plain httpx riding
+  the persisted cookie session (a bearer credential, stored 0600 like tokens);
+  `/my.policy_nonce` revalidation hops are followed transparently, a bare
+  `/my.policy` bounce raises `AnafAuthError` — the client never re-runs the
+  2FA-firing bootstrap on its own. **Deviation from the no-retry rule**: the
+  SPV reads (`list_messages`, `download_document`) retry transient transport
+  errors (expo+jitter, 3 attempts) since every SPV call is an idempotent GET;
+  `request_report` stays single-shot and does **no client-side dedupe** —
+  the library is a thin stateless transport (decided 2026-07-12: a client-layer
+  dedupe cache was built, then removed; a repeated `cerere` is harmless), and
+  guarding agent loops against repeat filings is the MCP layer's job (M2).
+  The wire reference is
+  [docs/anaf-reference/spv/api.md](docs/anaf-reference/spv/api.md); live facts
+  (choreography, 2FA-per-bootstrap, flakiness) are recorded in its §1.1.
 - **Auth is a separate layer.** Clients receive a `TokenProvider` and drive httpx via
   the `AnafAuth` (`httpx.Auth`) class, which handles transparent token refresh. The
   qualified-certificate step happens only in the interactive `anafpy auth login` browser
@@ -203,8 +261,11 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   async context managers (`async with EFacturaClient(...) as c:`).
 - **Discrete methods do NO transport retry** — one call, one result-or-raise — so the
   non-idempotent `upload` POST is never silently repeated. Consumers bring their own
-  retry. `tenacity` is used in exactly one place: the `upload_and_wait` poll loop, which
-  retries on the *business* processing state, not on transport errors.
+  retry. `tenacity` appears only in the `upload_and_wait` poll loop (retries on the
+  *business* processing state, not on transport errors) and in the SPV client's
+  documented deviation (idempotent-GET reads retry plain network failures only —
+  received HTTP answers, 429 included, surface immediately; `wait_for_report` is
+  another business poll).
 - **Module style**: `from __future__ import annotations`, explicit `__all__`, module +
   class docstrings, Google-style docstring sections. Line length 88. Keep new code in the
   voice of the surrounding files.
@@ -227,8 +288,9 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   prompt-capable clients (Claude Desktop, `claude mcp add`) the playbooks as a
   user-invoked entry point. The SKILL.md files are the single source of
   truth — never duplicate their content into the server; parsing is
-  `python-frontmatter`'s (the `mcp` extra), with `skills.py` only enforcing that
-  `name`/`description` are present (missing fields fail loudly at server start).
+  `python-frontmatter`'s (the `mcp` extra), with `mcp/prompts.py` only enforcing
+  that `name`/`description` are present (missing fields fail loudly at server
+  start).
 - **e-Factura filing tools.** Two STEP-1 shapes feed one gate: `efactura_prepare`
   takes complete UBL XML (`UblXmlInput {xml|path}`) verbatim — the strongly
   recommended path when upstream invoicing software produced the document
@@ -267,8 +329,47 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   remains for callers with ready-made XML. `etransport_nomenclature` lists the XSD
   code lists (names accepted anywhere an enum-coded field is) plus the code-only
   `unit_codes` — the UN/ECE Rec 20/21 list ANAF's Schematron enforces for goods
-  lines, carried in [mcp/unitcodes.py](src/anafpy/mcp/unitcodes.py) — see
-  [mcp/nomenclatures.py](src/anafpy/mcp/nomenclatures.py).
+  lines, carried in
+  [mcp/etransport/unitcodes.py](src/anafpy/mcp/etransport/unitcodes.py) — see
+  [mcp/etransport/nomenclature.py](src/anafpy/mcp/etransport/nomenclature.py).
+- **SPV tools are read-only mailbox access** (added 2026-07-12): `spv_status`
+  (session smoke test — surfaces `authorized_cuis`, the certificate's
+  authorization inventory), `spv_lista_mesaje` (paged, `tip`-filterable),
+  `spv_descarca` / `spv_asteapta_raport` (PDFs to caller-given paths via the
+  shared `write_artifact` collision guard — ARTIFACT_SAVING annotations; a
+  message's document is also the resource template `spvmsg://{mesaj_id}/pdf`,
+  the SPV sibling of `anafmsg://` — needs an active session, since a resource
+  read can't prompt a login), and
+  `spv_cerere` (per-type param validation at the `ReportRequest` model;
+  **in-process same-day dedupe** in `AppContext.spv_request_log` guards agent
+  loops — the persistent-cache idea was rejected, the library stays stateless;
+  annotated REQUESTING — mutating, non-destructive, non-idempotent — since it
+  files an additive request with ANAF, so a host must not auto-invoke it as a
+  read).
+  `spv_nomenclature` lists the report types — each with a one-line English
+  description (`ReportType.description`: members are `(value, description)`
+  tuples via the enum-with-attributes pattern, carried from the reference's
+  §4.1 tables; a member without one fails at import) so the model can map
+  "my VAT return for March" onto `D300` — with per-type
+  params, a CAF-not-requestable note, and the fixed
+  `Adeverinte Venit` `motiv` list — the model is **meant** to map the user's
+  stated purpose onto the exact entry (decided 2026-07-13; an MCP-elicitation
+  host-side picker was parked: Claude Desktop/Cowork answers
+  `elicitation/create` with a synthetic instant cancel), and a wrong `motiv`
+  errors with the full accepted list so the flow self-heals.
+  Certificate selection is `spv_list_certificates` + `spv_select_certificate`
+  (persists to `ANAFPY_SPV_IDENTITY_FILE`). The certificate/2FA login IS a tool
+  (`spv_login`, added 2026-07-13 reversing the M2 stance): unlike the OAuth
+  browser flow it needs no host UI — the human gate is the out-of-band PIN/2FA
+  approval — and APM sessions die in under an hour, so terminal round-trips per
+  hour would kill the Cowork UX. It is gated on `confirm=true` (the model must
+  relay the user's explicit ask; one attempt per call, flaky-handshake failures
+  come back as `logged_in=false` + retry guidance, not exceptions), uses a
+  throwaway `SpvSessionProvider` over the shared store (single source of truth
+  — the long-lived client picks the session up on its next read), and
+  `anafpy spv login` remains the CLI path. No two-step gate anywhere in SPV:
+  no declaration is ever filed (reports are information requests) — honesty
+  about `spv_cerere`'s side effect lives in its annotations, not a gate.
 - **Flat models live at the client layer**
   ([efactura/authoring/](src/anafpy/efactura/authoring/),
   [etransport/models.py](src/anafpy/etransport/models.py)) — the MCP layer only
@@ -306,7 +407,7 @@ tests/                   # respx-mocked unit tests (+ opt-in live: test_public_l
   write files at caller-given paths; the two-step gate is for ANAF filings only.
   Filing — **both services** — is split `*_prepare*` →
   `*_submit`: prepare parses (or composes) the XML for a preview and returns an
-  HMAC **confirmation token** (`mcp/tokens.py`) bound to the exact XML bytes and
+  HMAC **confirmation token** (`mcp/gate.py`) bound to the exact XML bytes and
   the CIF; submit requires that token (same document, same CIF) **and**
   `confirm=True`, and each token is **single-use** (`TokenLedger`) so a
   non-idempotent upload is never repeated on one approval. Don't collapse this
@@ -457,9 +558,14 @@ results.
   Claude are out of scope (DESIGN.md §11, decided 2026-07-04).
 - Don't commit, push, or create branches/PRs unless asked.
 - The remote is `github.com/robert-malai/anafpy`. CI is GitHub Actions:
-  `.github/workflows/ci.yml` runs the three code gates on 3.12 + 3.13 plus a
-  strict docs build for every
-  push/PR; `release.yml` re-runs them on a `v*` tag, checks the tag against
+  `.github/workflows/ci.yml` runs pytest on 3.12 + 3.13 across
+  ubuntu/macos/windows (the SPV layer has platform seams; the suite itself is
+  respx-mocked and credential-free everywhere) with ruff / mypy --strict / the
+  strict docs build on the ubuntu leg for every
+  push/PR. Every test leg uploads coverage to Codecov (merged per commit —
+  the macOS/Windows legs execute SPV platform seams ubuntu never does;
+  generated model packages are omitted via `[tool.coverage.run]`; upload
+  failures never fail CI); `release.yml` re-runs them on a `v*` tag, checks the tag against
   `pyproject.toml`'s version, builds, and publishes to PyPI via trusted
   publishing (OIDC, environment `pypi` — no stored token). The version is
   declared in `pyproject.toml` **and** `anafpy.__version__`;

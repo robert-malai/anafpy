@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from anafpy.mcp.tokens import (
+from anafpy.mcp.gate import (
     ConfirmationError,
     TokenLedger,
     issue_token,

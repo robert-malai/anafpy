@@ -19,8 +19,9 @@ from ..efactura.client import EFacturaClient
 from ..etransport.client import ETransportClient
 from ..exceptions import AnafConfigError
 from ..public.client import PublicClient
+from ..spv import FileSessionStore, SpvClient, SpvSessionProvider
 from .config import ServerConfig
-from .tokens import TokenLedger
+from .gate import TokenLedger
 
 __all__ = ["AppContext", "AuthStatus"]
 
@@ -66,8 +67,15 @@ class AppContext:
         self._efactura: EFacturaClient | None = None
         self._etransport: ETransportClient | None = None
         self._public: PublicClient | None = None
+        self._spv: SpvClient | None = None
         #: Redeemed confirmation tokens (single-use gate for the submit tools).
         self.token_ledger = TokenLedger()
+        #: Same-day `cerere` dedupe for agent loops: canonical params -> the
+        #: (request_id, date) an identical spv_cerere already got today. Guards
+        #: an agent re-filing within one server process; deliberately in-memory
+        #: (the library client is stateless by design — a repeat after a server
+        #: restart is harmless).
+        self.spv_request_log: dict[str, tuple[str, str]] = {}
 
     @property
     def provider(self) -> TokenProvider:
@@ -93,6 +101,19 @@ class AppContext:
         if self._public is None:
             self._public = PublicClient()
         return self._public
+
+    def spv(self) -> SpvClient:
+        """The SPV client over the persisted cookie session.
+
+        The provider carries no bootstrapper: the certificate/2FA login is
+        interactive and stays host-side (``anafpy spv login``), like the OAuth
+        browser flow.
+        """
+        if self._spv is None:
+            self._spv = SpvClient(
+                SpvSessionProvider(store=FileSessionStore(self.config.spv_session_path))
+            )
+        return self._spv
 
     def auth_status(self) -> AuthStatus:
         """Report whether a usable ANAF session is present (read-only)."""
@@ -140,5 +161,7 @@ class AppContext:
             await self._etransport.aclose()
         if self._public is not None:
             await self._public.aclose()
+        if self._spv is not None:
+            await self._spv.aclose()
         if self._provider is not None:
             await self._provider.aclose()

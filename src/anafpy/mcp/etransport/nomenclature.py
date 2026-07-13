@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from ..etransport.schema.schema_etr_v2_20230126 import (
+from ...etransport.schema.schema_etr_v2_20230126 import (
     CodBirouVamalType,
     CodJudetType,
     CodPtfType,
@@ -25,7 +25,7 @@ from ..etransport.schema.schema_etr_v2_20230126 import (
     TipConfirmareType,
     TipDocumentType,
 )
-from ..exceptions import AnafConfigError
+from ...exceptions import AnafConfigError
 from .unitcodes import UNIT_CODES
 
 __all__ = ["nomenclature_entries"]

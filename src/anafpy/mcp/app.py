@@ -2,7 +2,7 @@
 
 Owns the model-facing server instructions, the lifespan (one :class:`AppContext`,
 closed on shutdown) and the ``auth_status`` tool, and delegates everything else to
-the per-group registration modules.
+the service packages' and feature modules' ``register`` functions.
 """
 
 from __future__ import annotations
@@ -12,10 +12,10 @@ from contextlib import asynccontextmanager
 
 from mcp.server.fastmcp import FastMCP
 
-from ..config import ServerConfig
-from ..context import AppContext, AuthStatus
-from . import efactura, etransport, prompts, public, resources
-from ._shared import READ_ONLY
+from . import efactura, etransport, prompts, public, reference, spv
+from .artifacts import READ_ONLY
+from .config import ServerConfig
+from .context import AppContext, AuthStatus
 
 __all__ = ["create_server", "main"]
 
@@ -65,6 +65,21 @@ without filing (authoritative; public and no-auth, so it needs no login). e-Tran
 has no standalone validator — ANAF validates on upload. If a tool reports "not
 authenticated", the user must run `anafpy auth login` host-side.
 
+The `spv_*` tools read the taxpayer's SPV (Spațiul Privat Virtual) mailbox —
+receipts, decisions, notifications — and request official reports (VECTOR FISCAL,
+Obligatii de plata, Istoric declaratii, declaration duplicates, ...). SPV is
+READ-ONLY here (no declaration submission) and authenticates with the user's
+qualified certificate, not OAuth. SPV sessions are short-lived (under an hour
+idle): when they lapse, ask the user for permission and call `spv_login` with
+confirm=true — it fires THEIR PIN/2FA prompt, so never call it uninvited — or
+have them run `anafpy spv login` in a terminal. Start with `spv_status` — it
+also reports `authorized_cuis`, the CUIs/CNPs the certificate may query.
+Reports are asynchronous: `spv_cerere` returns an `id_solicitare`,
+`spv_asteapta_raport` waits and saves the PDF; a 'pending' answer is normal, not
+an error. Downloads always go to disk at caller-given paths, never into context.
+A message's document also exists as the resource `spvmsg://<mesaj_id>/pdf`;
+never read it into context when a file on disk is what the user wants.
+
 The `anaf_*` lookup tools query ANAF's PUBLIC no-auth services and work even without
 a login: the taxpayer/VAT registry (`anaf_lookup_taxpayers` answers "is this CUI
 VAT-registered / e-Factura-registered" and more, in one call — use it to sanity-check
@@ -104,7 +119,8 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     efactura.register(mcp, ctx, cfg)
     etransport.register(mcp, ctx, cfg)
     public.register(mcp, ctx)
-    resources.register(mcp, cfg)
+    spv.register(mcp, ctx, cfg)
+    reference.register(mcp, cfg)
     prompts.register(mcp, cfg)
     return mcp
 

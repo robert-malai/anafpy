@@ -46,7 +46,7 @@ mcp = ["mcp>=1.10", "pydantic-settings>=2.4", "python-frontmatter>=1.3"]
 [project.scripts]
 anafpy = "anafpy.cli.main:main"
 # Runs the MCP server over stdio; requires the anafpy[mcp] extra.
-anafpy-mcp = "anafpy.mcp.server:main"
+anafpy-mcp = "anafpy.mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/robert-malai/anafpy"
@@ -57,7 +57,13 @@ Issues = "https://github.com/robert-malai/anafpy/issues"
 [dependency-groups]
 # types-jsonschema: jsonschema comes in via the mcp SDK; the MCP tests use it to
 # check tool output against the declared schema, and mypy strict wants its stubs.
-test = ["pytest>=8.2", "pytest-asyncio>=0.23", "respx>=0.21", "types-jsonschema>=4.21"]
+test = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5",
+    "respx>=0.21",
+    "types-jsonschema>=4.21",
+]
 lint = ["ruff>=0.5", "mypy>=1.10"]
 # markitdown: compiling docs/anaf-reference from ANAF's PDFs/HTML sources.
 # mkdocs-material + mkdocstrings: the documentation site (Read the Docs).
@@ -106,6 +112,17 @@ exclude = [
 [[tool.mypy.overrides]]
 module = ["xsdata_pydantic.*", "respx.*"]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["anafpy"]
+# Generated model packages are excluded from coverage like from the other gates;
+# _codelists.py stays in (gate-clean and exercised by the authoring rules).
+omit = [
+    "*/anafpy/efactura/ubl/*",
+    "*/anafpy/etransport/schema/*",
+]
+# CI merges reports from ubuntu/macos/windows legs on Codecov; keep paths portable.
+relative_files = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -5,6 +5,21 @@
   </a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/robert-malai/anafpy/actions/workflows/ci.yml"><img
+    src="https://img.shields.io/github/actions/workflow/status/robert-malai/anafpy/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://codecov.io/gh/robert-malai/anafpy"><img
+    src="https://img.shields.io/codecov/c/github/robert-malai/anafpy?branch=main" alt="Coverage"></a>
+  <a href="https://pypi.org/project/anafpy/"><img
+    src="https://img.shields.io/pypi/v/anafpy" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/anafpy/"><img
+    src="https://img.shields.io/pypi/pyversions/anafpy" alt="Python versions"></a>
+  <a href="https://anafpy.readthedocs.io/en/latest/"><img
+    src="https://app.readthedocs.org/projects/anafpy/badge/?version=latest" alt="Docs"></a>
+  <a href="https://github.com/robert-malai/anafpy/blob/main/LICENSE"><img
+    src="https://img.shields.io/pypi/l/anafpy" alt="License"></a>
+</p>
+
 # anafpy
 
 Typed Python clients for Romania's **ANAF** tax-authority web services —
@@ -69,6 +84,19 @@ no-auth services):
 - Filing is **two-step gated**: Claude shows you a preview, and nothing is submitted to
   ANAF until you explicitly confirm.
 
+**Read your SPV mailbox and pull official reports** (needs the certificate — read-only):
+
+- **Check what arrived in SPV** — receipts (recipise), payment notices, decisions,
+  notifications — filtered by company and message kind, and **save any document's
+  PDF** to a folder you name.
+- **Request official reports and wait for them**: fiscal vector (VECTOR FISCAL),
+  outstanding obligations (Obligatii de plata), filing history (Istoric
+  declaratii), declaration duplicates (D100/D112/D300/D390/D394...), receipt
+  duplicates, income certificates (Adeverinte Venit), D112↔REVISAL mismatches —
+  ANAF generates them asynchronously and Claude fetches the PDF when it lands.
+- **See exactly which companies your certificate can query** — SPV reports the
+  authorization inventory on every call.
+
 Setup caveats worth knowing: the e-Factura and e-Transport tools need a one-time login
 with your **qualified digital certificate** (the same one you use on ANAF's SPV) — the
 public checks above work without it. The server runs **locally** on your own machine,
@@ -80,7 +108,8 @@ full Claude Desktop + ANAF setup.
 > [`anafpy`](https://pypi.org/project/anafpy/). The OAuth2 auth layer, both async
 > clients, the bidirectional invoice-authoring models, and the MCP server
 > (two-step gated filing for both services, inbox, download, validate) are
-> implemented and tested. ANAF's own server-side `validare` stays the
+> implemented and tested, as is the read-only SPV layer (certificate-mTLS
+> mailbox: messages, downloads, report requests). ANAF's own server-side `validare` stays the
 > authoritative validator; the authoring models add a local translated rule
 > check for fast feedback. See [`DESIGN.md`](DESIGN.md) for the full design and
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
@@ -123,6 +152,15 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   `transformare` PDF rendering); both are prod-only on ANAF's side and need no
   login. No credentials, no test/prod split; requests are paced client-side at
   ANAF's stated 1 req/s rule.
+- **`SpvClient`** (async, read-only) — the taxpayer's **SPV mailbox** over the
+  qualified certificate: `list_messages` (with the certificate's authorization
+  inventory), `download_document` (PDF), `request_report` (the full `cerere`
+  nomenclature — 35 report types with per-type parameter validation before any
+  wire call), and `wait_for_report`. The certificate step is one interactive
+  `anafpy spv login` (macOS Keychain/SecureTransport or Windows
+  CertStore/Schannel via the OS-shipped curl — the keys are non-exportable, so
+  Python's TLS stack never touches them); everything after rides an APM cookie
+  session, prompt-free.
 - **Flat models** — the invoice authoring models above double as the inbox
   read view (`DownloadedMessage.view`), so what you download and what you author
   are the same shape. The
@@ -137,8 +175,7 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   e-Factura invoices (ready-made XML or composed from structured fields) and
   e-Transport declarations (see below).
 
-CI (GitHub Actions, gates on 3.12 + 3.13) and tag-triggered PyPI publishing are in
-place. (A sync facade was dropped as a goal — the clients are async-only.)
+A sync facade was dropped as a goal — the clients are async-only.
 
 ## Install
 
@@ -248,6 +285,23 @@ async with PublicClient() as public:
         print(record.name, record.vat_registered, record.efactura_registered)
 ```
 
+Reading SPV takes one interactive login (`anafpy spv certs` → `anafpy spv select
+<thumbprint>` → `anafpy spv login`, which fires your token PIN / 2FA once), then:
+
+```python
+from anafpy.spv import (
+    FileSessionStore, ReportRequest, ReportType, SpvClient, SpvSessionProvider,
+)
+
+async with SpvClient(SpvSessionProvider(store=FileSessionStore())) as spv:
+    inbox = await spv.list_messages(30)
+    print(inbox.authorized_cuis)  # every CUI/CNP your certificate may query
+    result = await spv.request_report(
+        ReportRequest(type_=ReportType.VECTOR_FISCAL, cui="12345678")
+    )
+    report = await spv.wait_for_report(result.request_id)  # PDF bytes
+```
+
 ## MCP server
 
 The `anafpy[mcp]` extra ships a **local stdio MCP server** that wraps the clients as
@@ -273,6 +327,9 @@ e-Factura filings arrive either as the XML your invoicing software produced
 (`efactura_prepare`, the recommended path) or composed from structured fields
 (`efactura_prepare_invoice` — no invoicing software needed); e-Transport
 declarations are composed from structured fields by `etransport_prepare*`.
+The `spv_*` tools read the SPV mailbox (list, download PDFs to disk, request
+official reports and await their delivery) over the certificate session
+established by `anafpy spv login` — read-only, no submissions.
 The compiled ANAF reference is served as read-only resources, and workflow
 playbooks (like `etransport-declare`, which takes a declaration from any source —
 an email, a PDF invoice, a CMR — through extract → prepare → your approval →

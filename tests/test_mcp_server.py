@@ -24,9 +24,9 @@ from _wire import build_flat_transport, credit_note_xml, invoice_xml, transport_
 from anafpy._transport.base import Environment
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenSet
 from anafpy.exceptions import AnafConfigError
+from anafpy.mcp import create_server
 from anafpy.mcp.config import ServerConfig
 from anafpy.mcp.context import AppContext
-from anafpy.mcp.server import create_server
 from conftest import FakeKeyring
 
 EFACTURA = "https://api.anaf.ro/test/FCTEL/rest"
@@ -946,7 +946,7 @@ async def test_every_tool_has_a_service_prefixed_title(tmp_path: Path) -> None:
     # Human-facing display names follow "Service: operation"; clients that render
     # titles (per spec, over the snake_case name) group the tools by service.
     server = create_server(_config(tmp_path))
-    prefixes = ("e-Factura: ", "e-Transport: ", "ANAF Info: ", "ANAF: ")
+    prefixes = ("e-Factura: ", "e-Transport: ", "ANAF Info: ", "SPV: ", "ANAF: ")
     for tool in await server.list_tools():
         assert tool.title is not None, f"{tool.name} has no title"
         assert tool.title.startswith(prefixes), f"{tool.name}: {tool.title!r}"

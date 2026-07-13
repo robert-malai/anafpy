@@ -75,12 +75,14 @@ nav:
       - Invoice authoring: library/authoring.md
       - e-Transport: library/etransport.md
       - Public services: library/public.md
+      - SPV: library/spv.md
       - Error model: library/errors.md
   - API reference:
       - e-Factura: api/efactura.md
       - Invoice authoring: api/authoring.md
       - e-Transport: api/etransport.md
       - Public services: api/public.md
+      - SPV: api/spv.md
       - Authentication: api/auth.md
       - Exceptions: api/exceptions.md
   - ANAF API reference:
@@ -89,3 +91,4 @@ nav:
       - e-Factura: anaf-reference/efactura/api.md
       - e-Transport: anaf-reference/etransport/api.md
       - Public services: anaf-reference/public/api.md
+      - SPV: anaf-reference/spv/api.md

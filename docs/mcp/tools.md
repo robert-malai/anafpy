@@ -79,6 +79,37 @@ that token and `confirm=true`, and each token is **single-use** — so a
 non-idempotent upload can never be repeated on one approval, and any mangling of
 the document between prepare and submit fails closed.
 
+## SPV — the taxpayer's mailbox, read-only
+
+The `spv_*` tools read **SPV (Spațiul Privat Virtual)** — receipts, decisions,
+notifications — and request official reports. They authenticate with your
+**qualified certificate**, not the OAuth application, and are read-only by
+design: no declaration submission of any kind.
+
+Pick a certificate once (`spv_list_certificates` / `spv_select_certificate`,
+or `anafpy spv certs` + `anafpy spv select`), then establish a session either
+by asking Claude to log in (**`spv_login`** — gated on your explicit approval,
+because it fires your token/2FA prompt) or by running **`anafpy spv login`**
+in a terminal. Sessions idle out in under an hour; the tools then ask for a
+fresh login rather than failing obscurely.
+
+| Tool | What it does |
+|---|---|
+| `spv_list_certificates` | Certificates usable for SPV in the OS key store (Keychain / CertStore), token and cloud-HSM ones included |
+| `spv_select_certificate` | Persist which certificate the SPV login uses |
+| `spv_login` | Establish a fresh SPV session — requires your explicit approval (`confirm=true`) since it fires your certificate PIN/2FA |
+| `spv_status` | Session smoke test; reports the certificate's CNP/serial and `authorized_cuis` — every CUI/CNP it has SPV rights for |
+| `spv_lista_mesaje` | Inbox messages from the last N days, filterable by CUI and message kind, paged |
+| `spv_descarca` | Download one message's PDF to a path you name (never into context; existing files never replaced without `overwrite`) |
+| `spv_nomenclature` | The SPV code lists: every report type `spv_cerere` accepts, each with a plain-language description of what it contains (so "my VAT return for March" finds `D300` without you knowing the code) and its per-type parameters, and ANAF's fixed reason (`motiv`) list for income certificates — Claude maps your stated purpose onto the exact wording ANAF prints on the certificate |
+| `spv_cerere` | Request a report — `VECTOR FISCAL`, `Obligatii de plata`, `Istoric declaratii`, the `D1xx`/`D3xx` duplicates, `Duplicat Recipisa`, `Adeverinte Venit`, … Parameters are validated per report type before anything is sent; identical same-day repeats are deduped |
+| `spv_asteapta_raport` | Wait for a requested report to land in the inbox and save its PDF; a `pending` answer just means "call again later" |
+
+Like the e-Factura PDF, a message's document is also available as the MCP
+resource `spvmsg://<mesaj_id>/pdf` — a disk-free path for hosts with resource
+UX. It needs an active SPV session (a resource read can't ask for a login);
+`spv_descarca` remains the save-to-disk path.
+
 ## Resources and prompts
 
 The compiled [ANAF API reference](../anaf-reference/README.md) is served as
@@ -97,7 +128,11 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_TOKEN_STORE` | Token file path for the `file` backend (default `~/.anafpy/tokens.json`) |
 | `ANAFPY_DOCS_DIR` | ANAF reference served as resources (defaults to the repo's `docs/anaf-reference/`) |
 | `ANAFPY_SKILLS_DIR` | Workflow skills served as prompts (defaults to the repo's `skills/`) |
+| `ANAFPY_SPV_SESSION` | SPV cookie-session store written by `anafpy spv login` (default `~/.anafpy/spv-session.json`) |
+| `ANAFPY_SPV_IDENTITY_FILE` | Persisted SPV certificate selection (default `~/.anafpy/spv-identity.json`) |
 
-The server never drives the certificate/browser login — that stays the host-side
-`anafpy auth login` CLI ([authentication](../library/auth.md)); the server only
-reads and headlessly refreshes the token store it wrote.
+The OAuth certificate/browser login stays host-side (`anafpy auth login` —
+it structurally needs a browser; the server only reads and headlessly
+refreshes the token store it wrote). The SPV login is the one interactive step
+exposed as a tool: it needs no host UI — the human gate is your out-of-band
+PIN/2FA approval — and `spv_login` demands your explicit go-ahead per attempt.

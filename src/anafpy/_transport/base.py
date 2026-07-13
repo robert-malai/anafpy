@@ -38,6 +38,7 @@ __all__ = [
     "raise_for_status",
     "retry_after_seconds",
     "service_base_url",
+    "strip_accents",
 ]
 
 #: ANAF's clock. "Today"/"now" *defaults* (a registry query's as-of date, a vehicle
@@ -134,12 +135,19 @@ _EMPTY_RESULT_MARKERS = (
 )
 
 
-def is_empty_result_message(text: str) -> bool:
-    """True when an ANAF list ``eroare`` string denotes *no results* (empty window),
-    not a genuine error (bad CIF/interval). Matched accent-insensitively."""
-    normalized = "".join(
+def strip_accents(text: str) -> str:
+    """``text`` casefolded with combining marks stripped — ANAF's Romanian wire
+    texts arrive both with and without diacritics, so matching happens on the
+    folded form."""
+    return "".join(
         ch
         for ch in unicodedata.normalize("NFKD", text)
         if not unicodedata.combining(ch)
     ).casefold()
+
+
+def is_empty_result_message(text: str) -> bool:
+    """True when an ANAF list ``eroare`` string denotes *no results* (empty window),
+    not a genuine error (bad CIF/interval). Matched accent-insensitively."""
+    normalized = strip_accents(text)
     return any(marker in normalized for marker in _EMPTY_RESULT_MARKERS)
