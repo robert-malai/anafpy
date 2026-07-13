@@ -125,6 +125,42 @@ renegotiation** (challenge answered, handshake never completes) — a
 SecureTransport-backed client (system curl `--cert <keychain name>`) is the
 macOS path that works.
 
+**Windows on ARM caveat** (observed 2026-07-13, Windows 11 ARM64 in a
+Parallels VM, same certSIGN Paperless vToken identity): certSIGN's
+middleware — the `certSIGN Paperless vToken Key Storage Provider` KSP — is
+**x64-only**, and KSP DLLs load in-process, so every ARM64-native consumer
+fails *locally, before any network I/O*: System32's ARM64 `curl.exe`
+(Schannel) errors `AcquireCredentialsHandle … SEC_E_UNKNOWN_CREDENTIALS`,
+`certutil -csplist` reports the provider as `NTE_PROVIDER_DLL_FAIL`, and
+ARM64 Chrome *lists* the certificate in its picker (the store entry and its
+key-container reference look healthy — `HasPrivateKey` is true) but
+completes the handshake with no certificate, so ANAF answers its
+"Certificatul nu a fost prezentat" page. certSIGN's own guidance for ARM
+computers is to use **Opera** — an x64 build running under Windows' x64
+emulation, which can load the x64 KSP; confirmed working live. Practical
+upshot for a Windows bootstrapper: on ARM64 Windows the certificate step
+must run in an **x64 process** until certSIGN ships ARM64 middleware; the
+store-and-thumbprint discovery itself works fine from ARM64 processes.
+
+Validated live the same day with an **x64 Schannel curl under emulation**
+(`curl --cert "CurrentUser\MY\<thumbprint>"` + `-L` + a cookie jar): the
+full APM bootstrap returned `200` + JSON (~27 s wall including the vToken
+phone approval, 0.5 s TLS), and a follow-up request with the **cookie jar
+only, no certificate** answered in 0.13 s — the §1.1 cookie-session model
+holds identically on Windows. Sourcing caveat: stock ARM64 Windows has no
+x64 Schannel curl — System32's build is ARM64, and the curl.se win64
+packages are **LibreSSL-only** (the CertStore `--cert` syntax is a Schannel
+feature; on a single-backend build it is read as a file path and fails
+instantly with code `000`, and `CURL_SSL_BACKEND` is silently ignored).
+Git for Windows' x64 `mingw64\bin\curl.exe` is multi-backend — select
+Schannel with `CURL_SSL_BACKEND=schannel`. Two wire quirks from the same
+run: (1) the F5 closes without a TLS close_notify, so Schannel curl exits
+**56** (`server closed abruptly`) *after* delivering the complete `200`
+body — judge success by status + body, never by curl's exit code; (2) with
+no certificate and no session, the APM's "Certificatul nu a fost prezentat"
+logout page arrives as HTTP **200** — the login wall must be detected by
+content/URL, never by status code.
+
 ## 2. `listaMesaje` — list available messages
 
 *Source: README lines 7–30, 254–258.*

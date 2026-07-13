@@ -78,7 +78,11 @@ CLI honours the same variable and `--store-backend`),
 `ANAFPY_SKILLS_DIR` (workflow skills re-served as MCP prompts, defaults to the repo
 `skills/`), `ANAFPY_SPV_SESSION` (SPV cookie-session store, default
 `~/.anafpy/spv-session.json`), `ANAFPY_SPV_IDENTITY_FILE` (persisted SPV
-certificate selection, default `~/.anafpy/spv-identity.json`).
+certificate selection, default `~/.anafpy/spv-identity.json`),
+`ANAFPY_SPV_CURL` (override the SPV bootstrap's curl binary — read by
+`CurlBootstrapper` itself, so it covers CLI and MCP alike; needed on
+Windows-on-ARM, where x64-only vendor KSPs — certSIGN vToken — require an
+x64 Schannel curl such as Git for Windows', see the SPV reference §1.1).
 
 Codegen (only when re-vendoring XSDs / Schematron sources — see below):
 

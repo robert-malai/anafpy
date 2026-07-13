@@ -68,7 +68,10 @@ def test_netscape_jar_parsing_skips_comments_and_junk() -> None:
 # --- command construction -------------------------------------------------------------
 
 
-def test_macos_command_uses_secure_transport_and_the_identity_name() -> None:
+def test_macos_command_uses_secure_transport_and_the_identity_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ANAFPY_SPV_CURL", raising=False)
     bootstrapper = CurlBootstrapper("My Identity", platform="darwin")
     command = bootstrapper.command("/tmp/jar.txt")
     assert command[0] == "/usr/bin/curl"
@@ -78,15 +81,33 @@ def test_macos_command_uses_secure_transport_and_the_identity_name() -> None:
     assert command[-1].endswith("listaMesaje?zile=1")
 
 
-def test_windows_command_uses_the_cert_store_syntax() -> None:
+def test_windows_command_uses_the_cert_store_syntax(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ANAFPY_SPV_CURL", raising=False)
     bootstrapper = CurlBootstrapper("C5E18AB5", platform="win32")
     command = bootstrapper.command("jar.txt")
     assert command[0].endswith("curl.exe")
     assert "System32" in command[0]
     assert command[command.index("--cert") + 1] == r"CurrentUser\MY\C5E18AB5"
-    assert "CURL_SSL_BACKEND" not in bootstrapper.environment() or (
-        bootstrapper.environment().get("CURL_SSL_BACKEND") != "secure-transport"
-    )
+    # Pinned so a multi-backend curl_path override (e.g. Git for Windows on
+    # ARM64 hosts) picks Schannel; single-backend builds ignore the variable.
+    assert bootstrapper.environment()["CURL_SSL_BACKEND"] == "schannel"
+
+
+def test_curl_path_env_override_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The Windows-on-ARM escape hatch: x64-only vendor KSPs need an x64 curl.
+    monkeypatch.setenv("ANAFPY_SPV_CURL", r"C:\tools\curl-x64\bin\curl.exe")
+    bootstrapper = CurlBootstrapper("C5E18AB5", platform="win32")
+    assert bootstrapper.command("jar.txt")[0] == r"C:\tools\curl-x64\bin\curl.exe"
+
+
+def test_curl_path_argument_beats_the_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANAFPY_SPV_CURL", r"C:\tools\curl-x64\bin\curl.exe")
+    bootstrapper = CurlBootstrapper("x", platform="win32", curl_path="explicit.exe")
+    assert bootstrapper.curl_path == "explicit.exe"
 
 
 def test_unsupported_platform_is_a_config_error() -> None:

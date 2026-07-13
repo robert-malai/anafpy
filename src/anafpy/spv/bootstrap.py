@@ -80,12 +80,21 @@ def parse_netscape_cookies(text: str) -> dict[str, str]:
 
 
 def _default_curl_path(platform: str) -> str:
-    """The OS-shipped curl — deliberately not whatever is first on ``PATH``.
+    """``ANAFPY_SPV_CURL`` if set, else the OS-shipped curl.
 
-    A Homebrew curl (macOS) lacks the SecureTransport backend and a
-    Git-for-Windows curl lacks Schannel; both would reject the platform
-    cert-store ``--cert`` syntax.
+    Deliberately not whatever is first on ``PATH``: a Homebrew curl (macOS)
+    or a curl.se Windows build lacks the platform TLS backend
+    (SecureTransport / Schannel) and would reject the platform cert-store
+    ``--cert`` syntax. One known case *needs* the override: on **Windows on
+    ARM** with x64-only vendor middleware (e.g. certSIGN Paperless vToken,
+    observed 2026-07-13) the ARM64 System32 curl cannot load the key-storage
+    provider — point ``ANAFPY_SPV_CURL`` (or ``curl_path``) at an **x64**
+    Schannel curl (Git for Windows' ``mingw64\\bin\\curl.exe`` is one; it is
+    multi-backend, which is why :meth:`CurlBootstrapper.environment` pins
+    ``CURL_SSL_BACKEND`` on Windows too). See the SPV reference §1.1.
     """
+    if override := os.environ.get("ANAFPY_SPV_CURL"):
+        return override
     if platform == "win32":
         system_root = os.environ.get("SYSTEMROOT", r"C:\Windows")
         return str(Path(system_root) / "System32" / "curl.exe")
@@ -102,7 +111,9 @@ class CurlBootstrapper:
         timeout: seconds to wait for the whole handshake, 2FA included. The
             authorization prompt fires on every bootstrap, so keep this
             generous.
-        curl_path: override the curl binary (tests, exotic installs).
+        curl_path: override the curl binary (tests, exotic installs); the
+            ``ANAFPY_SPV_CURL`` environment variable does the same for the
+            CLI and the MCP server (see :func:`_default_curl_path`).
         platform: override ``sys.platform`` (tests).
     """
 
@@ -154,10 +165,16 @@ class CurlBootstrapper:
         ]
 
     def environment(self) -> dict[str, str]:
-        """Process environment for curl (selects SecureTransport on macOS)."""
+        """Process environment for curl — pins the platform TLS backend.
+
+        Single-backend builds ignore ``CURL_SSL_BACKEND``; setting it matters
+        for multi-backend ones (a Git-for-Windows curl defaults to OpenSSL,
+        which rejects the CertStore ``--cert`` syntax).
+        """
         env = dict(os.environ)
-        if self.platform == "darwin":
-            env["CURL_SSL_BACKEND"] = "secure-transport"
+        env["CURL_SSL_BACKEND"] = (
+            "secure-transport" if self.platform == "darwin" else "schannel"
+        )
         return env
 
     # -- execution ---------------------------------------------------------------------

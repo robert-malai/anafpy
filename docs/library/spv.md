@@ -52,6 +52,15 @@ on macOS and the certificate's SHA-1 **thumbprint** on Windows
 with a prompt answered promptly; it fails with an actionable `AnafAuthError`
 rather than hanging, and retrying (which re-fires the prompt) is safe.
 
+**Windows on ARM caveat**: certificate vendors may ship x64-only middleware
+(certSIGN Paperless vToken does, as of 2026-07), which the ARM64 System32
+curl cannot load — the login then fails instantly with
+`SEC_E_UNKNOWN_CREDENTIALS`, before any network traffic. Point the bootstrap
+at an **x64** curl with Schannel support — Git for Windows'
+`mingw64\bin\curl.exe` is a known-good one — via the `ANAFPY_SPV_CURL`
+environment variable (honored by the CLI, the MCP server, and
+`CurlBootstrapper` alike) or the `curl_path` argument.
+
 ## Reading the inbox
 
 ```python
