@@ -562,7 +562,10 @@ results.
   ubuntu/macos/windows (the SPV layer has platform seams; the suite itself is
   respx-mocked and credential-free everywhere) with ruff / mypy --strict / the
   strict docs build on the ubuntu leg for every
-  push/PR; `release.yml` re-runs them on a `v*` tag, checks the tag against
+  push/PR. Every test leg uploads coverage to Codecov (merged per commit —
+  the macOS/Windows legs execute SPV platform seams ubuntu never does;
+  generated model packages are omitted via `[tool.coverage.run]`; upload
+  failures never fail CI); `release.yml` re-runs them on a `v*` tag, checks the tag against
   `pyproject.toml`'s version, builds, and publishes to PyPI via trusted
   publishing (OIDC, environment `pypi` — no stored token). The version is
   declared in `pyproject.toml` **and** `anafpy.__version__`;

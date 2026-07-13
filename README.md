@@ -5,6 +5,21 @@
   </a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/robert-malai/anafpy/actions/workflows/ci.yml"><img
+    src="https://img.shields.io/github/actions/workflow/status/robert-malai/anafpy/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://codecov.io/gh/robert-malai/anafpy"><img
+    src="https://img.shields.io/codecov/c/github/robert-malai/anafpy?branch=main" alt="Coverage"></a>
+  <a href="https://pypi.org/project/anafpy/"><img
+    src="https://img.shields.io/pypi/v/anafpy" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/anafpy/"><img
+    src="https://img.shields.io/pypi/pyversions/anafpy" alt="Python versions"></a>
+  <a href="https://anafpy.readthedocs.io/en/latest/"><img
+    src="https://app.readthedocs.org/projects/anafpy/badge/?version=latest" alt="Docs"></a>
+  <a href="https://github.com/robert-malai/anafpy/blob/main/LICENSE"><img
+    src="https://img.shields.io/pypi/l/anafpy" alt="License"></a>
+</p>
+
 # anafpy
 
 Typed Python clients for Romania's **ANAF** tax-authority web services —
@@ -160,8 +175,7 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   e-Factura invoices (ready-made XML or composed from structured fields) and
   e-Transport declarations (see below).
 
-CI (GitHub Actions, gates on 3.12 + 3.13) and tag-triggered PyPI publishing are in
-place. (A sync facade was dropped as a goal — the clients are async-only.)
+A sync facade was dropped as a goal — the clients are async-only.
 
 ## Install
 
