@@ -66,6 +66,7 @@ nav:
   - Home: index.md
   - Using with Claude (MCP):
       - Setup walkthrough: mcp/setup.md
+      - Configurare (Română): mcp/setup.ro.md
       - Tools: mcp/tools.md
       - Workflow skills: mcp/skills.md
   - Python library:

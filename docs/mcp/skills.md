@@ -29,3 +29,33 @@ It also handles corrections of an already-issued UIT (`correction_of_uit`).
 The same two-step gate described in [Tools](tools.md) applies throughout: the
 skill can never skip the preview-and-approval step, because the submit tool
 refuses to file without the single-use confirmation token plus `confirm=true`.
+
+## `personal-income-summary`
+
+Answers *"what was my income?"* for a Romanian natural person by pulling the
+authoritative ANAF records from the **SPV mailbox** and presenting a clean
+per-year summary — with an optional Excel workbook. It triggers on both formal
+and casual phrasing, in Romanian or English (*"veniturile mele"*, *"cât am
+câștigat anul trecut"*, "income summary", "adeverință de venit"). The playbook
+walks Claude through:
+
+1. **Confirm the SPV session** — `auth_status` then `spv_status` (which returns
+   the certificate holder's CNP and authorized CUIs). This skill is read-only:
+   it never files anything.
+2. **Pick the CNP and years** — defaults to *personal* income (the CNP on the
+   certificate) over the last three completed fiscal years; asks only if the
+   account also holds company CIFs and the request is ambiguous.
+3. **Request the reports** — `spv_cerere` for both `Adeverinte Venit` (the
+   authoritative income certificate) and `D212` (the Declarația Unică duplicate,
+   as a cross-check) per year.
+4. **Wait and download** — `spv_asteapta_raport` saves each PDF to disk (retrying
+   the occasional handshake timeout).
+5. **Extract and summarize** — reads the figures from the certificates and gives
+   a per-year table with totals and a trend line, keeping the official PDFs
+   alongside.
+6. **Offer an Excel workbook** (optional) — a formula-driven per-year summary
+   plus one detail sheet per year, built via the **xlsx** skill.
+
+Because it only uses the read-only `spv_*` tools, there is no filing gate — the
+human gate here is the SPV login (certificate PIN / 2FA), described in the
+[setup walkthrough](setup.md) step 7.

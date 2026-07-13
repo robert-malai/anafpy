@@ -1,5 +1,7 @@
 # Installing anafpy on a new computer
 
+> 🇷🇴 Acest ghid este disponibil și [în limba română](setup.ro.md).
+
 This guide takes you from a brand-new computer to talking to ANAF from
 [Claude Cowork](https://claude.com) — listing your e-Factura inbox, filing
 e-Transport declarations, looking up business partners. It is written for an

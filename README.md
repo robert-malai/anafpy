@@ -102,7 +102,8 @@ with your **qualified digital certificate** (the same one you use on ANAF's SPV)
 public checks above work without it. The server runs **locally** on your own machine,
 so downloaded invoices and PDFs land on your own filesystem. See the
 [setup walkthrough](https://anafpy.readthedocs.io/en/latest/mcp/setup/) for the
-full Claude Desktop + ANAF setup.
+full Claude Desktop + ANAF setup — also available
+[in Romanian](https://anafpy.readthedocs.io/en/latest/mcp/setup.ro/).
 
 > Status: **early / alpha** (`0.x`), on PyPI as
 > [`anafpy`](https://pypi.org/project/anafpy/). The OAuth2 auth layer, both async
@@ -331,9 +332,11 @@ The `spv_*` tools read the SPV mailbox (list, download PDFs to disk, request
 official reports and await their delivery) over the certificate session
 established by `anafpy spv login` — read-only, no submissions.
 The compiled ANAF reference is served as read-only resources, and workflow
-playbooks (like `etransport-declare`, which takes a declaration from any source —
-an email, a PDF invoice, a CMR — through extract → prepare → your approval →
-submit → UIT) as MCP prompts. See the
+playbooks as MCP prompts — `etransport-declare`, which takes a declaration from
+any source (an email, a PDF invoice, a CMR) through extract → prepare → your
+approval → submit → UIT, and `personal-income-summary`, which pulls a person's
+realized income from the SPV income certificates into a per-year summary (with an
+optional Excel workbook). See the
 [tools overview](https://anafpy.readthedocs.io/en/latest/mcp/tools/) and
 [workflow skills](https://anafpy.readthedocs.io/en/latest/mcp/skills/) for the
 full picture.
