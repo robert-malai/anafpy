@@ -1,4 +1,4 @@
-"""Tool annotations and small helpers shared by the server's tool modules."""
+"""Tool annotations and the artifact-writing helper shared by the service packages."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from mcp.types import ToolAnnotations
 
-from ...exceptions import AnafConfigError
+from ..exceptions import AnafConfigError
 
 __all__ = ["ARTIFACT_SAVING", "MUTATING", "READ_ONLY", "write_artifact"]
 

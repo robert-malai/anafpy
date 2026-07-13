@@ -96,8 +96,10 @@ src/anafpy/
   etransport/      # generated XSD models + client + bidirectional flat models
   public/          # PublicClient: no-auth lookups + financial statements (§6)
   cli/             # `anafpy auth login|status|logout`
-  mcp/             # MCP server (extra: anafpy[mcp]) — tools, resources, prompts,
-                   # confirmation tokens, nomenclatures, UN/ECE unit codes
+  mcp/             # MCP server (extra: anafpy[mcp]) — split by service
+                   # (efactura/, etransport/, public/, spv/: each owns its tools,
+                   # models, nomenclatures) over a shared core (app, config,
+                   # context, the two-step gate, artifacts, resources, prompts)
 skills/            # workflow skills, served by the MCP server as same-name prompts
 docs/anaf-reference/   # agent-compiled local reference (+ _sources/)
 ```

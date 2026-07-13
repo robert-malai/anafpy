@@ -21,7 +21,7 @@ from ..exceptions import AnafConfigError
 from ..public.client import PublicClient
 from ..spv import FileSessionStore, SpvClient, SpvSessionProvider
 from .config import ServerConfig
-from .tokens import TokenLedger
+from .gate import TokenLedger
 
 __all__ = ["AppContext", "AuthStatus"]
 

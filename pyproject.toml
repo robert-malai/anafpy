@@ -46,7 +46,7 @@ mcp = ["mcp>=1.10", "pydantic-settings>=2.4", "python-frontmatter>=1.3"]
 [project.scripts]
 anafpy = "anafpy.cli.main:main"
 # Runs the MCP server over stdio; requires the anafpy[mcp] extra.
-anafpy-mcp = "anafpy.mcp.server:main"
+anafpy-mcp = "anafpy.mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/robert-malai/anafpy"

@@ -2,7 +2,7 @@
 
 Owns the model-facing server instructions, the lifespan (one :class:`AppContext`,
 closed on shutdown) and the ``auth_status`` tool, and delegates everything else to
-the per-group registration modules.
+the service packages' and feature modules' ``register`` functions.
 """
 
 from __future__ import annotations
@@ -12,10 +12,10 @@ from contextlib import asynccontextmanager
 
 from mcp.server.fastmcp import FastMCP
 
-from ..config import ServerConfig
-from ..context import AppContext, AuthStatus
-from . import efactura, etransport, prompts, public, resources, spv
-from ._shared import READ_ONLY
+from . import efactura, etransport, prompts, public, reference, spv
+from .artifacts import READ_ONLY
+from .config import ServerConfig
+from .context import AppContext, AuthStatus
 
 __all__ = ["create_server", "main"]
 
@@ -120,7 +120,7 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     etransport.register(mcp, ctx, cfg)
     public.register(mcp, ctx)
     spv.register(mcp, ctx, cfg)
-    resources.register(mcp, cfg)
+    reference.register(mcp, cfg)
     prompts.register(mcp, cfg)
     return mcp
 

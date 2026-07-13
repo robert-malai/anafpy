@@ -3,7 +3,8 @@
 Filing is split ``etransport_prepare*`` → ``etransport_submit``: prepare parses (or
 composes) the XML for a preview and returns a single-use HMAC confirmation token
 bound to the exact XML bytes and the CIF; submit requires that token and an
-explicit ``confirm=True``.
+explicit ``confirm=True``. The STEP-2 skeleton is the shared
+:func:`anafpy.mcp.gate.run_submit`.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
+from ...etransport.client import ETransportClient
 from ...etransport.models import (
     FlatConfirmation,
     FlatDeletion,
@@ -23,27 +25,16 @@ from ...etransport.models import (
     render_etransport,
 )
 from ...exceptions import AnafError
+from ..artifacts import MUTATING, READ_ONLY
 from ..config import ServerConfig
 from ..context import AppContext
-from ..documents import resolve_xml, transport_view
-from ..models import EtransportXmlInput, PreparedTransport, SubmitResult
-from ..nomenclatures import nomenclature_entries
-from ..tokens import ConfirmationError, issue_token, verify_token
-from ._shared import MUTATING, READ_ONLY
+from ..gate import SubmitResult, issue_token, run_submit, submission_context
+from .models import EtransportXmlInput, PreparedTransport, transport_view
+from .nomenclature import nomenclature_entries
 
 __all__ = ["register"]
 
 _TRANSPORT_KIND = "etransport.declaration"
-
-_TOKEN_USED_MESSAGE = (
-    "confirmation token already used — filing is never repeated on the same "
-    "approval; run the prepare step again"
-)
-
-
-def _transport_context(cif: str) -> str:
-    """Submission parameters bound into an e-Transport confirmation token."""
-    return f"cif={cif}"
 
 
 def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
@@ -217,7 +208,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     async def etransport_prepare(
         document: EtransportXmlInput, cif: str | None = None
     ) -> PreparedTransport:
-        return _prepare_transport(ctx, cfg, document, cif=cif)
+        return _prepare_transport(cfg, document, cif=cif)
 
     @mcp.tool(
         title="e-Transport: Submit filing",
@@ -233,71 +224,46 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         confirm: bool = False,
         cif: str | None = None,
     ) -> SubmitResult:
-        if not confirm:
-            return SubmitResult(
-                accepted=False,
-                message="confirm=False — set confirm=True only after the user "
-                "approves the preview from etransport_prepare.",
-            )
-        try:
-            xml = resolve_xml(document)
-            resolved = cfg.require_cif(cif)
-        except AnafError as exc:
-            return SubmitResult(accepted=False, errors=[str(exc)])
-        try:
-            expires_at = verify_token(
-                cfg.signing_key,
-                confirmation_token,
-                kind=_TRANSPORT_KIND,
-                payload=xml,
-                context=_transport_context(resolved),
-            )
-        except ConfirmationError as exc:
-            return SubmitResult(accepted=False, message=str(exc))
-        # Resolve the client BEFORE consuming the token: missing credentials is a
-        # deterministic config error, and must not burn the human's approval.
-        client = ctx.etransport()
-        if not ctx.token_ledger.consume(confirmation_token, expires_at):
-            return SubmitResult(accepted=False, message=_TOKEN_USED_MESSAGE)
-        # The token is consumed BEFORE the upload, deliberately: on an ambiguous
-        # failure (e.g. a timeout after the request was sent) replaying the same
-        # token must not be able to double-file — the human re-approves instead.
-        try:
-            result = await client.upload(xml, cif=resolved)
-        except AnafError as exc:
-            return SubmitResult(
-                accepted=False,
-                errors=[str(exc)],
-                message=(
-                    "the upload failed and the outcome is UNKNOWN — the request "
-                    "may or may not have reached ANAF. The confirmation token is "
-                    "spent. Before preparing this filing again, check whether it "
-                    "went through (etransport_list, or etransport_get_status if "
-                    "an upload id is known) so it is not filed twice."
-                ),
-            )
-        return SubmitResult(
-            accepted=result.accepted,
-            upload_id=result.upload_id,
-            uit=result.uit,
-            errors=result.errors,
-            message=(
-                f"filed — UIT {result.uit}"
-                if result.accepted
-                else "ANAF rejected the declaration at submission"
-            ),
+        return await run_submit(
+            document,
+            confirmation_token,
+            confirm=confirm,
+            cif=cif,
+            cfg=cfg,
+            ledger=ctx.token_ledger,
+            kind=_TRANSPORT_KIND,
+            prepare_tools="etransport_prepare",
+            check_hint="etransport_list, or etransport_get_status "
+            "if an upload id is known",
+            client=ctx.etransport,
+            upload=_upload,
         )
 
 
+async def _upload(client: ETransportClient, xml: bytes, cif: str) -> SubmitResult:
+    """The e-Transport leg of the shared submit skeleton (see ``gate.run_submit``)."""
+    result = await client.upload(xml, cif=cif)
+    return SubmitResult(
+        accepted=result.accepted,
+        upload_id=result.upload_id,
+        uit=result.uit,
+        errors=result.errors,
+        message=(
+            f"filed — UIT {result.uit}"
+            if result.accepted
+            else "ANAF rejected the declaration at submission"
+        ),
+    )
+
+
 def _prepare_transport(
-    ctx: AppContext,
     cfg: ServerConfig,
     document: EtransportXmlInput,
     *,
     cif: str | None = None,
 ) -> PreparedTransport:
     try:
-        xml = resolve_xml(document)
+        xml = document.resolve()
         resolved = cfg.require_cif(cif)
     except AnafError as exc:
         return PreparedTransport(valid=False, message=str(exc))
@@ -306,7 +272,7 @@ def _prepare_transport(
         cfg.signing_key,
         kind=_TRANSPORT_KIND,
         payload=xml,
-        context=_transport_context(resolved),
+        context=submission_context(resolved),
     )
     return PreparedTransport(
         valid=True,
@@ -349,7 +315,7 @@ def _prepare_composed_transport(
         cfg.signing_key,
         kind=_TRANSPORT_KIND,
         payload=xml,
-        context=_transport_context(resolved),
+        context=submission_context(resolved),
     )
     return PreparedTransport(
         valid=True,

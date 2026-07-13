@@ -1,10 +1,11 @@
 """e-Factura MCP tools: inbox, download (with artifact saving), validate, filing.
 
-Filing is the same two-step gate as e-Transport (``DESIGN.md`` §8), with two
-STEP-1 shapes: ``efactura_prepare`` takes complete UBL XML produced by the user's
-invoicing software (the strongly recommended path when such software exists —
-it, not ANAF's SPV, keeps the durable record; SPV purges filed messages after
-~60 days) and ``efactura_prepare_invoice`` composes the XML from the flat
+Filing is the same two-step gate as e-Transport (``DESIGN.md`` §8, shared in
+:mod:`anafpy.mcp.gate`), with two STEP-1 shapes: ``efactura_prepare`` takes
+complete UBL XML produced by the user's invoicing software (the strongly
+recommended path when such software exists — it, not ANAF's SPV, keeps the
+durable record; SPV purges filed messages after ~60 days) and
+``efactura_prepare_invoice`` composes the XML from the flat
 :class:`~anafpy.efactura.authoring.InvoiceDocument` — the authoring package
 lets an agent draft a full invoice with no upstream system.
 Prepare runs anafpy's translated CIUS-RO rule check for *informational*
@@ -22,29 +23,19 @@ from mcp.server.fastmcp import FastMCP
 
 from ...efactura.authoring import InvoiceDocument, render_invoice
 from ...efactura.authoring import validate as validate_invoice_rules
-from ...efactura.models import Filter, UploadStandard
+from ...efactura.client import EFacturaClient
+from ...efactura.models import Filter
 from ...exceptions import AnafConfigError, AnafError, AnafResponseError
-from ...public.models import TransformStandard
+from ..artifacts import ARTIFACT_SAVING, MUTATING, READ_ONLY, write_artifact
 from ..config import ServerConfig
 from ..context import AppContext
-from ..documents import invoice_view, resolve_xml, upload_standard
-from ..models import PreparedInvoice, SubmitResult, UblXmlInput
-from ..tokens import ConfirmationError, issue_token, verify_token
-from ._shared import ARTIFACT_SAVING, MUTATING, READ_ONLY, write_artifact
+from ..gate import SubmitResult, issue_token, run_submit, submission_context
+from .documents import invoice_view, render_pdf, transform_standard, upload_standard
+from .models import PreparedInvoice, UblXmlInput
 
 __all__ = ["register"]
 
 _INVOICE_KIND = "efactura.invoice"
-
-_TOKEN_USED_MESSAGE = (
-    "confirmation token already used — filing is never repeated on the same "
-    "approval; run the prepare step again"
-)
-
-
-def _invoice_context(cif: str) -> str:
-    """Submission parameters bound into an e-Factura confirmation token."""
-    return f"cif={cif}"
 
 
 def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
@@ -125,7 +116,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
                 try:
                     pdf_path = write_artifact(
                         save_pdf_as,
-                        await _render_pdf(ctx, msg.content_xml),
+                        await render_pdf(ctx, msg.content_xml),
                         overwrite=overwrite,
                     )
                 except AnafError as exc:
@@ -161,7 +152,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
             raise AnafResponseError(
                 "the message has no XML content to render", status_code=200
             )
-        return await _render_pdf(ctx, msg.content_xml)
+        return await render_pdf(ctx, msg.content_xml)
 
     @mcp.tool(
         title="e-Factura: Validate invoice",
@@ -174,9 +165,9 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         "credentials configured; nothing is filed anywhere.",
     )
     async def efactura_validate(document: UblXmlInput) -> dict[str, object]:
-        xml = resolve_xml(document)
+        xml = document.resolve()
         result = await ctx.public().validate_invoice(
-            xml, standard=_transform_standard(xml)
+            xml, standard=transform_standard(xml)
         )
         return {
             "valid": result.valid,
@@ -229,7 +220,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
             cfg.signing_key,
             kind=_INVOICE_KIND,
             payload=xml,
-            context=_invoice_context(resolved),
+            context=submission_context(resolved),
         )
         note = (
             "no local findings"
@@ -267,7 +258,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         document: UblXmlInput, cif: str | None = None
     ) -> PreparedInvoice:
         try:
-            xml = resolve_xml(document)
+            xml = document.resolve()
             resolved = cfg.require_cif(cif)
         except AnafError as exc:
             return PreparedInvoice(valid=False, message=str(exc))
@@ -276,7 +267,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
             cfg.signing_key,
             kind=_INVOICE_KIND,
             payload=xml,
-            context=_invoice_context(resolved),
+            context=submission_context(resolved),
         )
         message = (
             "not pre-validated (ANAF is authoritative; efactura_validate "
@@ -310,62 +301,36 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         confirm: bool = False,
         cif: str | None = None,
     ) -> SubmitResult:
-        if not confirm:
-            return SubmitResult(
-                accepted=False,
-                message="confirm=False — set confirm=True only after the user "
-                "approves the preview from efactura_prepare*.",
-            )
-        try:
-            xml = resolve_xml(document)
-            resolved = cfg.require_cif(cif)
-        except AnafError as exc:
-            return SubmitResult(accepted=False, errors=[str(exc)])
-        try:
-            expires_at = verify_token(
-                cfg.signing_key,
-                confirmation_token,
-                kind=_INVOICE_KIND,
-                payload=xml,
-                context=_invoice_context(resolved),
-            )
-        except ConfirmationError as exc:
-            return SubmitResult(accepted=False, message=str(exc))
-        # Resolve the client BEFORE consuming the token: missing credentials is a
-        # deterministic config error, and must not burn the human's approval.
-        client = ctx.efactura()
-        if not ctx.token_ledger.consume(confirmation_token, expires_at):
-            return SubmitResult(accepted=False, message=_TOKEN_USED_MESSAGE)
-        # The token is consumed BEFORE the upload, deliberately: on an ambiguous
-        # failure (e.g. a timeout after the request was sent) replaying the same
-        # token must not be able to double-file — the human re-approves instead.
-        try:
-            result = await client.upload(
-                xml, cif=resolved, standard=upload_standard(xml)
-            )
-        except AnafError as exc:
-            return SubmitResult(
-                accepted=False,
-                errors=[str(exc)],
-                message=(
-                    "the upload failed and the outcome is UNKNOWN — the request "
-                    "may or may not have reached ANAF. The confirmation token is "
-                    "spent. Before preparing this filing again, check whether it "
-                    "went through (efactura_list_messages, or efactura_get_status "
-                    "if an upload id is known) so it is not filed twice."
-                ),
-            )
-        return SubmitResult(
-            accepted=result.accepted,
-            upload_id=result.upload_id,
-            errors=result.errors,
-            message=(
-                f"filed — upload id {result.upload_id}; poll efactura_get_status "
-                "to a terminal state"
-                if result.accepted
-                else "ANAF rejected the document at submission"
-            ),
+        return await run_submit(
+            document,
+            confirmation_token,
+            confirm=confirm,
+            cif=cif,
+            cfg=cfg,
+            ledger=ctx.token_ledger,
+            kind=_INVOICE_KIND,
+            prepare_tools="efactura_prepare*",
+            check_hint="efactura_list_messages, or efactura_get_status "
+            "if an upload id is known",
+            client=ctx.efactura,
+            upload=_upload,
         )
+
+
+async def _upload(client: EFacturaClient, xml: bytes, cif: str) -> SubmitResult:
+    """The e-Factura leg of the shared submit skeleton (see ``gate.run_submit``)."""
+    result = await client.upload(xml, cif=cif, standard=upload_standard(xml))
+    return SubmitResult(
+        accepted=result.accepted,
+        upload_id=result.upload_id,
+        errors=result.errors,
+        message=(
+            f"filed — upload id {result.upload_id}; poll efactura_get_status "
+            "to a terminal state"
+            if result.accepted
+            else "ANAF rejected the document at submission"
+        ),
+    )
 
 
 def _parse_window_dt(value: str | None, *, field: str) -> datetime | None:
@@ -378,30 +343,3 @@ def _parse_window_dt(value: str | None, *, field: str) -> datetime | None:
         raise AnafConfigError(
             f"efactura_list_messages: `{field}` must be ISO 8601 (got {value!r})"
         ) from exc
-
-
-def _transform_standard(xml: bytes) -> TransformStandard:
-    """The ``validare``/``transformare`` path segment matching the document kind."""
-    if upload_standard(xml) is UploadStandard.CN:
-        return TransformStandard.CREDIT_NOTE
-    return TransformStandard.INVOICE
-
-
-async def _render_pdf(ctx: AppContext, xml: bytes) -> bytes:
-    """Render downloaded e-Factura XML to PDF via ANAF's ``transformare``.
-
-    ``validate=False``: the message already passed ANAF's validation when it was
-    filed, so re-validating here could only spuriously block the rendering.
-    ``transformare`` still answers 200 with a JSON error body when it cannot render,
-    so a non-PDF response is raised as :class:`AnafResponseError`, not written out.
-    """
-    pdf = await ctx.public().render_invoice_pdf(
-        xml, standard=_transform_standard(xml), validate=False
-    )
-    if not pdf.startswith(b"%PDF"):
-        raise AnafResponseError(
-            "transformare returned no PDF",
-            status_code=200,
-            body=pdf[:2000].decode("utf-8", errors="replace"),
-        )
-    return pdf

@@ -10,8 +10,8 @@ import pytest
 import respx
 from mcp.server.fastmcp.exceptions import ToolError
 
+from anafpy.mcp import create_server
 from anafpy.mcp.config import ServerConfig
-from anafpy.mcp.server import create_server
 from anafpy.spv import FileSessionStore, SpvSession, StoreIdentity
 
 BASE = "https://webserviced.anaf.ro/SPVWS2/rest"
@@ -321,9 +321,7 @@ _IDENTITY = StoreIdentity(
 async def test_list_and_select_certificates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        "anafpy.mcp.server.spv.discover_identities", lambda: [_IDENTITY]
-    )
+    monkeypatch.setattr("anafpy.mcp.spv.tools.discover_identities", lambda: [_IDENTITY])
     monkeypatch.setattr("anafpy.spv.certs.discover_identities", lambda: [_IDENTITY])
     server = create_server(_config(tmp_path))
 
@@ -404,7 +402,7 @@ async def test_login_without_a_selected_certificate_is_actionable(
 async def test_login_establishes_the_session_and_reports_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("anafpy.mcp.server.spv.CurlBootstrapper", FakeCurlBootstrapper)
+    monkeypatch.setattr("anafpy.mcp.spv.tools.CurlBootstrapper", FakeCurlBootstrapper)
     respx.get(f"{BASE}/listaMesaje").respond(json=LISTING_BODY)
     config = _config(tmp_path, with_session=False)
     _select_identity(tmp_path)
@@ -425,7 +423,7 @@ async def test_login_establishes_the_session_and_reports_identity(
 async def test_login_flaky_handshake_is_a_graceful_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("anafpy.mcp.server.spv.CurlBootstrapper", FakeCurlBootstrapper)
+    monkeypatch.setattr("anafpy.mcp.spv.tools.CurlBootstrapper", FakeCurlBootstrapper)
     FakeCurlBootstrapper.fail_with = "SPV handshake timed out after 180s"
     config = _config(tmp_path, with_session=False)
     _select_identity(tmp_path)
@@ -440,7 +438,7 @@ async def test_login_flaky_handshake_is_a_graceful_answer(
 async def test_login_timeout_is_clamped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("anafpy.mcp.server.spv.CurlBootstrapper", FakeCurlBootstrapper)
+    monkeypatch.setattr("anafpy.mcp.spv.tools.CurlBootstrapper", FakeCurlBootstrapper)
     FakeCurlBootstrapper.fail_with = "flaky"  # short-circuit before any probe
     config = _config(tmp_path, with_session=False)
     _select_identity(tmp_path)
@@ -455,7 +453,7 @@ async def test_login_success_survives_a_failed_identity_probe(
 ) -> None:
     # Observed live: the bootstrap succeeded (session saved) but the follow-up
     # probe raised — the tool must still report the login as successful.
-    monkeypatch.setattr("anafpy.mcp.server.spv.CurlBootstrapper", FakeCurlBootstrapper)
+    monkeypatch.setattr("anafpy.mcp.spv.tools.CurlBootstrapper", FakeCurlBootstrapper)
     respx.get(f"{BASE}/listaMesaje").respond(500, content=b"hiccup")
     config = _config(tmp_path, with_session=False)
     _select_identity(tmp_path)

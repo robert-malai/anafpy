@@ -47,18 +47,16 @@ from ...spv import (
     FileSessionStore,
     MessageList,
     ReportRequest,
-    ReportType,
     SpvSessionProvider,
     discover_identities,
     identity_by_thumbprint,
     load_selected_identity,
-    optional_parameters,
-    required_parameters,
     save_selected_identity,
 )
+from ..artifacts import ARTIFACT_SAVING, MUTATING, READ_ONLY, write_artifact
 from ..config import ServerConfig
 from ..context import AppContext
-from ._shared import ARTIFACT_SAVING, MUTATING, READ_ONLY, write_artifact
+from .nomenclature import REPORT_TYPES_NOTE, report_type_entries, resolve_report_type
 
 __all__ = ["register"]
 
@@ -71,36 +69,6 @@ _LOGIN_HINT = (
 # One page of spv_lista_mesaje output; SPV inboxes can hold hundreds of entries
 # and the model needs counts, not a context-flooding dump.
 _PAGE_LIMIT = 50
-
-
-# ReportRequest model-field names -> the wire names the spv_cerere tool takes.
-_WIRE_NAMES = {
-    "cui": "cui",
-    "year": "an",
-    "month": "luna",
-    "reason": "motiv",
-    "registration_number": "numar_inregistrare",
-    "branch_cui": "cui_pui",
-    "start_month": "lunai",
-    "end_month": "lunas",
-}
-
-
-def _report_type(tip: str) -> ReportType:
-    """Resolve ``tip`` — exact wire value first, then enum member name."""
-    try:
-        # Value lookup, not construction — mypy misreads enum calls when the
-        # enum defines __new__ (the (value, description) member pattern).
-        return ReportType(tip)  # type: ignore[call-arg]
-    except ValueError:
-        pass
-    try:
-        return ReportType[tip.strip().upper().replace(" ", "_").replace("-", "_")]
-    except KeyError:
-        valid = ", ".join(t.value for t in ReportType)
-        raise AnafConfigError(
-            f"unknown report type {tip!r}; valid `tip` values: {valid}"
-        ) from None
 
 
 def _identity_summary(listing: MessageList) -> dict[str, object]:
@@ -339,24 +307,8 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         result: dict[str, object] = {"kind": kind}
         match kind:
             case "report_types":
-                result["entries"] = [
-                    {
-                        "tip": type_.value,
-                        "description": type_.description,
-                        "required": [
-                            _WIRE_NAMES[f] for f in required_parameters(type_)
-                        ],
-                        "optional": [
-                            _WIRE_NAMES[f] for f in optional_parameters(type_)
-                        ],
-                    }
-                    for type_ in ReportType
-                ]
-                result["note"] = (
-                    "CAF (certificat de atestare fiscala) cannot be requested "
-                    "through this service yet — for one, point the user to the "
-                    "SPV web portal"
-                )
+                result["entries"] = report_type_entries()
+                result["note"] = REPORT_TYPES_NOTE
             case "income_certificate_reasons":
                 result["entries"] = list(INCOME_CERTIFICATE_REASONS)
             case _:
@@ -399,7 +351,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         force: bool = False,
     ) -> dict[str, object]:
         request = ReportRequest(
-            type_=_report_type(tip),
+            type_=resolve_report_type(tip),
             cui=config.require_cif(cui),
             year=an,
             month=luna,

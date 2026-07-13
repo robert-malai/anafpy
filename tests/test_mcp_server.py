@@ -24,9 +24,9 @@ from _wire import build_flat_transport, credit_note_xml, invoice_xml, transport_
 from anafpy._transport.base import Environment
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenSet
 from anafpy.exceptions import AnafConfigError
+from anafpy.mcp import create_server
 from anafpy.mcp.config import ServerConfig
 from anafpy.mcp.context import AppContext
-from anafpy.mcp.server import create_server
 from conftest import FakeKeyring
 
 EFACTURA = "https://api.anaf.ro/test/FCTEL/rest"

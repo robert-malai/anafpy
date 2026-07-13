@@ -139,19 +139,30 @@ src/anafpy/
                          # MessageList, ReportRequestResult; SpvMessage, ReportType
                          # nomenclature + ReportRequest (per-type param validation),
                          # error hints
-  mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2
+  mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2, split BY SERVICE:
+                         # each service package owns its tools + models + helpers;
+                         # the shared core is only what 2+ services genuinely use
+    app.py               # composition root: `create_server`, `main`, server
+                         # instructions, auth_status tool
     config.py            # ServerConfig.from_env (creds, store path, env, default CIF)
-    context.py           # AppContext: TokenProvider + lazy clients + token ledger; auth_status
-    models.py            # UBL XML pass-through inputs + prepared-submission gate
-    documents.py         # resolve XML input -> bytes; parse bytes -> client flat models
-    nomenclatures.py     # e-Transport code lists (from the XSD enums) for the model
-    skills.py            # skills/*/SKILL.md loader (frontmatter + body) for MCP prompts
-    tokens.py            # HMAC confirmation tokens for two-step gated mutations
-    server/              # FastMCP server package: app.py (`create_server`, `main`,
-                         # auth_status + instructions), tool modules efactura.py /
-                         # etransport.py / public.py / spv.py, resources.py (ANAF
-                         # reference), prompts.py (skills), _shared.py (tool
-                         # annotations + write_artifact)
+    context.py           # AppContext: TokenProvider + lazy clients + token ledger
+                         # + SPV same-day request log; auth_status
+    gate.py              # the two-step filing gate shared by both filing services:
+                         # HMAC confirmation tokens + TokenLedger, XmlInput base
+                         # ({xml|path} -> bytes), PreparedSubmission/SubmitResult,
+                         # run_submit (the STEP-2 skeleton with its two orderings)
+    artifacts.py         # tool annotations + collision-guarded write_artifact
+    reference.py         # docs/anaf-reference/ as anafref:// resources
+    prompts.py           # skills/*/SKILL.md loader + same-name MCP prompts
+    efactura/            # tools.py (tools + anafmsg:// resource), models.py
+                         # (UblXmlInput, PreparedInvoice), documents.py (previews,
+                         # upload standards, transformare PDF rendering)
+    etransport/          # tools.py, models.py (EtransportXmlInput, PreparedTransport,
+                         # transport_view), nomenclature.py (XSD code lists) +
+                         # unitcodes.py (UN/ECE Rec 20/21)
+    public/              # tools.py — the no-auth anaf_* lookup tools
+    spv/                 # tools.py (+ spvmsg:// resource), nomenclature.py
+                         # (report types + per-type wire params)
     __main__.py          # `python -m anafpy.mcp` (stdio)
 skills/                  # workflow skills, served by the MCP server as same-name
                          # prompts (etransport-declare: source data -> FlatTransport
@@ -274,8 +285,9 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   prompt-capable clients (Claude Desktop, `claude mcp add`) the playbooks as a
   user-invoked entry point. The SKILL.md files are the single source of
   truth — never duplicate their content into the server; parsing is
-  `python-frontmatter`'s (the `mcp` extra), with `skills.py` only enforcing that
-  `name`/`description` are present (missing fields fail loudly at server start).
+  `python-frontmatter`'s (the `mcp` extra), with `mcp/prompts.py` only enforcing
+  that `name`/`description` are present (missing fields fail loudly at server
+  start).
 - **e-Factura filing tools.** Two STEP-1 shapes feed one gate: `efactura_prepare`
   takes complete UBL XML (`UblXmlInput {xml|path}`) verbatim — the strongly
   recommended path when upstream invoicing software produced the document
@@ -314,8 +326,9 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   remains for callers with ready-made XML. `etransport_nomenclature` lists the XSD
   code lists (names accepted anywhere an enum-coded field is) plus the code-only
   `unit_codes` — the UN/ECE Rec 20/21 list ANAF's Schematron enforces for goods
-  lines, carried in [mcp/unitcodes.py](src/anafpy/mcp/unitcodes.py) — see
-  [mcp/nomenclatures.py](src/anafpy/mcp/nomenclatures.py).
+  lines, carried in
+  [mcp/etransport/unitcodes.py](src/anafpy/mcp/etransport/unitcodes.py) — see
+  [mcp/etransport/nomenclature.py](src/anafpy/mcp/etransport/nomenclature.py).
 - **SPV tools are read-only mailbox access** (added 2026-07-12): `spv_status`
   (session smoke test — surfaces `authorized_cuis`, the certificate's
   authorization inventory), `spv_lista_mesaje` (paged, `tip`-filterable),
@@ -387,7 +400,7 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   write files at caller-given paths; the two-step gate is for ANAF filings only.
   Filing — **both services** — is split `*_prepare*` →
   `*_submit`: prepare parses (or composes) the XML for a preview and returns an
-  HMAC **confirmation token** (`mcp/tokens.py`) bound to the exact XML bytes and
+  HMAC **confirmation token** (`mcp/gate.py`) bound to the exact XML bytes and
   the CIF; submit requires that token (same document, same CIF) **and**
   `confirm=True`, and each token is **single-use** (`TokenLedger`) so a
   non-idempotent upload is never repeated on one approval. Don't collapse this

@@ -11,8 +11,8 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from ...public.models import RegistryLookup
+from ..artifacts import READ_ONLY
 from ..context import AppContext
-from ._shared import READ_ONLY
 
 __all__ = ["register"]
 
