@@ -9,7 +9,12 @@ import httpx
 import pytest
 import respx
 
-from anafpy.exceptions import AnafAuthError, AnafConfigError, AnafResponseError
+from anafpy.exceptions import (
+    AnafAuthError,
+    AnafConfigError,
+    AnafRateLimitError,
+    AnafResponseError,
+)
 from anafpy.spv import (
     MemorySessionStore,
     ReportRequest,
@@ -357,11 +362,37 @@ async def test_non_json_list_body_is_explicit() -> None:
 
 @respx.mock
 async def test_http_error_status_raises() -> None:
-    respx.get(f"{BASE}/listaMesaje").respond(500, content=b"oops")
+    route = respx.get(f"{BASE}/listaMesaje").respond(500, content=b"oops")
     async with _client() as client:
         with pytest.raises(AnafResponseError) as info:
             await client.list_messages(5)
     assert info.value.status_code == 500
+    # A received answer is deterministic — the read retry must not repeat it.
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_rate_limit_surfaces_immediately_without_retry() -> None:
+    # The no-auto-backoff stance holds on the SPV reads too: only plain network
+    # failures are retried, never a received 429.
+    route = respx.get(f"{BASE}/listaMesaje").respond(429, headers={"Retry-After": "60"})
+    async with _client() as client:
+        with pytest.raises(AnafRateLimitError) as info:
+            await client.list_messages(5)
+    assert info.value.retry_after == 60.0
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_unparseable_lista_shape_raises_response_error() -> None:
+    # A 200 whose JSON does not fit the model must surface as AnafResponseError,
+    # not leak a raw pydantic ValidationError (parity with the other clients).
+    respx.get(f"{BASE}/listaMesaje").respond(
+        json={"titlu": "Lista Mesaje", "mesaje": [{"id": "1"}]}
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="unrecognised listaMesaje"):
+            await client.list_messages(5)
 
 
 def test_listing_bodies_are_valid_json() -> None:

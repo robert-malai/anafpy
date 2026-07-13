@@ -59,19 +59,37 @@ async def test_cookies_read_the_store_fresh_each_call() -> None:
 async def test_rotated_is_save_if_changed() -> None:
     store = CountingStore(_session())
     provider = SpvSessionProvider(store=store)
-    await provider.rotated({"MRHSession": "authenticated"})  # unchanged
+    seen = {"MRHSession": "authenticated"}
+    await provider.rotated({"MRHSession": "authenticated"}, seen=seen)  # unchanged
     assert store.saves == 0
-    await provider.rotated({"MRHSession": "rotated"})
+    await provider.rotated({"MRHSession": "rotated"}, seen=seen)
     assert store.saves == 1
 
 
 async def test_rotated_preserves_the_established_timestamp() -> None:
     store = MemorySessionStore(_session())
     provider = SpvSessionProvider(store=store)
-    await provider.rotated({"MRHSession": "rotated"})
+    await provider.rotated(
+        {"MRHSession": "rotated"}, seen={"MRHSession": "authenticated"}
+    )
     saved = store.load()
     assert saved is not None
     assert saved.established_at == datetime(2026, 7, 1, tzinfo=UTC)
+
+
+async def test_rotated_does_not_clobber_a_session_replaced_mid_flight() -> None:
+    # A request that started under the old session must not overwrite a fresh
+    # login another process saved while it was in flight (that would destroy
+    # the 2FA the user just answered).
+    store = MemorySessionStore(_session())
+    provider = SpvSessionProvider(store=store)
+    store.save(_session({"MRHSession": "fresh-login"}))  # re-login elsewhere
+    await provider.rotated(
+        {"MRHSession": "stale-rotation"}, seen={"MRHSession": "authenticated"}
+    )
+    saved = store.load()
+    assert saved is not None
+    assert saved.cookies == {"MRHSession": "fresh-login"}
 
 
 async def test_login_without_a_bootstrapper_is_a_config_error() -> None:
@@ -136,6 +154,30 @@ async def test_hop_cookies_replace_the_stored_ones_on_the_next_request() -> None
     assert response.status_code == 200
     assert "MRHSession=revalidated" in nonce.calls.last.request.headers["Cookie"]
     assert "MRHSession=revalidated" in api.calls.last.request.headers["Cookie"]
+
+
+@respx.mock
+async def test_store_session_wins_over_the_client_cookie_jar() -> None:
+    # httpx's client-level jar captures Set-Cookie state and stamps a Cookie
+    # header at build time; http.cookiejar's set_cookie_header only adds one
+    # when none is present. The store must stay authoritative regardless, or a
+    # re-login by another process would never reach the wire.
+    store = MemorySessionStore(_session())
+    provider = SpvSessionProvider(store=store)
+    api = respx.get(f"{BASE}/listaMesaje")
+    api.side_effect = [
+        httpx.Response(
+            200,
+            json={"titlu": "ok"},
+            headers={"Set-Cookie": "MRHSession=jar-state;path=/;secure"},
+        ),
+        httpx.Response(200, json={"titlu": "ok"}),
+    ]
+    async with httpx.AsyncClient(auth=SpvAuth(provider)) as client:
+        await client.get(f"{BASE}/listaMesaje", follow_redirects=False)
+        store.save(_session({"MRHSession": "fresh-login"}))  # re-login elsewhere
+        await client.get(f"{BASE}/listaMesaje", follow_redirects=False)
+    assert api.calls.last.request.headers["Cookie"] == "MRHSession=fresh-login"
 
 
 @respx.mock

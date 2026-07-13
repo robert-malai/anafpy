@@ -75,6 +75,13 @@ def test_message_type_stays_verbatim_and_kind_trims() -> None:
     assert message.request_id == "182990101"
 
 
+def test_authorized_cuis_accept_a_bare_numeric_cui() -> None:
+    # The relaxed serializer that emits ids bare can do the same to a lone
+    # `cui` — coerce instead of failing list[str] validation.
+    listing = MessageList.model_validate({"titlu": "t", "cui": 8000000000})
+    assert listing.authorized_cuis == ["8000000000"]
+
+
 def test_message_date_only_form_is_accepted() -> None:
     # Pre-06.11.2018 shape (date without time) — parse rather than crash.
     listing = MessageList.model_validate(
@@ -234,3 +241,11 @@ def test_english_error_hints_cover_the_documented_categories() -> None:
     assert english_error_hint("Tip raport= CAF inca nu poate fi solicitat prin WS")
     assert english_error_hint("Eroare transmitere cerere. Cod 057")
     assert english_error_hint("Nu exista mesaje in ultimele 5 zile") is None
+
+
+def test_english_error_hints_match_diacritic_spellings() -> None:
+    # The recorded wire errors are ASCII, but ANAF writes Romanian both ways —
+    # matching folds accents, as the hints table promises.
+    assert english_error_hint(
+        "Tip raport= CAF încă nu poate fi solicitat prin WS"
+    ) == english_error_hint("Tip raport= CAF inca nu poate fi solicitat prin WS")

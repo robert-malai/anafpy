@@ -258,8 +258,11 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
 - **The client does no transport retry** — single transparent calls (never repeat
   the non-idempotent `upload` POST). Consumers bring their own retry. On 429 the
   client raises `AnafRateLimitError` exposing `retry_after`; no auto-backoff.
-- **`tenacity` is used in exactly one place**: the `upload_and_wait` poll loop
-  (retry on the *business* processing state, not transport errors).
+- **`tenacity` appears in the poll loops and one documented deviation**: the
+  `upload_and_wait` / `wait_for_report` polls retry on the *business* processing
+  state, not transport errors; the SPV client's reads (idempotent GETs) retry
+  plain network failures with backoff — received HTTP answers, 429 included,
+  still surface immediately.
 - **Hybrid error model**: exceptions for transport/auth/programming errors
   (`AnafError` → `AnafAuthError`, `AnafRateLimitError`, `AnafTransportError`, …);
   **business outcomes** (`nok`, BR-RO findings) are **typed return values**

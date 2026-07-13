@@ -8,10 +8,16 @@ from mcp.types import ToolAnnotations
 
 from ..exceptions import AnafConfigError
 
-__all__ = ["ARTIFACT_SAVING", "MUTATING", "READ_ONLY", "write_artifact"]
+__all__ = ["ARTIFACT_SAVING", "MUTATING", "READ_ONLY", "REQUESTING", "write_artifact"]
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 MUTATING = ToolAnnotations(readOnlyHint=False, idempotentHint=False, openWorldHint=True)
+# Files an additive request with ANAF: nothing is overwritten or deleted, but a
+# repeat files again — honest hints for a mutating, non-idempotent, non-destructive
+# operation (a host must not treat it as an auto-invokable read).
+REQUESTING = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+)
 # Reads from ANAF but may write local files at caller-given paths — honest hints
 # (not readOnlyHint), yet freely callable: the two-step gate is for ANAF filings only.
 ARTIFACT_SAVING = ToolAnnotations(

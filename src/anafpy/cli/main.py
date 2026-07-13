@@ -293,7 +293,7 @@ def _resolve_spv_identity(args: argparse.Namespace) -> str:
 def _cmd_spv_login(args: argparse.Namespace) -> int:
     identity = _resolve_spv_identity(args)
 
-    async def run() -> MessageList:
+    async def run() -> MessageList | AnafError:
         provider = SpvSessionProvider(
             store=FileSessionStore(args.session),
             bootstrapper=CurlBootstrapper(identity, timeout=args.timeout),
@@ -301,14 +301,23 @@ def _cmd_spv_login(args: argparse.Namespace) -> int:
         async with SpvClient(provider) as spv:
             await spv.login()
             # 60-day window: the identity fields (CNP/serial/authorized CUIs)
-            # only ride responses that contain messages.
-            return await spv.list_messages(60)
+            # only ride responses that contain messages. Best-effort: the login
+            # already succeeded and the session is saved — a probe hiccup must
+            # not report it as failed (observed live 2026-07-13: the probe
+            # raised right after a good login).
+            try:
+                return await spv.list_messages(60)
+            except AnafError as exc:
+                return exc
 
     print(f"Establishing SPV session with identity {identity!r}...", flush=True)
     print("Answer the certificate PIN / 2FA prompt when it appears.", flush=True)
-    listing = asyncio.run(run())
+    outcome = asyncio.run(run())
     print(f"\n✓ SPV session established; saved to {args.session}.")
-    _print_spv_identity(listing)
+    if isinstance(outcome, AnafError):
+        print(f"(identity probe failed: {outcome} — `anafpy spv status` re-checks)")
+    else:
+        _print_spv_identity(outcome)
     return 0
 
 

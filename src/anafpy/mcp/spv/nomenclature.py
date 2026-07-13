@@ -14,21 +14,14 @@ it is already a plain list of wire-exact strings.
 from __future__ import annotations
 
 from ...exceptions import AnafConfigError
-from ...spv import ReportType, optional_parameters, required_parameters
+from ...spv import (
+    REPORT_PARAMETER_WIRE_NAMES,
+    ReportType,
+    optional_parameters,
+    required_parameters,
+)
 
 __all__ = ["REPORT_TYPES_NOTE", "report_type_entries", "resolve_report_type"]
-
-# ReportRequest model-field names -> the wire names the spv_cerere tool takes.
-_WIRE_NAMES = {
-    "cui": "cui",
-    "year": "an",
-    "month": "luna",
-    "reason": "motiv",
-    "registration_number": "numar_inregistrare",
-    "branch_cui": "cui_pui",
-    "start_month": "lunai",
-    "end_month": "lunas",
-}
 
 REPORT_TYPES_NOTE = (
     "CAF (certificat de atestare fiscala) cannot be requested through this "
@@ -59,8 +52,12 @@ def report_type_entries() -> list[dict[str, object]]:
         {
             "tip": type_.value,
             "description": type_.description,
-            "required": [_WIRE_NAMES[f] for f in required_parameters(type_)],
-            "optional": [_WIRE_NAMES[f] for f in optional_parameters(type_)],
+            "required": [
+                REPORT_PARAMETER_WIRE_NAMES[f] for f in required_parameters(type_)
+            ],
+            "optional": [
+                REPORT_PARAMETER_WIRE_NAMES[f] for f in optional_parameters(type_)
+            ],
         }
         for type_ in ReportType
     ]

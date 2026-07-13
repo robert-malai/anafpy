@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Generator
-from datetime import UTC, datetime
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -86,21 +85,22 @@ class SpvSessionProvider:
                 raise AnafAuthError(_SESSION_EXPIRED)
             return dict(session.cookies)
 
-    async def rotated(self, cookies: dict[str, str]) -> None:
-        """Persist a cookie set the APM rotated mid-flight (save-if-changed)."""
+    async def rotated(self, cookies: dict[str, str], *, seen: dict[str, str]) -> None:
+        """Persist a cookie set the APM rotated mid-flight (save-if-changed).
+
+        ``seen`` is the set the request started from. The save happens only
+        while the store still holds it: if another process replaced the
+        session mid-flight (a fresh login), this rotation belongs to the dead
+        session and must not clobber the new one (last-writer-wins would).
+        """
         async with self._lock:
             current = self._store.load()
-            if current is not None and current.cookies == cookies:
+            if current is None or current.cookies != seen:
+                return  # replaced (or logged out) underneath — keep the store
+            if current.cookies == cookies:
                 return
             self._store.save(
-                SpvSession(
-                    cookies=cookies,
-                    established_at=(
-                        current.established_at
-                        if current is not None
-                        else datetime.now(tz=UTC)
-                    ),
-                )
+                SpvSession(cookies=cookies, established_at=current.established_at)
             )
 
     async def login(self) -> SpvSession:
@@ -155,9 +155,16 @@ class SpvAuth(httpx.Auth):
     async def async_auth_flow(
         self, request: httpx.Request
     ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        initial = await self._provider.cookies()
         jar = httpx.Cookies()
-        for name, value in (await self._provider.cookies()).items():
+        for name, value in initial.items():
             jar.set(name, value, domain=_SPV_HOST, path="/")
+        # The store is authoritative: drop whatever Cookie header the owning
+        # client's jar stamped on at build time. set_cookie_header (via
+        # http.cookiejar) only adds a Cookie header when none is present, so a
+        # jar left over from earlier responses would otherwise shadow a fresh
+        # session another process saved to the shared store (a re-login).
+        request.headers.pop("Cookie", None)
         jar.set_cookie_header(request)
         response = yield request
         for _hop in range(_MAX_REDIRECT_HOPS):
@@ -193,7 +200,8 @@ class SpvAuth(httpx.Auth):
                 status_code=302,
             )
         jar.extract_cookies(response)
-        await self._provider.rotated(_snapshot(jar))
+        if (snapshot := _snapshot(jar)) != initial:
+            await self._provider.rotated(snapshot, seen=initial)
 
 
 def _snapshot(jar: httpx.Cookies) -> dict[str, str]:

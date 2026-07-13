@@ -32,10 +32,12 @@ from types import TracebackType
 from typing import Self
 
 import httpx
+from pydantic import ValidationError
 from tenacity import (
     AsyncRetrying,
     RetryError,
     retry_if_exception_type,
+    retry_if_not_exception_type,
     retry_if_result,
     stop_after_attempt,
     stop_after_delay,
@@ -147,9 +149,17 @@ class SpvClient:
     async def _get_retrying(
         self, path: str, params: dict[str, str] | None = None
     ) -> httpx.Response:
-        """A :meth:`_get` with backoff on transient network failures (reads only)."""
+        """A :meth:`_get` with backoff on transient network failures (reads only).
+
+        Only the plain network layer is retried: :class:`AnafResponseError` and
+        its subclass :class:`~anafpy.exceptions.AnafRateLimitError` (HTTP 429)
+        extend :class:`AnafTransportError` but describe a *received* answer —
+        deterministic failures that must surface immediately, per the repo's
+        no-auto-backoff error model.
+        """
         async for attempt in AsyncRetrying(
-            retry=retry_if_exception_type(AnafTransportError),
+            retry=retry_if_exception_type(AnafTransportError)
+            & retry_if_not_exception_type(AnafResponseError),
             stop=stop_after_attempt(3),
             wait=wait_exponential_jitter(initial=1.0, max=8.0),
             reraise=True,
@@ -190,7 +200,14 @@ class SpvClient:
                     note=str(eroare),
                 )
             raise _business_error("listaMesaje", str(eroare), response.content)
-        return MessageList.model_validate(data)
+        try:
+            return MessageList.model_validate(data)
+        except ValidationError as exc:
+            raise AnafResponseError(
+                f"unrecognised listaMesaje response: {as_text(response.content)[:200]}",
+                status_code=200,
+                body=as_text(response.content),
+            ) from exc
 
     async def download_document(self, message_id: str) -> SpvDocument:
         """Download one inbox document (``descarcare``) — PDF bytes.
@@ -245,7 +262,14 @@ class SpvClient:
                 status_code=200,
                 body=as_text(response.content),
             )
-        return ReportRequestResult.model_validate(data)
+        try:
+            return ReportRequestResult.model_validate(data)
+        except ValidationError as exc:
+            raise AnafResponseError(
+                f"unrecognised cerere response: {as_text(response.content)[:200]}",
+                status_code=200,
+                body=as_text(response.content),
+            ) from exc
 
     async def wait_for_report(
         self,

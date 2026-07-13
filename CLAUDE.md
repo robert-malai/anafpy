@@ -261,8 +261,11 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   async context managers (`async with EFacturaClient(...) as c:`).
 - **Discrete methods do NO transport retry** — one call, one result-or-raise — so the
   non-idempotent `upload` POST is never silently repeated. Consumers bring their own
-  retry. `tenacity` is used in exactly one place: the `upload_and_wait` poll loop, which
-  retries on the *business* processing state, not on transport errors.
+  retry. `tenacity` appears only in the `upload_and_wait` poll loop (retries on the
+  *business* processing state, not on transport errors) and in the SPV client's
+  documented deviation (idempotent-GET reads retry plain network failures only —
+  received HTTP answers, 429 included, surface immediately; `wait_for_report` is
+  another business poll).
 - **Module style**: `from __future__ import annotations`, explicit `__all__`, module +
   class docstrings, Google-style docstring sections. Line length 88. Keep new code in the
   voice of the surrounding files.
@@ -339,7 +342,10 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   read can't prompt a login), and
   `spv_cerere` (per-type param validation at the `ReportRequest` model;
   **in-process same-day dedupe** in `AppContext.spv_request_log` guards agent
-  loops — the persistent-cache idea was rejected, the library stays stateless).
+  loops — the persistent-cache idea was rejected, the library stays stateless;
+  annotated REQUESTING — mutating, non-destructive, non-idempotent — since it
+  files an additive request with ANAF, so a host must not auto-invoke it as a
+  read).
   `spv_nomenclature` lists the report types — each with a one-line English
   description (`ReportType.description`: members are `(value, description)`
   tuples via the enum-with-attributes pattern, carried from the reference's
@@ -361,8 +367,9 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   come back as `logged_in=false` + retry guidance, not exceptions), uses a
   throwaway `SpvSessionProvider` over the shared store (single source of truth
   — the long-lived client picks the session up on its next read), and
-  `anafpy spv login` remains the CLI path. No two-step gate on the reads: SPV
-  files nothing (reports are information requests).
+  `anafpy spv login` remains the CLI path. No two-step gate anywhere in SPV:
+  no declaration is ever filed (reports are information requests) — honesty
+  about `spv_cerere`'s side effect lives in its annotations, not a gate.
 - **Flat models live at the client layer**
   ([efactura/authoring/](src/anafpy/efactura/authoring/),
   [etransport/models.py](src/anafpy/etransport/models.py)) — the MCP layer only

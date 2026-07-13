@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import pytest
+import respx
 
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenSet
 from anafpy.cli.main import main
@@ -232,3 +233,44 @@ def test_spv_login_without_identity_or_selection_is_actionable(
     monkeypatch.setattr("anafpy.cli.main.discover_identities", lambda: [])
     assert main(["spv", "login", *_spv_args(tmp_path)]) == 1
     assert "anafpy spv certs" in capsys.readouterr().err
+
+
+@respx.mock
+def test_spv_login_reports_success_even_when_the_probe_fails(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Observed live 2026-07-13: the identity probe can raise right after a good
+    # login. The session is established and saved — the CLI must say so (exit
+    # 0), not make the user re-fire their 2FA.
+    from datetime import UTC, datetime
+
+    from anafpy.spv import FileSessionStore, SpvSession, StoreIdentity
+
+    identity = StoreIdentity(
+        name="MIHAI-ROBERT MALAI",
+        sha1_thumbprint="C5E18AB56B0AC30A05BE8D526610F17BB2EF9E7D",
+        platform="darwin",
+    )
+    monkeypatch.setattr("anafpy.cli.main.discover_identities", lambda: [identity])
+
+    class FakeBootstrapper:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def bootstrap(self) -> SpvSession:
+            return SpvSession(
+                cookies={"MRHSession": "fresh"},
+                established_at=datetime.now(tz=UTC),
+            )
+
+    monkeypatch.setattr("anafpy.cli.main.CurlBootstrapper", FakeBootstrapper)
+    respx.get("https://webserviced.anaf.ro/SPVWS2/rest/listaMesaje").respond(500)
+    assert main(["spv", "login", *_spv_args(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "SPV session established" in out
+    assert "identity probe failed" in out
+    saved = FileSessionStore(tmp_path / "spv-session.json").load()
+    assert saved is not None
+    assert saved.cookies == {"MRHSession": "fresh"}

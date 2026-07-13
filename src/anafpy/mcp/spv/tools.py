@@ -17,7 +17,10 @@ the certificate choice). A message's document is also the resource template
 ``descarcare`` already returns a PDF, no conversion) — a disk-free path for
 hosts with resource UX; ``spv_descarca`` remains the save-to-disk path.
 
-``spv_cerere`` files a report request with ANAF. It is guarded by an
+``spv_cerere`` files a report request with ANAF, so it carries mutating
+(non-destructive, non-idempotent) hints — a host must not auto-invoke it as a
+read — while staying freely callable: no declaration is filed, so the two-step
+gate deliberately does not apply. It is guarded by an
 **in-process same-day dedupe** (``AppContext.spv_request_log``): an agent loop
 repeating an identical request gets the id it already got today instead of
 filing again; ``force=true`` overrides. The dedupe is deliberately not
@@ -35,7 +38,9 @@ so a description-guided visible list is the portable design.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
@@ -53,7 +58,7 @@ from ...spv import (
     load_selected_identity,
     save_selected_identity,
 )
-from ..artifacts import ARTIFACT_SAVING, MUTATING, READ_ONLY, write_artifact
+from ..artifacts import ARTIFACT_SAVING, MUTATING, READ_ONLY, REQUESTING, write_artifact
 from ..config import ServerConfig
 from ..context import AppContext
 from .nomenclature import REPORT_TYPES_NOTE, report_type_entries, resolve_report_type
@@ -81,6 +86,18 @@ def _identity_summary(listing: MessageList) -> dict[str, object]:
     }
 
 
+def _save_target(save_as: str | None, dest_dir: str | None, default_name: str) -> str:
+    """Resolve where a downloaded PDF goes (shared by both artifact tools)."""
+    if save_as is not None:
+        return save_as
+    if dest_dir is None:
+        raise AnafConfigError(
+            "pass `save_as` (a file path) or `dest_dir` (a directory) so the "
+            "PDF has somewhere to go"
+        )
+    return str(Path(dest_dir) / default_name)
+
+
 def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: List certificates",
@@ -90,10 +107,13 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         "USB-token and cloud-HSM identities surfaced by their middleware. Shows "
         "which one is currently selected. Pick one with spv_select_certificate.",
     )
-    def spv_list_certificates() -> dict[str, object]:
+    async def spv_list_certificates() -> dict[str, object]:
         selected = load_selected_identity(config.spv_identity_path)
+        # Key-store enumeration shells out to the OS tools and can stall on
+        # slow token middleware — keep it off the event loop.
+        identities = await asyncio.to_thread(discover_identities)
         return {
-            "certificates": [i.model_dump(mode="json") for i in discover_identities()],
+            "certificates": [i.model_dump(mode="json") for i in identities],
             "selected_thumbprint": selected.sha1_thumbprint if selected else None,
         }
 
@@ -105,8 +125,8 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         "only — nothing is sent to ANAF. The user must still run `anafpy spv "
         "login` host-side to establish a session (fires their PIN/2FA).",
     )
-    def spv_select_certificate(thumbprint: str) -> dict[str, object]:
-        identity = identity_by_thumbprint(thumbprint)
+    async def spv_select_certificate(thumbprint: str) -> dict[str, object]:
+        identity = await asyncio.to_thread(identity_by_thumbprint, thumbprint)
         selected = save_selected_identity(identity, config.spv_identity_path)
         return {
             "selected": selected.model_dump(mode="json"),
@@ -264,13 +284,8 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         dest_dir: str | None = None,
         overwrite: bool = False,
     ) -> dict[str, object]:
-        if save_as is None and dest_dir is None:
-            raise AnafConfigError(
-                "pass `save_as` (a file path) or `dest_dir` (a directory) so the "
-                "PDF has somewhere to go"
-            )
+        target = _save_target(save_as, dest_dir, f"spv-{mesaj_id}.pdf")
         document = await ctx.spv().download_document(mesaj_id)
-        target = save_as if save_as is not None else f"{dest_dir}/spv-{mesaj_id}.pdf"
         path = write_artifact(target, document.content, overwrite=overwrite)
         return {
             "saved_as": path,
@@ -320,7 +335,11 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
 
     @mcp.tool(
         title="SPV: Request report",
-        annotations=READ_ONLY,
+        # Honest hints: a cerere files an additive request with ANAF (an inbox
+        # message appears; an income certificate is issued with the motiv on
+        # it) — not a read, even though no declaration is filed and the
+        # two-step gate deliberately does not apply.
+        annotations=REQUESTING,
         description="Ask ANAF to generate an official report/document (cerere). "
         "`tip` is the report name exactly as ANAF spells it — e.g. 'VECTOR "
         "FISCAL', 'Obligatii de plata', 'Istoric declaratii', 'D300', 'Duplicat "
@@ -406,10 +425,12 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         dest_dir: str | None = None,
         overwrite: bool = False,
     ) -> dict[str, object]:
-        if save_as is None and dest_dir is None:
+        target = _save_target(save_as, dest_dir, f"spv-raport-{id_solicitare}.pdf")
+        # Fail the collision BEFORE committing to a poll that can take minutes.
+        if Path(target).expanduser().exists() and not overwrite:
             raise AnafConfigError(
-                "pass `save_as` (a file path) or `dest_dir` (a directory) so the "
-                "report PDF has somewhere to go"
+                f"refusing to overwrite existing file {target} — pick another "
+                "name, or pass overwrite=true to replace it deliberately"
             )
         timeout_s = min(timeout_s, 900.0)  # keep one tool call bounded
         try:
@@ -429,12 +450,19 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
                 "again later with the same id_solicitare (do NOT re-file the "
                 "cerere)",
             }
-        target = (
-            save_as
-            if save_as is not None
-            else f"{dest_dir}/spv-raport-{id_solicitare}.pdf"
-        )
-        path = write_artifact(target, document.content, overwrite=overwrite)
+        try:
+            path = write_artifact(target, document.content, overwrite=overwrite)
+        except AnafError as exc:
+            # The report IS delivered — don't discard that over a save problem.
+            return {
+                "status": "delivered",
+                "id_solicitare": id_solicitare,
+                "message_id": document.message_id,
+                "save_error": str(exc),
+                "detail": "the report was delivered but could not be saved — fix "
+                "the path and save it with spv_descarca(mesaj_id=message_id) "
+                "without re-polling",
+            }
         return {
             "status": "delivered",
             "id_solicitare": id_solicitare,

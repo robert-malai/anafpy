@@ -22,10 +22,11 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
-from .._transport.base import ROMANIA_TZ
+from .._transport.base import ROMANIA_TZ, strip_accents
 
 __all__ = [
     "INCOME_CERTIFICATE_REASONS",
+    "REPORT_PARAMETER_WIRE_NAMES",
     "MessageList",
     "ReportRequest",
     "ReportRequestResult",
@@ -86,6 +87,8 @@ class SpvMessage(BaseModel):
 def _split_csv(value: object) -> object:
     if isinstance(value, str):
         return [item for item in (part.strip() for part in value.split(",")) if item]
+    if isinstance(value, int):  # the relaxed serializer can emit a lone CUI bare
+        return [str(value)]
     return value
 
 
@@ -414,13 +417,30 @@ def optional_parameters(type_: ReportType) -> tuple[str, ...]:
     return tuple(sorted(_allowed_parameters(type_) - set(required_parameters(type_))))
 
 
+#: :class:`ReportRequest` model-field names -> ANAF's ``cerere`` wire names.
+#: The single source of truth for the request's parameter surface:
+#: :meth:`ReportRequest.wire_params` serializes from it, the per-type validator
+#: derives its field list from it, and the MCP nomenclature advertises it. A
+#: mismatch with the model's fields fails at import (guard below the class).
+REPORT_PARAMETER_WIRE_NAMES: dict[str, str] = {
+    "cui": "cui",
+    "year": "an",
+    "month": "luna",
+    "reason": "motiv",
+    "registration_number": "numar_inregistrare",
+    "branch_cui": "cui_pui",
+    "start_month": "lunai",
+    "end_month": "lunas",
+}
+
+
 class ReportRequest(BaseModel):
     """A validated ``cerere`` — invalid parameter combinations fail here, before
     any wire call.
 
     Field names are English; :meth:`wire_params` produces ANAF's Romanian query
-    names (``an``, ``luna``, ``motiv``, ``numar_inregistrare``, ``cui_pui``,
-    ``lunai``/``lunas``).
+    names per :data:`REPORT_PARAMETER_WIRE_NAMES` (``an``, ``luna``, ``motiv``,
+    ``numar_inregistrare``, ``cui_pui``, ``lunai``/``lunas``).
     """
 
     type_: ReportType
@@ -442,14 +462,8 @@ class ReportRequest(BaseModel):
     def _check_per_type_parameters(self) -> Self:
         required = required_parameters(self.type_)
         allowed = _allowed_parameters(self.type_)
-        optional_fields = (
-            "year",
-            "month",
-            "reason",
-            "registration_number",
-            "branch_cui",
-            "start_month",
-            "end_month",
+        optional_fields = tuple(
+            name for name in REPORT_PARAMETER_WIRE_NAMES if name != "cui"
         )
         missing = [name for name in required if getattr(self, name) is None]
         if missing:
@@ -492,44 +506,48 @@ class ReportRequest(BaseModel):
 
     def wire_params(self) -> dict[str, str]:
         """The ``cerere`` query parameters, in ANAF's wire names."""
-        params = {"tip": self.type_.value, "cui": self.cui}
-        wire_names = {
-            "year": "an",
-            "month": "luna",
-            "reason": "motiv",
-            "registration_number": "numar_inregistrare",
-            "branch_cui": "cui_pui",
-            "start_month": "lunai",
-            "end_month": "lunas",
-        }
-        for field, wire_name in wire_names.items():
+        params = {"tip": self.type_.value}
+        for field, wire_name in REPORT_PARAMETER_WIRE_NAMES.items():
             if (value := getattr(self, field)) is not None:
                 params[wire_name] = str(value)
         return params
 
 
+# Import-time consistency guard: every request field must have a wire name and
+# vice versa, or wire_params() would silently drop a parameter from the cerere.
+if (
+    _unmapped := (set(ReportRequest.model_fields) - {"type_"})
+    ^ REPORT_PARAMETER_WIRE_NAMES.keys()
+):
+    raise RuntimeError(
+        f"ReportRequest fields and REPORT_PARAMETER_WIRE_NAMES disagree on: "
+        f"{sorted(_unmapped)}"
+    )
+
+
 #: (pattern, hint) pairs for :func:`english_error_hint`; matched accent- and
-#: case-insensitively on the verbatim ``eroare`` text.
+#: case-insensitively on the verbatim ``eroare`` text (patterns are spelled
+#: unaccented and searched on the :func:`strip_accents`-folded text).
 _ERROR_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
-        re.compile(r"drept", re.IGNORECASE),
+        re.compile(r"drept"),
         "the certificate has no SPV rights for this CUI/CNP or message — the "
         "authorized list is the `cui` field of listaMesaje",
     ),
     (
-        re.compile(r"nu este corect", re.IGNORECASE),
+        re.compile(r"nu este corect"),
         "the CUI/CNP is not valid",
     ),
     (
-        re.compile(r"obligatori", re.IGNORECASE),
+        re.compile(r"obligatori"),
         "mandatory parameters are missing for this report type",
     ),
     (
-        re.compile(r"inca nu poate fi solicitat", re.IGNORECASE),
+        re.compile(r"inca nu poate fi solicitat"),
         "this report type is not yet available through the web service",
     ),
     (
-        re.compile(r"\bcod\s*\d+", re.IGNORECASE),
+        re.compile(r"\bcod\s*\d+"),
         "a technical error on ANAF's side — report the numeric code to "
         "spv.webservice@mfinante.ro",
     ),
@@ -542,7 +560,8 @@ def english_error_hint(eroare: str) -> str | None:
     The verbatim Romanian text stays authoritative and is always surfaced
     alongside; this only orients non-Romanian-speaking callers.
     """
+    folded = strip_accents(eroare)
     for pattern, hint in _ERROR_HINTS:
-        if pattern.search(eroare):
+        if pattern.search(folded):
             return hint
     return None

@@ -23,6 +23,7 @@ from .certs import (
 from .client import SpvClient
 from .models import (
     INCOME_CERTIFICATE_REASONS,
+    REPORT_PARAMETER_WIRE_NAMES,
     MessageList,
     ReportRequest,
     ReportRequestResult,
@@ -45,6 +46,7 @@ from .session import (
 __all__ = [
     "DEFAULT_SESSION_PATH",
     "INCOME_CERTIFICATE_REASONS",
+    "REPORT_PARAMETER_WIRE_NAMES",
     "SPV_BASE_URL",
     "CurlBootstrapper",
     "FileSessionStore",

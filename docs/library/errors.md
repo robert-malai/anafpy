@@ -43,10 +43,17 @@ classifies the note:
 So an empty loop body means "nothing there", and you don't have to parse
 Romanian error strings yourself.
 
-## No transport retry — anywhere
+## No transport retry (one documented exception)
 
-Every discrete method makes exactly one HTTP call: one call, one result-or-raise.
-This is a hard rule so the non-idempotent `upload` POST is never silently
-repeated. Bring your own retry policy (and make it idempotency-aware). The one
-built-in loop, `upload_and_wait`, polls on the *business* "still processing"
-state only — a transport error inside it propagates immediately.
+Every discrete method on the OAuth and public clients makes exactly one HTTP
+call: one call, one result-or-raise. This is a hard rule so the non-idempotent
+`upload` POST is never silently repeated. Bring your own retry policy (and make
+it idempotency-aware). The built-in `upload_and_wait` loop polls on the
+*business* "still processing" state only — a transport error inside it
+propagates immediately.
+
+The one deliberate exception is the [SPV client](spv.md): its reads
+(`list_messages`, `download_document`) retry transient *network* failures with
+backoff, because every SPV operation is an idempotent GET. Received HTTP
+answers — including 429 — still surface immediately, and `request_report`
+stays single-shot.

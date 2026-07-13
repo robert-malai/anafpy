@@ -207,6 +207,18 @@ async def test_cerere_accepts_enum_member_names_too(tmp_path: Path) -> None:
     assert route.calls.last.request.url.params["tip"] == "VECTOR FISCAL"
 
 
+async def test_cerere_is_annotated_as_a_mutating_request(tmp_path: Path) -> None:
+    # A cerere files an additive request with ANAF — a host must not treat it
+    # as an auto-invokable read (readOnlyHint) even though no declaration is
+    # filed and it stays outside the two-step gate.
+    server = create_server(_config(tmp_path))
+    tool = next(t for t in await server.list_tools() if t.name == "spv_cerere")
+    assert tool.annotations is not None
+    assert tool.annotations.readOnlyHint is False
+    assert tool.annotations.destructiveHint is False
+    assert tool.annotations.idempotentHint is False
+
+
 async def test_cerere_validates_parameters_before_the_wire(tmp_path: Path) -> None:
     server = create_server(_config(tmp_path))
     with pytest.raises(ToolError, match="requires cui, year"):
@@ -290,6 +302,26 @@ async def test_asteapta_raport_downloads_when_delivered(tmp_path: Path) -> None:
     assert result["status"] == "delivered"
     assert result["message_id"] == "200"
     assert Path(result["saved_as"]).read_bytes() == b"%PDF-1.7 report"
+
+
+@respx.mock
+async def test_asteapta_raport_fails_a_name_collision_before_polling(
+    tmp_path: Path,
+) -> None:
+    # The poll can take minutes — an unwritable target must fail fast, not
+    # after the report was awaited and downloaded. No respx routes: any wire
+    # call would fail this test on its own.
+    existing = tmp_path / "raport.pdf"
+    existing.write_bytes(b"do not lose me")
+    server = create_server(_config(tmp_path))
+    with pytest.raises(ToolError, match="refusing to overwrite"):
+        await _call(
+            server,
+            "spv_asteapta_raport",
+            id_solicitare="260149",
+            save_as=str(existing),
+        )
+    assert existing.read_bytes() == b"do not lose me"
 
 
 @respx.mock
