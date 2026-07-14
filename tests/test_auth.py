@@ -501,10 +501,12 @@ def test_capture_code_error_redirect_raises() -> None:
 def test_capture_code_tls_listener() -> None:
     fixtures = Path(__file__).parent / "fixtures"
     server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     server_ctx.load_cert_chain(
         fixtures / "tls_test_cert.pem", fixtures / "tls_test_key.pem"
     )
     client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    client_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     client_ctx.check_hostname = False
     client_ctx.verify_mode = ssl.CERT_NONE  # self-signed test fixture
 

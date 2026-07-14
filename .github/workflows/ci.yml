@@ -11,6 +11,10 @@ on:
     branches: [main]
   pull_request:
 
+# Nothing here writes back to the repo — checkout is the only token consumer.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}

@@ -9,6 +9,11 @@ on:
   push:
     tags: ["v*"]
 
+# Least privilege by default; the publish job re-declares what it actually needs
+# (a job-level block replaces this one rather than adding to it).
+permissions:
+  contents: read
+
 jobs:
   gates:
     runs-on: ubuntu-latest

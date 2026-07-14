@@ -66,6 +66,9 @@ def _env(name: str) -> str | None:
 def _load_ssl_context(cert: str, key: str | None) -> ssl.SSLContext:
     """A TLS server context for the callback listener from user-supplied PEM files."""
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    # Pin the floor rather than inherit it: PROTOCOL_TLS_SERVER's default minimum
+    # comes from the OpenSSL build's security level, which can still permit TLS 1.0/1.1.
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     try:
         context.load_cert_chain(cert, key)
     except (OSError, ssl.SSLError) as exc:
