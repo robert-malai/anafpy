@@ -15,7 +15,7 @@ sources:
     local_copy: ../_sources/clientspv/src/ApelSPV.java
 compiled: 2026-07-12
 compiled_by: claude-fable-5
-last_verified: 2026-07-12
+last_verified: 2026-07-15
 status: draft
 ---
 
@@ -160,6 +160,22 @@ body — judge success by status + body, never by curl's exit code; (2) with
 no certificate and no session, the APM's "Certificatul nu a fost prezentat"
 logout page arrives as HTTP **200** — the login wall must be detected by
 content/URL, never by status code.
+
+**curl-version caveat** (observed 2026-07-15, Windows 11 x64): Schannel curl
+versions **8.13.0–8.15.0** carry a regression
+([curl#18029](https://github.com/curl/curl/issues/18029), commit `a1850ad`)
+that breaks **TLS 1.2 renegotiation with a certificate-store client cert** —
+exactly step 2's mid-connection renegotiation. The handshake fails mid-read
+with `curl: (56) schannel: failed to read data from server:
+SEC_E_CONTEXT_EXPIRED (0x80090317)` *before* any body arrives (distinct from
+the benign exit-56 close_notify above, which lands *after* the full `200`).
+This bites Windows' built-in `System32\curl.exe` when it is one of those
+versions; a file-backed cert would sidestep it, but SPV's non-exportable
+store key rules that out. Fix: use a Schannel curl **outside** that range —
+current Git for Windows ships one (curl ≥ 8.16) — via `ANAFPY_SPV_CURL`.
+Confirmed live that pointing the override at Git for Windows'
+`mingw64\bin\curl.exe` (curl 8.21.0) completed the bootstrap where the
+System32 8.13.0 curl failed.
 
 ## 2. `listaMesaje` — list available messages
 
