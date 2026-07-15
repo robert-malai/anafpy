@@ -141,6 +141,19 @@ platform raw-signer (qualified signature) → signed PDF on disk.
    string literals/wire names; `D300`, `cui`, `luna` are domain terms), module
    style (`from __future__ import annotations`, `__all__`, Google docstrings,
    line length 88), async clients, pydantic models, no `@dataclass`.
+7. **Form diversity is handled by data, not code.** ANAF's update feed
+   (`versiuni.xml`, §2.1) lists every supported form — **173 as of
+   2026-07-16** — and is the single machine-readable source of "what forms
+   exist" (ANAF's human-facing `descarcare_declaratii.htm` page is updated
+   dynamically; never vendor a static form list). The engine
+   (validate/render/sign, all keyed by `form`) is form-generic from day one;
+   **do not build per-form typed models** — forms are revised with every
+   OPANAF order and DUK is the validation authority, so authoring knowledge is
+   fetched fresh per form (the XSD, skill step 3) and per-form additions are
+   *content* (an `nr_evid` cod_imp entry, a skill hint, a `valOption` note),
+   never new code paths. D300 is the worked example, not a special case;
+   structurally different forms (e.g. D112's nested children vs D300's
+   attribute-only root) differ only in what the XSD shows the model.
 
 ## 4. Library layer — `src/anafpy/declaratii/`
 
@@ -203,9 +216,18 @@ Pure function implementing §2.2 exactly (raise `ValueError` on unknown
 reject it for now with a clear message). Unit-test against BOTH known vectors:
 the annex example (`tip_decont="L"`, 01/2011 → `10301010111250211000020`) and
 the live-validated 06/2026 case (→ `10301010626250726000042`).
-D300-specific for now; if another form needs it later, generalize by taking
-`cod_imp` directly. Note: the check digit is `sum of first 21 digits` compared
+Note: the check digit is `sum of first 21 digits` compared
 for equality against `d21*10 + d22` — sums here are always < 100, no modulo.
+
+Diversity note (§3.7): the 23-char frame (`10` + cod_imp + `01` + period +
+due date + `0000` + checksum) is the shared "număr de evidență a plății"
+structure; only the cod_imp table and due-date rule are form-specific. When a
+second form needs it, refactor to a general
+`payment_evidence_number(*, cod_imp: str, luna: int, an: int, due_day: int = 25)`
+core with the D300 `tip_decont` mapping kept as a thin convenience on top —
+extend the mapping **on demand** (each form's validator/annex is the source),
+never speculatively for all 173 forms. A wrong/missing mapping self-heals: DUK
+rejects the value with the exact rule message and the model reports it.
 
 ### 4.3 `signing.py` — platform raw signer + identity
 
@@ -285,7 +307,8 @@ Tools (all lazy over one `DukIntegrator` held on `AppContext`):
 | `declaratie_render` | not readOnly, idempotent, non-destructive | `{xml \| path}`, `form`, `save_pdf_as`, `overwrite=false`; validates first (a failed validation returns findings and writes nothing), renders via `-p`, writes through `write_artifact`. Returns `{ok, findings[], pdf_path}`. |
 | `declaratie_sign` | not readOnly, non-idempotent (fires a 2FA approval per call), **requires `confirm=true`** | `{pdf_path, save_as?, overwrite=false}`; signs `pdf_path` (default `save_as` = `<name>-semnat.pdf` next to it); returns `{signed, pdf_path?, chain_complete, guidance?}`. Timeout/dismissed approval → `signed=false` + retry guidance, never an exception. Description must tell the model to warn the user an approval prompt is about to fire on their device. |
 | `declaratie_nr_evid` | readOnly | `{tip_decont, luna, an}` → the 23-char number. Errors list valid `tip_decont` values (self-healing, like the SPV `motiv` contract). |
-| `declaratie_duk_status` | readOnly | DUK dir, java version, `installed_forms()` vs `feed_versions()` staleness table (feed fetch best-effort — offline returns installed-only with a note). |
+| `declaratie_duk_status` | readOnly | DUK dir, java version, `installed_forms()` vs `feed_versions()` staleness table (feed fetch best-effort — offline returns installed-only with a note). The feed side lists ALL forms ANAF supports (~173), so this doubles as form discovery: "is form X supported / installed / current?". |
+| `declaratie_form_info` | readOnly | `{form}` → best-effort scrape of the form's page (`Declaratii_R/<nnn>.html`; try the `D`-stripped number, fall back to the form name) for the current XSD / validation-annex / soft-A links plus version note. Exists because the authoring skill needs the XSD and MCP hosts may lack web access; page layout drift must degrade to "links not found, here is the page URL", never an exception. |
 
 Server `instructions` in `app.py` get a short paragraph: compose XML →
 `declaratie_validate` loop → `declaratie_render` → user approval →
@@ -415,7 +438,12 @@ matters here).
    live sign smoke on this Mac (`ANAFPY_LIVE_SIGN=1`).
 4. MCP package + config + tests; skill.
 5. CLI subcommands.
-6. Docs sweep (§9), gates green, PR.
+6. **Generality proof**: run the full authoring loop on a second, structurally
+   different form (D390 — simple recapitulative with child rows — or D112 —
+   deeply nested) end to end against a local DUK, adjusting only skill
+   *content*, not engine code. Any engine change this forces is a §3.7
+   violation to fix, not to except.
+7. Docs sweep (§9), gates green, PR.
 
 ---
 
