@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 import respx
@@ -274,3 +275,108 @@ def test_spv_login_reports_success_even_when_the_probe_fails(
     saved = FileSessionStore(tmp_path / "spv-session.json").load()
     assert saved is not None
     assert saved.cookies == {"MRHSession": "fresh"}
+
+
+# --- declaratii -------------------------------------------------------------------
+
+
+def _duk_dir(tmp_path: Path) -> Path:
+    dist = tmp_path / "dist"
+    (dist / "lib").mkdir(parents=True)
+    (dist / "DUKIntegrator.jar").write_text("")
+    return dist
+
+
+def _fake_duk_run(err: str) -> Any:
+    async def run(self: object, args: list[str]) -> tuple[int, bytes, bytes]:
+        Path(args[3]).write_text(err, encoding="utf-8")
+        if "-p" in args and err.strip() == "ok":
+            Path(args[-1]).write_bytes(b"%PDF-1.7\n")
+        return 0, b"", b""
+
+    return run
+
+
+def test_declaratii_validate_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from anafpy.declaratii.duk import DukIntegrator
+
+    monkeypatch.setattr(DukIntegrator, "_run", _fake_duk_run("ok"))
+    xml = tmp_path / "d300.xml"
+    xml.write_text("<x/>")
+    code = main(
+        [
+            "declaratii",
+            "validate",
+            "D300",
+            str(xml),
+            "--duk-dir",
+            str(_duk_dir(tmp_path)),
+            "--java",
+            "java",
+        ]
+    )
+    assert code == 0
+    assert "valid" in capsys.readouterr().out
+
+
+def test_declaratii_validate_reports_findings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from anafpy.declaratii.duk import DukIntegrator
+
+    monkeypatch.setattr(DukIntegrator, "_run", _fake_duk_run("E: eroare: R25 lipseste"))
+    xml = tmp_path / "d300.xml"
+    xml.write_text("<x/>")
+    code = main(
+        [
+            "declaratii",
+            "validate",
+            "D300",
+            str(xml),
+            "--duk-dir",
+            str(_duk_dir(tmp_path)),
+            "--java",
+            "java",
+        ]
+    )
+    assert code == 1
+    assert "R25" in capsys.readouterr().out
+
+
+def test_declaratii_render_writes_pdf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from anafpy.declaratii.duk import DukIntegrator
+
+    monkeypatch.setattr(DukIntegrator, "_run", _fake_duk_run("ok"))
+    xml = tmp_path / "d300.xml"
+    xml.write_text("<x/>")
+    out = tmp_path / "d300.pdf"
+    code = main(
+        [
+            "declaratii",
+            "render",
+            "D300",
+            str(xml),
+            "-o",
+            str(out),
+            "--duk-dir",
+            str(_duk_dir(tmp_path)),
+            "--java",
+            "java",
+        ]
+    )
+    assert code == 0
+    assert out.read_bytes().startswith(b"%PDF")
+
+
+def test_declaratii_validate_without_duk_dir_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("ANAFPY_DUK_DIR", raising=False)
+    xml = tmp_path / "d300.xml"
+    xml.write_text("<x/>")
+    assert main(["declaratii", "validate", "D300", str(xml)]) == 1
+    assert "ANAFPY_DUK_DIR" in capsys.readouterr().err

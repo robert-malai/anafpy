@@ -15,6 +15,7 @@ import time
 from pydantic import BaseModel
 
 from ..auth import FileTokenStore, KeyringTokenStore, TokenProvider, TokenStore
+from ..declaratii import DukIntegrator
 from ..efactura.client import EFacturaClient
 from ..etransport.client import ETransportClient
 from ..exceptions import AnafConfigError
@@ -29,6 +30,13 @@ _NO_CREDENTIALS = (
     "no OAuth credentials configured — set ANAFPY_CLIENT_ID and "
     "ANAFPY_CLIENT_SECRET (then run `anafpy auth login` once) to enable the "
     "e-Factura / e-Transport tools; the public anaf_* lookups work without them"
+)
+
+_NO_DUK = (
+    "declaration tools need DUKIntegrator — download "
+    "https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip, "
+    "extract it, and set ANAFPY_DUK_DIR to its dist/ folder (add the per-form "
+    "validator jars from ANAF's update feed to dist/lib/)"
 )
 
 
@@ -68,6 +76,7 @@ class AppContext:
         self._etransport: ETransportClient | None = None
         self._public: PublicClient | None = None
         self._spv: SpvClient | None = None
+        self._duk: DukIntegrator | None = None
         #: Redeemed confirmation tokens (single-use gate for the submit tools).
         self.token_ledger = TokenLedger()
         #: Same-day `cerere` dedupe for agent loops: canonical params -> the
@@ -114,6 +123,19 @@ class AppContext:
                 SpvSessionProvider(store=FileSessionStore(self.config.spv_session_path))
             )
         return self._spv
+
+    def duk(self) -> DukIntegrator:
+        """The DUKIntegrator wrapper (validate / render); built lazily.
+
+        Raises:
+            AnafConfigError: ``ANAFPY_DUK_DIR`` is not configured, or points at a
+                path that is not a DUKIntegrator install.
+        """
+        if self._duk is None:
+            if self.config.duk_dir is None:
+                raise AnafConfigError(_NO_DUK)
+            self._duk = DukIntegrator(self.config.duk_dir, java=self.config.duk_java)
+        return self._duk
 
     def auth_status(self) -> AuthStatus:
         """Report whether a usable ANAF session is present (read-only)."""

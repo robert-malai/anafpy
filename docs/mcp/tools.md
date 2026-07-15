@@ -110,6 +110,22 @@ resource `spvmsg://<mesaj_id>/pdf` — a disk-free path for hosts with resource
 UX. It needs an active SPV session (a resource read can't ask for a login);
 `spv_descarca` remains the save-to-disk path.
 
+## Declarations — author, validate, render, sign (local, no filing yet)
+
+Prepare tax declarations (D300 VAT return first) entirely on your machine:
+ANAF's own DUKIntegrator validates and renders the official PDF, and your
+qualified certificate signs it. Nothing is filed with ANAF in this release —
+you file the signed PDF on the portal. These tools need `ANAFPY_DUK_DIR` set,
+and signing is macOS-only for now.
+
+| Tool | What it does |
+|---|---|
+| `declaratie_validate` | Validate a declaration with ANAF's own DUKIntegrator (authoritative); returns its findings verbatim — the compose→validate→fix loop |
+| `declaratie_render` | Render the official multi-page PDF (XML embedded) to a path you name; validates first, so a failure writes no PDF |
+| `declaratie_sign` | Sign a rendered PDF with your qualified certificate — requires your explicit approval (`confirm=true`) since it fires your PIN/2FA prompt; failures come back as `signed=false` + guidance |
+| `declaratie_nr_evid` | Compose the D300 `nr_evid` payment-evidence number (it has a check digit — never compute it by hand) |
+| `declaratie_duk_status` | The DUKIntegrator install: directory, Java version, and installed-vs-current validator versions (CLI-mode DUK does not auto-update) |
+
 ## Resources and prompts
 
 The compiled [ANAF API reference](../anaf-reference/README.md) is served as
@@ -130,6 +146,9 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_SKILLS_DIR` | Workflow skills served as prompts (defaults to the repo's `skills/`) |
 | `ANAFPY_SPV_SESSION` | SPV cookie-session store written by `anafpy spv login` (default `~/.anafpy/spv-session.json`) |
 | `ANAFPY_SPV_IDENTITY_FILE` | Persisted SPV certificate selection (default `~/.anafpy/spv-identity.json`) |
+| `ANAFPY_DUK_DIR` | The extracted DUKIntegrator `dist/` folder — enables the `declaratie_*` tools (no default) |
+| `ANAFPY_DUK_JAVA` | The `java` binary DUKIntegrator runs under (optional; falls back to `java` on `PATH`) |
+| `ANAFPY_SIGN_IDENTITY` | Keychain identity name to sign declarations with (optional; falls back to the persisted SPV certificate selection) |
 
 The OAuth certificate/browser login stays host-side (`anafpy auth login` —
 it structurally needs a browser; the server only reads and headlessly

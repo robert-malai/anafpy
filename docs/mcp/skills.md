@@ -59,3 +59,26 @@ walks Claude through:
 Because it only uses the read-only `spv_*` tools, there is no filing gate — the
 human gate here is the SPV login (certificate PIN / 2FA), described in the
 [setup walkthrough](setup.md) step 7.
+
+## `declaratie-compose`
+
+Composes, validates, renders, and signs a Romanian tax declaration (D300 VAT
+return first; the flow is per-form generic) from unstructured information. It
+drives the local `declaratie_*` tools — nothing is filed with ANAF here; you file
+the signed PDF on the portal. The playbook walks Claude through:
+
+1. **Orient** — `declaratie_duk_status` confirms DUKIntegrator is configured and
+   flags a stale validator.
+2. **Fetch the form's XSD** as the authoring template (DUKIntegrator generates no
+   templates) and author the XML from it.
+3. **Compute `nr_evid`** with `declaratie_nr_evid`, never by hand.
+4. **Validate in a loop** — `declaratie_validate`; the findings are ANAF's own
+   messages, so fix the XML and retry until `ok`.
+5. **Render and review** — `declaratie_render` writes the official PDF for you to
+   check.
+6. **Sign on your explicit go** — `declaratie_sign` with `confirm=true`, after a
+   warning that the certificate PIN/2FA prompt is about to fire.
+7. **Hand off** — the signed PDF path, to file at anaf.ro → Depunere declarații.
+
+The human gate here is the signature approval (certificate PIN / 2FA); the skill
+never signs without your explicit go-ahead relayed as `confirm=true`.

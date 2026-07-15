@@ -68,8 +68,16 @@ invoicing system.
 Python **3.12+** (floor set by PEP 695 syntax in the flat models and lookups; dev
 pin is 3.13), **httpx**, **Pydantic v2**.
 
+Since shipped, expanding the original scope: **SPV** (read-only mailbox, cert-mTLS
+— landed 2026-07-12, §11 notwithstanding its earlier "out of scope" listing) and
+**declaration authoring + signing** (`anafpy.declaratii`, landing 2026-07-15 —
+local D300 authoring, DUKIntegrator validation, qualified signing; see §12).
+**Filing declarations with ANAF stays out of scope** for now (there is no SPV
+declaration-upload API; portal upload is a later milestone).
+
 Out of scope: local persistence of documents; reconciliation / accounting logic;
-inbound e-Transport; SPV; e-TVA; CII syntax; e-Transport API v1; a sync facade
+inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; **filing tax
+declarations** (authoring + signing only, for now); a sync facade
 *(dropped 2026-07-03 — the consumers that exist are async: the MCP server and
 `asyncio.run` scripts; was to be generated via `unasync`)*.
 
@@ -589,3 +597,60 @@ never-self-approve rules the two-step gate assumes. After the PyPI release: an
 MCPB bundle for Claude Desktop (`server.type: "uv"` so the host manages Python;
 `user_config` with `sensitive` fields → OS keychain, mapped onto the existing
 `ANAFPY_*` env vars) — a thin wrapper over `anafpy[mcp]`.
+
+## 12. Declarations (authoring + signing)
+
+> Landed 2026-07-15 (`anafpy.declaratii`, M1). Scope: **local document
+> generation and signing only, exposed via MCP.** Filing the signed document
+> with ANAF (portal upload + recipisa tracking) is a later milestone and
+> deliberately out of scope here.
+
+**The problem.** A taxpayer with no upstream software needs to produce a valid,
+signed tax declaration (D300 VAT return first; the design is per-form generic).
+Unlike e-Factura/e-Transport, ANAF exposes **no submission web service** for
+declarations — filing is a portal upload behind the same F5 APM cert wall as SPV.
+So M1 stops at a signed PDF the user files manually; M2 will automate the upload.
+
+**Pipeline** (all local, no ANAF host): unstructured info → author the XML from
+the form's XSD → **DUKIntegrator `-v`** (validate-fix loop until `ok`) →
+**DUKIntegrator `-p`** (official PDF with the XML embedded) → **pyHanko + a
+platform raw-signer** (qualified signature) → signed PDF on disk.
+
+**Must-keep invariants.**
+
+1. **anafpy never touches key material.** The raw RSASSA-PKCS1-v1_5/SHA-256
+   signature is delegated to the OS (Security.framework on macOS; CNG or
+   DUK+PKCS#11 on Windows later); the PIN/2FA is owned by the token middleware.
+   **No MCP tool accepts a PIN — ever** (it would enter model context). The raw
+   signer is a `RawSigner` protocol (`certificate()` + async `sign()`); its macOS
+   implementation is `KeychainRawSigner`, ctypes against Security.framework
+   (`SecKeyCreateSignature`), chosen over a compiled Swift helper (a toolchain
+   dependency) and over `pyobjc` (a heavy runtime dependency; kept as the
+   documented fallback).
+2. **Validation authority is ANAF's.** DUK's per-form validator jars *are* ANAF's
+   code; anafpy runs them and never re-implements a rule. The one composed value,
+   the D300 `nr_evid` payment-evidence number, is a pure function (decoded from
+   the validator bytecode, confirmed against the annex example and a live `-v`) —
+   composition, not validation. Success is judged by the err-file content, never
+   by DUK's exit code (`0` even on failure).
+3. **Signing is consequential.** `declaratie_sign` is gated on `confirm=true`
+   (the model must relay the user's explicit ask), one attempt per call, failures
+   returned as `signed=false` + guidance (mirroring `spv_login`, not exceptions).
+   There is **no two-step filing gate** — nothing is filed with ANAF in M1.
+4. **Binary artifacts go to disk** at caller-given paths through the shared
+   `write_artifact` collision guard, never base64 into context.
+
+**The CryptoTokenKit finding.** On macOS, certSIGN Paperless vToken is a
+CryptoTokenKit extension with **no PKCS#11 dylib**, so DUK's `sunpkcs11` signing
+path (and Windows-only `mscapi`) cannot reach the key — it is reachable only
+through Security.framework, and CPython's `ssl` cannot present a non-exportable
+platform-store key. This is why signing is a separate pyHanko + raw-signer path
+rather than DUK `-s`, and why M1 signing is **macOS-only**; Windows follows over
+the same `RawSigner` seam. Details and the proven Swift reference semantics live
+in [the DUK reference](docs/anaf-reference/declaratii/duk.md).
+
+**Distribution.** Signing needs the optional `anafpy[declaratii]` extra
+(pyHanko); the tools import-guard and raise a "install anafpy[declaratii]"
+`AnafConfigError` when it is absent, like the `mcp` extra. DUKIntegrator is the
+user's to install (like the OAuth app and the certificate): pointed at via
+`ANAFPY_DUK_DIR`, staleness checked, never auto-installed.

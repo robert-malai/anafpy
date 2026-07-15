@@ -19,6 +19,7 @@ import sys
 import time
 import webbrowser
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 
@@ -46,6 +47,9 @@ from ..spv import (
     save_selected_identity,
 )
 from ..spv.certs import DEFAULT_IDENTITY_PATH
+
+if TYPE_CHECKING:
+    from ..declaratii import DukFinding, DukIntegrator
 
 DEFAULT_STORE = "~/.anafpy/tokens.json"
 
@@ -349,6 +353,79 @@ def _cmd_spv_logout(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- declaratii -------------------------------------------------------------------
+
+
+def _duk(args: argparse.Namespace) -> DukIntegrator:
+    """Build the DUKIntegrator wrapper from ``--duk-dir`` / ``ANAFPY_DUK_DIR``."""
+    from ..declaratii import DukIntegrator
+
+    if not args.duk_dir:
+        raise AnafConfigError(
+            "no DUKIntegrator directory — pass --duk-dir or set ANAFPY_DUK_DIR to "
+            "the extracted dist/ folder"
+        )
+    return DukIntegrator(Path(args.duk_dir).expanduser(), java=args.java)
+
+
+def _print_findings(findings: list[DukFinding]) -> None:
+    for finding in findings:
+        print(f"{finding.severity.upper()}: {finding.message}")
+
+
+def _cmd_decl_validate(args: argparse.Namespace) -> int:
+    duk = _duk(args)
+    xml = Path(args.xml).expanduser().read_bytes()
+    result = asyncio.run(duk.validate(args.form, xml, option=args.option))
+    if result.ok:
+        print(f"✓ {args.form} is valid.")
+        return 0
+    _print_findings(result.findings)
+    return 1
+
+
+def _cmd_decl_render(args: argparse.Namespace) -> int:
+    duk = _duk(args)
+    xml = Path(args.xml).expanduser().read_bytes()
+    out = Path(args.output).expanduser()
+    result = asyncio.run(duk.render(args.form, xml, out, option=args.option))
+    if not result.ok:
+        print("validation failed; no PDF written:", file=sys.stderr)
+        _print_findings(result.findings)
+        return 1
+    print(f"✓ Rendered {args.form} -> {out}")
+    return 0
+
+
+def _cmd_decl_sign(args: argparse.Namespace) -> int:
+    try:
+        from ..declaratii import pdfsign
+    except ModuleNotFoundError as exc:
+        raise AnafConfigError(
+            "signing needs the anafpy[declaratii] extra — "
+            "install it with `pip install 'anafpy[declaratii]'`"
+        ) from exc
+    from ..declaratii.signing import KeychainRawSigner, resolve_signing_label
+
+    label = resolve_signing_label(args.identity, identity_path=args.identity_file)
+    source = Path(args.pdf).expanduser()
+    out = (
+        Path(args.output).expanduser()
+        if args.output
+        else source.with_name(f"{source.stem}-semnat.pdf")
+    )
+    print(f"Signing with identity {label!r}.")
+    print("Answer the certificate PIN / 2FA prompt when it appears.", flush=True)
+    signer = KeychainRawSigner(label)
+    result = asyncio.run(pdfsign.sign_pdf(source.read_bytes(), signer))
+    out.write_bytes(result.pdf)
+    print(f"\n✓ Signed -> {out}")
+    if not result.chain_complete and result.warning:
+        print(f"  note: {result.warning}")
+    print("  File it at anaf.ro → Depunere declarații → Transmitere declarații.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="anafpy",
@@ -439,7 +516,63 @@ def build_parser() -> argparse.ArgumentParser:
     _add_spv_args(spv_logout)
     spv_logout.set_defaults(func=_cmd_spv_logout)
 
+    decl = sub.add_parser(
+        "declaratii", help="tax-declaration validation, rendering, and signing"
+    ).add_subparsers(dest="declaratii_cmd", required=True)
+
+    decl_validate = decl.add_parser(
+        "validate", help="validate a declaration with DUKIntegrator"
+    )
+    decl_validate.add_argument("form", help="form name, e.g. D300")
+    decl_validate.add_argument("xml", help="path to the declaration XML")
+    _add_duk_args(decl_validate)
+    decl_validate.set_defaults(func=_cmd_decl_validate)
+
+    decl_render = decl.add_parser(
+        "render", help="render the official PDF (validates first)"
+    )
+    decl_render.add_argument("form", help="form name, e.g. D300")
+    decl_render.add_argument("xml", help="path to the declaration XML")
+    decl_render.add_argument("-o", "--output", required=True, help="output PDF path")
+    _add_duk_args(decl_render)
+    decl_render.set_defaults(func=_cmd_decl_render)
+
+    decl_sign = decl.add_parser(
+        "sign", help="sign a rendered PDF with the qualified certificate (macOS)"
+    )
+    decl_sign.add_argument("pdf", help="path to the rendered PDF to sign")
+    decl_sign.add_argument(
+        "-o", "--output", help="signed PDF path (default: <name>-semnat.pdf)"
+    )
+    decl_sign.add_argument(
+        "--identity",
+        help="Keychain identity name to sign with; overrides ANAFPY_SIGN_IDENTITY "
+        "and the persisted SPV certificate selection",
+    )
+    decl_sign.add_argument(
+        "--identity-file",
+        default=os.environ.get("ANAFPY_SPV_IDENTITY_FILE", DEFAULT_IDENTITY_PATH),
+        help="persisted certificate selection; default from ANAFPY_SPV_IDENTITY_FILE",
+    )
+    decl_sign.set_defaults(func=_cmd_decl_sign)
+
     return parser
+
+
+def _add_duk_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--duk-dir",
+        default=os.environ.get("ANAFPY_DUK_DIR"),
+        help="the extracted DUKIntegrator dist/ folder; default from ANAFPY_DUK_DIR",
+    )
+    parser.add_argument(
+        "--java",
+        default=os.environ.get("ANAFPY_DUK_JAVA"),
+        help="the java binary to run DUKIntegrator with; default from ANAFPY_DUK_JAVA",
+    )
+    parser.add_argument(
+        "--option", type=int, default=0, help="DUKIntegrator valOption (default 0)"
+    )
 
 
 def _add_spv_args(parser: argparse.ArgumentParser) -> None:

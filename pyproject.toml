@@ -42,6 +42,11 @@ dependencies = [
 # mcp>=1.10: display `title` on tools (spec 2025-06-18).
 # python-frontmatter>=1.3: skills/*/SKILL.md -> MCP prompts (1.3 ships py.typed).
 mcp = ["mcp>=1.10", "pydantic-settings>=2.4", "python-frontmatter>=1.3"]
+# Declaration signing: pyHanko embeds the qualified signature into the DUK-rendered
+# PDF (the raw RSA op is delegated to the OS via anafpy.declaratii.signing — no key
+# material here). asn1crypto comes in transitively via pyHanko; pinned here because
+# pdfsign uses it directly for the leaf/AIA chain.
+declaratii = ["pyhanko>=0.25", "asn1crypto>=1.5"]
 
 [project.scripts]
 anafpy = "anafpy.cli.main:main"
@@ -98,6 +103,10 @@ strict = true
 files = ["src", "tests"]
 # Generated UBL/e-Transport model packages are excluded from strict typing.
 exclude = ['(^|/)(ubl|schema)/']
+# pyHanko ships py.typed but leaves many pdf_utils constructors unannotated; the
+# declaration signer (pdfsign) and its tests call them. Exempt calls INTO pyHanko
+# from the strict no-untyped-call rule without loosening our own code.
+untyped_calls_exclude = ["pyhanko"]
 
 [tool.pyright]
 # Mirrors the ruff/mypy stance for Pylance users: the generated model packages are
@@ -110,7 +119,7 @@ exclude = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["xsdata_pydantic.*", "respx.*"]
+module = ["xsdata_pydantic.*", "respx.*", "asn1crypto.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]

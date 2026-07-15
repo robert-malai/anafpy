@@ -296,6 +296,41 @@ it asks for your confirmation, then your token's PIN/2FA prompt fires as usual;
 approving it on your device completes the login. The terminal command keeps
 working too.
 
+## Step 8 (optional) — Unlock the declaration tools
+
+The `declaratie_*` tools let Claude fill in, validate, render, and **sign** a tax
+declaration (D300 VAT return first) on your computer. Nothing is filed with ANAF
+through them yet — Claude produces a signed PDF you then upload on the portal.
+Signing is macOS-only for now.
+
+These tools run ANAF's own desktop validator, **DUKIntegrator**, so you install
+it once:
+
+1. Download
+   [`dist_javaInclus20200203.zip`](https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip)
+   and extract it. You get a `dist/` folder — that is what Claude points at.
+2. Add the validator for each form you file. From ANAF's declaration pages (e.g.
+   the D300 page under `static.anaf.ro/.../Declaratii_R/`), download the form's
+   `…Validator.jar` and `…Pdf.jar` and drop them into `dist/lib/`.
+3. Make sure you have **Java** (a JRE/JDK, version 8 or newer) installed —
+   `java -version` in a terminal should print a version.
+
+Then point the server at the `dist/` folder by adding one line to the `env` block
+from step 5:
+
+```json
+        "ANAFPY_DUK_DIR": "/Users/you/DUKIntegrator/dist"
+```
+
+Restart Claude and ask *"check the declaration setup"* — Claude runs
+`declaratie_duk_status`, which confirms the install and warns if a validator is
+out of date (the command-line DUKIntegrator does not auto-update, unlike its
+desktop window). Signing uses the **same qualified certificate** as SPV (step 7):
+if you selected one there, the declaration signer reuses it; otherwise set
+`"ANAFPY_SIGN_IDENTITY"` to the certificate's Keychain name. When Claude signs, it
+warns you first, then your token's PIN/2FA prompt fires — approving it on your
+device produces the signed PDF.
+
 ## Good to know
 
 - **Production vs. test**: the server talks to **production** ANAF by default. To

@@ -1,0 +1,231 @@
+"""Declaration MCP tools — author, validate, render, and sign locally.
+
+The whole flow is local: DUKIntegrator (ANAF's own validator/renderer) runs
+``-v``/``-p`` in a subprocess, and the qualified signature is embedded with
+pyHanko while the raw RSA op is delegated to the OS token middleware — no key
+material or PIN ever enters this process (``DESIGN.md`` invariant). Filing the
+signed PDF with ANAF is manual in this milestone (point the user at the portal);
+a later milestone automates the upload.
+
+Validation authority is ANAF's: ``declaratie_validate`` runs DUK's per-form
+validator and returns its findings verbatim — the model's iteration loop is
+"validate → fix the XML → validate again" until ``ok``. Signing is
+consequential, so ``declaratie_sign`` is gated on ``confirm=true`` and fires the
+user's out-of-band approval; it mirrors ``spv_login``'s contract (failures come
+back as ``signed=false`` + guidance, never as exceptions). PDFs are written to
+caller-given paths through the shared ``write_artifact`` collision guard, never
+returned as base64.
+"""
+
+from __future__ import annotations
+
+import tempfile
+from pathlib import Path
+
+from mcp.server.fastmcp import FastMCP
+
+from ...declaratii import payment_evidence_number
+from ...declaratii.signing import KeychainRawSigner, resolve_signing_label
+from ...exceptions import AnafConfigError, AnafError
+from ..artifacts import ARTIFACT_SAVING, MUTATING, READ_ONLY, write_artifact
+from ..config import ServerConfig
+from ..context import AppContext
+from .models import (
+    DeclarationXmlInput,
+    NrEvidResult,
+    RenderResult,
+    SignResult,
+    ValidationResult,
+)
+
+__all__ = ["register"]
+
+_INSTALL_HINT = (
+    "declaration signing needs the anafpy[declaratii] extra — install it "
+    "(pip install 'anafpy[declaratii]') and restart the server"
+)
+
+_FILE_IT = (
+    "file the signed PDF manually at anaf.ro → Depunere declarații → Transmitere "
+    "declarații (portal upload is automated in a later release)"
+)
+
+
+def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
+    @mcp.tool(
+        title="Declarations: validate",
+        annotations=READ_ONLY,
+        description="Validate a tax declaration with ANAF's own DUKIntegrator "
+        "validator (authoritative). `form` is the form name exactly as ANAF "
+        "spells the validator (e.g. 'D300', 'D112'); pass the document as "
+        '{"xml": ...} or {"path": ...}. Returns {ok, findings}: on ok=false, '
+        "`findings` are DUK's own error/warning messages verbatim — fix the XML "
+        "and call again (typical convergence is under 6 rounds). This is the "
+        "authoring loop; nothing is filed.",
+    )
+    async def declaratie_validate(
+        document: DeclarationXmlInput, form: str, option: int = 0
+    ) -> ValidationResult:
+        try:
+            xml = document.resolve()
+            result = await ctx.duk().validate(form, xml, option=option)
+        except AnafError as exc:
+            return ValidationResult(ok=False, form=form, message=str(exc))
+        return ValidationResult(ok=result.ok, form=form, findings=result.findings)
+
+    @mcp.tool(
+        title="Declarations: render PDF",
+        annotations=ARTIFACT_SAVING,
+        description="Render the official multi-page PDF for a declaration (with "
+        "the XML embedded) to disk via DUKIntegrator `-p`, and return the saved "
+        "path. `form` and the document input are as for declaratie_validate; the "
+        "document is validated first, so a validation failure writes NO PDF and "
+        "returns the findings (ok=false). Name the file with `save_pdf_as` (a "
+        "full path); an existing file is never replaced unless overwrite=true. "
+        "The binary never enters the context — sign it next with declaratie_sign.",
+    )
+    async def declaratie_render(
+        document: DeclarationXmlInput,
+        form: str,
+        save_pdf_as: str,
+        option: int = 0,
+        overwrite: bool = False,
+    ) -> RenderResult:
+        try:
+            xml = document.resolve()
+            # Fail a name collision BEFORE running DUK.
+            target = Path(save_pdf_as).expanduser()
+            if target.exists() and not overwrite:
+                raise AnafConfigError(
+                    f"refusing to overwrite existing file {target} — pick another "
+                    "name, or pass overwrite=true to replace it deliberately"
+                )
+            with tempfile.TemporaryDirectory(prefix="anafpy-decl-") as tmp:
+                tmp_pdf = Path(tmp) / "out.pdf"
+                result = await ctx.duk().render(form, xml, tmp_pdf, option=option)
+                if not result.ok:
+                    return RenderResult(
+                        ok=False,
+                        form=form,
+                        findings=result.findings,
+                        message="validation failed; no PDF was written",
+                    )
+                pdf_bytes = tmp_pdf.read_bytes()
+            path = write_artifact(save_pdf_as, pdf_bytes, overwrite=overwrite)
+        except AnafError as exc:
+            return RenderResult(ok=False, form=form, message=str(exc))
+        return RenderResult(ok=True, form=form, pdf_path=path)
+
+    @mcp.tool(
+        title="Declarations: sign",
+        annotations=MUTATING,
+        description="Sign a rendered declaration PDF with the user's qualified "
+        "certificate (macOS only in this release). THIS FIRES THE USER'S "
+        "PIN/2FA APPROVAL PROMPT on their token or phone — warn them it is coming, "
+        "and call this only after they explicitly approve, passing confirm=true. "
+        "`pdf_path` is a declaratie_render output; the signed PDF defaults to "
+        "'<name>-semnat.pdf' next to it, or set `save_as`. One attempt per call; "
+        "a dismissed/timed-out approval or a missing certificate returns "
+        "signed=false + guidance (not an error) — ask the user and retry. On "
+        "success reports the signed path and whether the issuer chain was "
+        "completed; then " + _FILE_IT + ".",
+    )
+    async def declaratie_sign(
+        pdf_path: str,
+        save_as: str | None = None,
+        confirm: bool = False,
+        overwrite: bool = False,
+    ) -> SignResult:
+        if not confirm:
+            return SignResult(
+                signed=False,
+                guidance="declaratie_sign fires the user's certificate PIN/2FA "
+                "prompt — get their explicit approval, warn them the prompt is "
+                "coming, then call again with confirm=true",
+            )
+        source = Path(pdf_path).expanduser()
+        target = (
+            save_as
+            if save_as is not None
+            else str(source.with_name(f"{source.stem}-semnat.pdf"))
+        )
+        try:
+            pdf_bytes = source.read_bytes()
+        except OSError as exc:
+            return SignResult(signed=False, guidance=f"cannot read {pdf_path}: {exc}")
+        try:
+            from ...declaratii import pdfsign
+        except ModuleNotFoundError:
+            return SignResult(signed=False, guidance=_INSTALL_HINT)
+        try:
+            label = resolve_signing_label(
+                config.sign_identity, identity_path=config.spv_identity_path
+            )
+            signer = KeychainRawSigner(label)
+            signed = await pdfsign.sign_pdf(pdf_bytes, signer)
+            path = write_artifact(target, signed.pdf, overwrite=overwrite)
+        except AnafError as exc:
+            return SignResult(signed=False, guidance=str(exc))
+        guidance = _FILE_IT
+        if signed.warning is not None:
+            guidance = f"{signed.warning}; {guidance}"
+        return SignResult(
+            signed=True,
+            pdf_path=path,
+            chain_complete=signed.chain_complete,
+            guidance=guidance,
+        )
+
+    @mcp.tool(
+        title="Declarations: payment-evidence number",
+        annotations=READ_ONLY,
+        description="Compose the D300 `nr_evid` (numărul de evidență a plății), "
+        "the required 23-character payment-evidence number, from the settlement "
+        "type and reporting period. `tip_decont` is one of L (monthly), T "
+        "(quarterly), S, A; `luna` is 1-12; `an` is the four-digit year. Always "
+        "use this — never compute the number (its check digit) by hand.",
+    )
+    def declaratie_nr_evid(tip_decont: str, luna: int, an: int) -> NrEvidResult:
+        try:
+            number = payment_evidence_number(tip_decont=tip_decont, luna=luna, an=an)
+        except ValueError as exc:
+            raise AnafConfigError(str(exc)) from exc
+        return NrEvidResult(nr_evid=number, tip_decont=tip_decont, luna=luna, an=an)
+
+    @mcp.tool(
+        title="Declarations: DUKIntegrator status",
+        annotations=READ_ONLY,
+        description="Report the DUKIntegrator installation: its directory, the "
+        "Java version, and the per-form validators installed versus ANAF's update "
+        "feed (a staleness table). CLI-mode DUK does NOT auto-update, so an "
+        "installed validator can lag ANAF's current one — surface that to the "
+        "user. The feed fetch is best-effort; offline, only the installed "
+        "versions are reported.",
+    )
+    async def declaratie_duk_status() -> dict[str, object]:
+        duk = ctx.duk()  # raises AnafConfigError with the how-to-enable message
+        installed = duk.installed_forms()
+        java = await duk.java_version()
+        result: dict[str, object] = {
+            "duk_dir": str(duk.duk_dir),
+            "java": java,
+            "installed_forms": installed,
+        }
+        try:
+            feed = await duk.feed_versions()
+        except AnafError as exc:
+            result["feed_error"] = str(exc)
+            result["note"] = (
+                "could not reach ANAF's update feed; showing installed versions only"
+            )
+            return result
+        result["forms"] = [
+            {
+                "form": form,
+                "installed": version,
+                "current": feed.get(form, "unknown"),
+                "stale": form in feed and feed[form] != version,
+            }
+            for form, version in sorted(installed.items())
+        ]
+        return result

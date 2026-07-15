@@ -97,6 +97,15 @@ no-auth services):
 - **See exactly which companies your certificate can query** — SPV reports the
   authorization inventory on every call.
 
+**Prepare and sign a tax declaration** (D300 VAT return first — local, macOS signing):
+
+- **Fill in, validate, render, and sign a declaration** from unstructured info —
+  Claude authors the XML, validates it with ANAF's own DUKIntegrator (the
+  authority) in a fix-and-retry loop, renders the official PDF, and signs it with
+  your qualified certificate (the PIN/2FA prompt is the human gate).
+- **Filing is not automated yet** — you upload the signed PDF on the portal;
+  automating that is the next milestone.
+
 Setup caveats worth knowing: the e-Factura and e-Transport tools need a one-time login
 with your **qualified digital certificate** (the same one you use on ANAF's SPV) — the
 public checks above work without it. The server runs **locally** on your own machine,
@@ -175,6 +184,12 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   Cowork skills: read-first, with two-step gated filing for **both** services —
   e-Factura invoices (ready-made XML or composed from structured fields) and
   e-Transport declarations (see below).
+- **Declarations** (`anafpy.declaratii`, signing via `anafpy[declaratii]`) —
+  local authoring/validation/signing of tax declarations (D300 first): a
+  DUKIntegrator wrapper (`-v`/`-p`), the `nr_evid` composer, and a pyHanko
+  qualified-signature path where the raw op is delegated to the OS token
+  (macOS Keychain / CryptoTokenKit; no key material in-process). Filing is a
+  later milestone.
 
 A sync facade was dropped as a goal — the clients are async-only.
 
@@ -188,11 +203,13 @@ short version for developers:
 From [PyPI](https://pypi.org/project/anafpy/):
 
 ```bash
-pip install anafpy        # or: uv add anafpy
-pip install 'anafpy[mcp]' # with the MCP server
+pip install anafpy               # or: uv add anafpy
+pip install 'anafpy[mcp]'        # with the MCP server
+pip install 'anafpy[declaratii]' # with declaration signing (pyHanko)
 ```
 
-The distribution offers one extra: `anafpy[mcp]` (the MCP server).
+The distribution offers two extras: `anafpy[mcp]` (the MCP server) and
+`anafpy[declaratii]` (declaration signing).
 
 For the MCP server, prefer running from a **checkout** (as the setup walkthrough
 does): the
