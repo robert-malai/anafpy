@@ -299,9 +299,14 @@ argument (seed data). Body playbook:
 1. Gather the facts from the user/source; state assumptions explicitly.
 2. Check `declaratie_duk_status` (stale validator → tell the user, continue
    with a caveat).
-3. Author the XML against the form's XSD conventions (attributes on a single
-   root; the D300 v12 namespace and the Appendix C template are the worked
-   example). Compute `nr_evid` via the tool, never by hand.
+3. Fetch the form's current XSD from its page
+   (`static.anaf.ro/static/10/Anaf/Declaratii_R/<nnn>.html` → the
+   `d<nnn>_v<NN>_<date>.xml` link) — the XSD is the authoring template: DUK
+   itself never generates templates or skeleton XML (verified against the jar,
+   2026-07-15; its surface is validate/render/sign only). Author the XML from
+   the XSD (attributes on a single root; the D300 v12 namespace and the
+   Appendix C template are the worked example). Compute `nr_evid` via the
+   tool, never by hand.
 4. Loop `declaratie_validate` until `ok` — findings are ANAF's own messages;
    fix and retry (typical convergence: <6 rounds).
 5. `declaratie_render` to the user's chosen path; show the summary (period,
