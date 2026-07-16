@@ -313,7 +313,15 @@ it once:
    the D300 page under `static.anaf.ro/.../Declaratii_R/`), download the form's
    `…Validator.jar` and `…Pdf.jar` and drop them into `dist/lib/`.
 3. Make sure you have **Java** (a JRE/JDK, version 8 or newer) installed —
-   `java -version` in a terminal should print a version.
+   `java -version` in a terminal should print a version. (anafpy only runs
+   DUKIntegrator's *validate* and *render* steps, which work on any modern JVM;
+   the Java-8-only limitation you may read about applies to DUK's own signing,
+   which anafpy does not use.)
+
+   On macOS, the community [nokeect/duk-integrator-macos](https://github.com/nokeect/duk-integrator-macos)
+   project automates this whole install (Java, the kit download, and config fixes)
+   — a useful reference, though anafpy signs through your certificate itself rather
+   than through DUKIntegrator.
 
 Then point the server at the `dist/` folder by adding one line to the `env` block
 from step 5:

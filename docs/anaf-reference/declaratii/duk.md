@@ -12,6 +12,9 @@ sources:
   - url: https://static.anaf.ro/static/10/Anaf/Declaratii_R/AplicatiiDec/d300_v12_11022026.xml
     title: "D300 v12 XSD (the .xml extension notwithstanding, it is the schema)"
     retrieved: 2026-07-15
+  - url: https://github.com/nokeect/duk-integrator-macos
+    title: "Community macOS DUKIntegrator setup (AXIOM ADVISORY): offLine=Y silent-exit fix, Java-8 pin, SafeNet PKCS#11 signing config"
+    retrieved: 2026-07-16
 compiled: 2026-07-15
 compiled_by: claude-opus-4-8
 last_verified: 2026-07-15
@@ -43,6 +46,18 @@ certSIGN Paperless vToken).
   go into `dist/lib/`. **The GUI mode auto-updates; the CLI mode does not** —
   staleness must be surfaced (anafpy's `declaratie_duk_status` /
   `DukIntegrator.feed_versions` compare installed against the feed).
+
+### Silent-exit-on-update escape hatch (`offLine=Y`)
+
+anafpy's `-v`/`-p` runs did not hit this, but it is worth knowing: DUK's startup
+update check uses **hardcoded Windows paths**, and on a non-Windows host it can
+make the app **silently exit** (exit `0`, no err file, no PDF). The fix, from the
+community macOS setup ([nokeect/duk-integrator-macos]), is to disable the check by
+setting `offLine=Y` in a `config/config.properties` and pointing DUK at it with the
+CLI's `-c <configPath>` flag (see §2). If a CLI run ever exits cleanly but produces
+nothing, this is the first thing to try.
+
+[nokeect/duk-integrator-macos]: https://github.com/nokeect/duk-integrator-macos
 
 ## 2. CLI contract
 
@@ -149,6 +164,15 @@ helper.
   `http://crl.certsign.ro/certsign-qualifiedca2023rsa.crt`).
 - Windows follows in a later milestone (a `CngRawSigner` via CNG, or DUK `-s`
   with `mscapi`), over the same raw-signer seam.
+- **Why not DUK's own `-s` on macOS?** The community setup
+  ([nokeect/duk-integrator-macos]) does sign through DUK, by wiring `safeNet.cfg`'s
+  `library=` at a **SafeNet** PKCS#11 dylib (`/usr/local/lib/libeTPkcs11.dylib`).
+  anafpy deliberately does not: that path is **SafeNet-only** (it needs a vendor
+  `.dylib` — the certSIGN vToken above ships none), **pins Java 8** (DUK's signing
+  leans on removed `sun.security.pkcs11` internals, so Java 9+ breaks it — the
+  reason that project pins Zulu 8), and would route the **PIN through DUK's
+  process**. Our Security.framework path avoids all three and works for a
+  CryptoTokenKit token that has no PKCS#11 module at all.
 
 anafpy ports the raw-signing semantics to **ctypes against Security.framework**
 (no build step, no new dependency) in `anafpy.declaratii.signing`. The proven
