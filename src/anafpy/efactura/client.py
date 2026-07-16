@@ -161,8 +161,11 @@ class EFacturaClient:
     """Talks to ANAF e-Factura over OAuth2.
 
     Construct with an authenticated :class:`~anafpy.auth.provider.TokenProvider`; the
-    client owns an ``httpx.AsyncClient`` (unless one is injected) and should be used as
-    an async context manager so it is closed cleanly.
+    client owns an ``httpx.AsyncClient`` (unless one is injected — it must then
+    carry :class:`~anafpy.auth.oauth.AnafAuth` and be configured with the
+    service ``base_url``, ``service_base_url(Service.EFACTURA, environment)``
+    plus a trailing slash) and should be used as an async context manager so it
+    is closed cleanly.
     """
 
     def __init__(
@@ -173,9 +176,14 @@ class EFacturaClient:
         http: httpx.AsyncClient | None = None,
         timeout: float = 60.0,
     ) -> None:
-        self._base_url = service_base_url(Service.EFACTURA, environment)
         self._owns_http = http is None
-        self._http = http or httpx.AsyncClient(auth=AnafAuth(provider), timeout=timeout)
+        # The env-specific service prefix rides the client's base_url; requests
+        # use relative paths (the trailing slash matters — httpx concatenates).
+        self._http = http or httpx.AsyncClient(
+            auth=AnafAuth(provider),
+            timeout=timeout,
+            base_url=f"{service_base_url(Service.EFACTURA, environment)}/",
+        )
 
     async def __aenter__(self) -> Self:
         return self
@@ -203,10 +211,9 @@ class EFacturaClient:
         content: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
-        url = f"{self._base_url}/{path}"
         try:
             response = await self._http.request(
-                method, url, params=params, content=content, headers=headers
+                method, path, params=params, content=content, headers=headers
             )
         except httpx.HTTPError as exc:  # connect/read/timeout/etc.
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
@@ -468,6 +475,9 @@ class EFacturaClient:
                 signature.encode() if isinstance(signature, str) else signature,
             ),
         }
+        # Absolute deliberately: this endpoint lives outside the client's
+        # base_url prefix (no FCTEL/rest, no env segment); httpx passes
+        # absolute URLs through unmerged.
         url = f"{OAUTH_HOST}/api/validate/signature"
         try:
             response = await self._http.post(url, files=files)

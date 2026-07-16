@@ -160,8 +160,9 @@ class DeclarationStatusClient:
     """Checks filed declarations on ANAF's public StareD112 service.
 
     No credentials are needed (the service is public and unauthenticated); the
-    client owns an ``httpx.AsyncClient`` (unless one is injected) and should be
-    used as an async context manager so it is closed cleanly. Like the other
+    client owns an ``httpx.AsyncClient`` (unless one is injected — it must then
+    be configured with ``base_url="https://www.anaf.ro"``) and should be used
+    as an async context manager so it is closed cleanly. Like the other
     discrete client methods, it does **no transport retry** — one call, one
     result-or-raise.
     """
@@ -173,7 +174,7 @@ class DeclarationStatusClient:
         timeout: float = 60.0,
     ) -> None:
         self._owns_http = http is None
-        self._http = http or httpx.AsyncClient(timeout=timeout)
+        self._http = http or httpx.AsyncClient(timeout=timeout, base_url=_STARE_HOST)
 
     async def __aenter__(self) -> Self:
         return self
@@ -226,7 +227,7 @@ class DeclarationStatusClient:
             "cui": _digits(cui, name="cui", strip_ro=True),
         }
         try:
-            response = await self._http.post(f"{_STARE_HOST}{_STATUS_PATH}", data=data)
+            response = await self._http.post(_STATUS_PATH, data=data)
         except httpx.HTTPError as exc:
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
         raise_for_status(response)
@@ -247,9 +248,7 @@ class DeclarationStatusClient:
         """
         params = {"numefisier": f"{_digits(index, name='index')}.pdf"}
         try:
-            response = await self._http.get(
-                f"{_STARE_HOST}{_RECEIPT_PATH}", params=params
-            )
+            response = await self._http.get(_RECEIPT_PATH, params=params)
         except httpx.HTTPError as exc:
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
         raise_for_status(response)

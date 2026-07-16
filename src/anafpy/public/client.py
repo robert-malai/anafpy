@@ -191,9 +191,10 @@ class PublicClient:
     """Talks to ANAF's unauthenticated public services (``webservicesp.anaf.ro``).
 
     No credentials are needed; the client owns an ``httpx.AsyncClient`` (unless one
-    is injected) and should be used as an async context manager so it is closed
-    cleanly. Requests are paced at ``min_request_interval`` seconds (default 1.0,
-    ANAF's stated limit); pass ``0`` to disable pacing and bring your own.
+    is injected — it must then be configured with ``base_url=PUBLIC_HOST``) and
+    should be used as an async context manager so it is closed cleanly. Requests
+    are paced at ``min_request_interval`` seconds (default 1.0, ANAF's stated
+    limit); pass ``0`` to disable pacing and bring your own.
     """
 
     def __init__(
@@ -208,7 +209,9 @@ class PublicClient:
         # paced requests (RegAgric RSTs on reuse, live-observed 2026-07-02), and at
         # ≤1 req/s a fresh connection per request costs nothing.
         self._http = http or httpx.AsyncClient(
-            timeout=timeout, limits=httpx.Limits(max_keepalive_connections=0)
+            timeout=timeout,
+            limits=httpx.Limits(max_keepalive_connections=0),
+            base_url=PUBLIC_HOST,
         )
         self._pacer = _RequestPacer(min_request_interval)
 
@@ -240,12 +243,11 @@ class PublicClient:
         headers: dict[str, str] | None = None,
         tolerate: tuple[int, ...] = (),
     ) -> httpx.Response:
-        url = f"{PUBLIC_HOST}/{path}"
         await self._pacer.wait()
         try:
             response = await self._http.request(
                 method,
-                url,
+                path,
                 params=params,
                 json=json_body,
                 content=content,

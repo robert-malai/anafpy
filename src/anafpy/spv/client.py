@@ -80,7 +80,8 @@ class SpvClient:
     Construct with a :class:`~anafpy.spv.auth.SpvSessionProvider` over the
     session store an earlier :meth:`login` filled. The client owns an
     ``httpx.AsyncClient`` (unless one is injected — it must then carry
-    :class:`~anafpy.spv.auth.SpvAuth` itself) and should be used as an async
+    :class:`~anafpy.spv.auth.SpvAuth` itself and be configured with
+    ``base_url=f"{SPV_BASE_URL}/"``) and should be used as an async
     context manager. Cookie rotations are saved back to the store
     transparently.
     """
@@ -94,7 +95,11 @@ class SpvClient:
     ) -> None:
         self._provider = provider
         self._owns_http = http is None
-        self._http = http or httpx.AsyncClient(auth=SpvAuth(provider), timeout=timeout)
+        # Requests use relative paths against base_url (the trailing slash
+        # matters — httpx concatenates raw paths).
+        self._http = http or httpx.AsyncClient(
+            auth=SpvAuth(provider), timeout=timeout, base_url=f"{SPV_BASE_URL}/"
+        )
 
     async def __aenter__(self) -> Self:
         return self
@@ -138,9 +143,7 @@ class SpvClient:
         302s to tell a revalidation hop from the login wall.
         """
         try:
-            response = await self._http.get(
-                f"{SPV_BASE_URL}/{path}", params=params, follow_redirects=False
-            )
+            response = await self._http.get(path, params=params, follow_redirects=False)
         except httpx.HTTPError as exc:  # connect/read/timeout/etc.
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
         raise_for_status(response)
