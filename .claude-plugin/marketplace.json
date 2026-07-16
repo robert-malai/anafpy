@@ -1,0 +1,17 @@
+{
+  "name": "anafpy",
+  "description": "Plugins for anafpy — typed Python clients and a local MCP server for Romania's ANAF tax-authority web services.",
+  "owner": {
+    "name": "Robert Malai"
+  },
+  "plugins": [
+    {
+      "name": "anafpy-setup",
+      "source": "./plugins/anafpy-setup",
+      "displayName": "anafpy setup",
+      "description": "Install and configure anafpy on this computer, then connect it to Claude. Probes what is already in place, installs what is missing, and repairs a broken setup.",
+      "category": "setup",
+      "tags": ["anaf", "e-factura", "e-transport", "romania", "mcp", "setup"]
+    }
+  ]
+}

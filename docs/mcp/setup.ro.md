@@ -19,6 +19,31 @@ Vei face cinci lucruri, în ordine:
 Pașii 1–4 se fac o singură dată. Rezervă-ți în jur de 30 de minute, plus cât
 durează portalul ANAF.
 
+## Lasă-l pe Claude să o facă în locul tău (opțional)
+
+Dacă ai [aplicația Claude Desktop](https://claude.ai/download), Claude poate
+parcurge împreună cu tine cea mai mare parte din acest ghid — verifică ce este
+deja instalat, instalează ce lipsește și scrie el fișierul de configurare de la
+pasul 5.
+
+În tab-ul **Code** al aplicației, pornește o sesiune și asigură-te că mediul ei
+este **Local** (o sesiune în cloud rulează pe serverele Anthropic și nu poate
+vedea tokenul tău USB). Apoi apasă butonul **+** de lângă caseta de text, alege
+**Plugins → Add plugin** și adaugă acest marketplace:
+
+```text
+robert-malai/anafpy
+```
+
+Instalează de acolo plugin-ul **anafpy setup**, apoi cere-i pur și simplu:
+*„instalează-mi anafpy pe calculatorul acesta”*.
+
+Rămân în sarcina ta cele două lucruri pe care nu le poate face nimeni altcineva:
+înregistrarea aplicației pe portalul ANAF (pasul 1) și autentificarea cu
+certificatul (pasul 4). Restul este rezolvat. Pașii de mai jos rămân referința —
+urmează-i dacă preferi să faci totul manual sau dacă instalarea asistată se
+blochează.
+
 ## Înainte să începi
 
 Ai nevoie de:

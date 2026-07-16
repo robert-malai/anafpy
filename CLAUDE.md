@@ -171,6 +171,17 @@ src/anafpy/
 skills/                  # workflow skills, served by the MCP server as same-name
                          # prompts (etransport-declare: source data -> FlatTransport
                          # -> prepare -> approval -> submit -> status)
+.claude-plugin/          # marketplace.json — the Claude Code plugin marketplace
+                         # published from this repo (`/plugin marketplace add
+                         # robert-malai/anafpy`)
+plugins/anafpy-setup/    # the ONE plugin: an `anafpy-setup` skill that installs +
+                         # configures anafpy on an end user's computer. Deliberately
+                         # NOT in skills/ — those are MCP-served prompts, and this
+                         # skill has to run BEFORE the MCP server exists. It runs in
+                         # Claude Desktop's Code tab (local sessions only) and its
+                         # job is to write claude_desktop_config.json for the Cowork
+                         # tab; a plugin's own MCP servers are a Claude Code scope
+                         # and never reach Cowork.
 schemas/                 # vendored XSDs + EN16931 Schematron sources (git-tracked,
                          # NOT shipped in the wheel; the .sch feed the codelist codegen)
 scripts/                 # codegen scripts
