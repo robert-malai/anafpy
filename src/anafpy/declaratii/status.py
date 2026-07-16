@@ -35,23 +35,17 @@ from __future__ import annotations
 
 import datetime
 import re
-from enum import StrEnum
-from html.parser import HTMLParser
 from types import TracebackType
 from typing import Self
 
 import httpx
-from pydantic import BaseModel
+from parsel import Selector
 
 from .._transport.base import as_text, raise_for_status, strip_accents
 from ..exceptions import AnafConfigError, AnafResponseError, AnafTransportError
+from .models import DeclarationDocument, DeclarationState, DeclarationStatusList
 
-__all__ = [
-    "DeclarationDocument",
-    "DeclarationState",
-    "DeclarationStatusClient",
-    "DeclarationStatusList",
-]
+__all__ = ["DeclarationStatusClient"]
 
 _STARE_HOST = "https://www.anaf.ro"
 _STATUS_PATH = "/StareD112/vizualizareStare.do"
@@ -73,138 +67,9 @@ _NOT_FOUND_MESSAGE = (
 )
 
 
-class DeclarationState(StrEnum):
-    """Processing state of a filed declaration, classified from ANAF's wording.
-
-    The page documents exactly four states; anything unrecognised maps to
-    :attr:`UNKNOWN` with the verbatim text preserved in
-    :attr:`DeclarationDocument.state_text`.
-    """
-
-    PROCESSING = "processing"  # "In prelucrare" — check again later
-    NOT_VALID = "not_valid"  # "nu este un document valid" — not registered at all
-    VALIDATION_ERRORS = "validation_errors"  # errors in the recipisa; refile
-    VALID = "valid"  # accepted; data forwarded to the beneficiary institutions
-    UNKNOWN = "unknown"
-
-
-#: Accent-stripped state markers, most specific first — ``NOT_VALID``'s wording
-#: must win over ``VALID``'s.
-_STATE_MARKERS = (
-    ("in prelucrare", DeclarationState.PROCESSING),
-    ("nu este un document valid", DeclarationState.NOT_VALID),
-    ("erori de validare", DeclarationState.VALIDATION_ERRORS),
-    ("documentul este valid", DeclarationState.VALID),
-)
-
-
-class DeclarationDocument(BaseModel):
-    """One row of the StareD112 results table — one filed document."""
-
-    index: str
-    """Upload index (also the recipisa number)."""
-    form: str
-    """ANAF's document type as shown (e.g. ``D300``, ``F4109``)."""
-    state: DeclarationState
-    state_text: str
-    """ANAF's state wording, verbatim."""
-    registration: str
-    """Registration line, verbatim (e.g. ``INTERNT-1100000001-2026 din 16.07.2026``)."""
-    upload_date: datetime.date | None
-    receipt_available: bool
-    """Whether the page offered a recipisa download link (lapses ~60 days in)."""
-
-
-class DeclarationStatusList(BaseModel):
-    """Outcome of a status query.
-
-    ``found`` mirrors the page shape: ``True`` carries the CUI's recent filings
-    (all of them — the queried index is just the access key), ``False`` is the
-    "no declaration identified" business outcome with ``message`` explaining
-    the possible reasons.
-    """
-
-    found: bool
-    cui: str
-    period_start: datetime.date | None = None
-    period_end: datetime.date | None = None
-    documents: list[DeclarationDocument] = []
-    message: str = ""
-
-    def document(self, index: int | str) -> DeclarationDocument | None:
-        """The row for *index*, if present."""
-        wanted = str(index).strip()
-        return next((d for d in self.documents if d.index == wanted), None)
-
-
-class _PageScraper(HTMLParser):
-    """Collect table rows (cell texts + recipisa-link flag) and the page text.
-
-    The page is JSP-era HTML with nested layout tables; rather than model that,
-    every ``<tr>``/``<td>`` run is collected and the caller keeps only rows that
-    look like result rows (six cells, numeric index). An inner table's rows
-    simply restart collection, so outer layout rows never survive the filter.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.rows: list[tuple[list[str], bool]] = []
-        self._text: list[str] = []
-        self._cells: list[str] | None = None
-        self._cell: list[str] | None = None
-        self._receipt_link = False
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "tr":
-            self._flush_row()
-            self._cells = []
-        elif tag == "td":
-            # The results table's header cells sit directly under <thead> with
-            # no <tr> — tolerate a cell opening outside a row.
-            if self._cells is None:
-                self._cells = []
-            self._flush_cell()
-            self._cell = []
-        elif tag == "a":
-            href = next((value for name, value in attrs if name == "href"), None)
-            if href and "ObtineRecipisa" in href:
-                self._receipt_link = True
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "td":
-            self._flush_cell()
-        elif tag in ("tr", "table", "thead"):
-            self._flush_row()
-
-    def handle_data(self, data: str) -> None:
-        self._text.append(data)
-        if self._cell is not None:
-            self._cell.append(data)
-
-    @property
-    def text(self) -> str:
-        """The page's whole text content, whitespace-normalized."""
-        return " ".join(" ".join(self._text).split())
-
-    def _flush_cell(self) -> None:
-        if self._cell is not None and self._cells is not None:
-            self._cells.append(" ".join(" ".join(self._cell).split()))
-        self._cell = None
-
-    def _flush_row(self) -> None:
-        self._flush_cell()
-        if self._cells:
-            self.rows.append((self._cells, self._receipt_link))
-        self._cells = None
-        self._receipt_link = False
-
-
-def _classify_state(text: str) -> DeclarationState:
-    normalized = strip_accents(text)
-    for marker, state in _STATE_MARKERS:
-        if marker in normalized:
-            return state
-    return DeclarationState.UNKNOWN
+def _cell_text(selector: Selector) -> str:
+    """A node's whole text content, whitespace-normalized."""
+    return " ".join(selector.xpath("string(.)").get("").split())
 
 
 def _parse_date(text: str) -> datetime.date | None:
@@ -226,7 +91,7 @@ def _document_from_row(
     return DeclarationDocument(
         index=cells[0],
         form=cells[1],
-        state=_classify_state(cells[2]),
+        state=DeclarationState.classify(cells[2]),
         state_text=cells[2],
         registration=cells[3],
         upload_date=_parse_date(cells[5]),
@@ -235,17 +100,26 @@ def _document_from_row(
 
 
 def _parse_status_page(html: str, *, queried_cui: str) -> DeclarationStatusList:
-    scraper = _PageScraper()
-    scraper.feed(html)
-    scraper.close()
-    text = scraper.text
+    page = Selector(text=html)
+    text = _cell_text(page)
     normalized = strip_accents(text)
 
     if match := _FOUND_RE.search(normalized):
+        # The page is JSP-era HTML with nested layout tables; rather than model
+        # that, every <tr> is considered and only rows that look like result
+        # rows (six direct cells, numeric index) survive. Direct-child ./td
+        # keeps an outer layout row's cell (which stringifies its whole nested
+        # table) from being mistaken for data — the filter drops it.
         documents = [
             document
-            for cells, receipt_link in scraper.rows
-            if (document := _document_from_row(cells, receipt_link)) is not None
+            for row in page.css("tr")
+            if (
+                document := _document_from_row(
+                    [_cell_text(cell) for cell in row.xpath("./td")],
+                    bool(row.xpath(".//a[contains(@href, 'ObtineRecipisa')]")),
+                )
+            )
+            is not None
         ]
         return DeclarationStatusList(
             found=True,

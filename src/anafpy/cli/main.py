@@ -418,8 +418,10 @@ def _cmd_decl_status(args: argparse.Namespace) -> int:
     for document in result.documents:
         marker = " ←" if document.index == str(args.index).strip() else ""
         receipt = "recipisa available" if document.receipt_available else "no recipisa"
+        # The state prints in ANAF's verbatim Romanian (the enum value); the
+        # widest documented wording is 40 characters.
         print(
-            f"  {document.index}  {document.form:<8} {document.state.value:<18} "
+            f"  {document.index}  {document.form:<8} {document.state.value:<40} "
             f"{document.upload_date}  {receipt}{marker}"
         )
     return 0

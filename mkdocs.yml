@@ -96,3 +96,4 @@ nav:
       - SPV: anaf-reference/spv/api.md
       - Declarations (DUKIntegrator): anaf-reference/declaratii/duk.md
       - Declarations (StareD112 status): anaf-reference/declaratii/stared112.md
+      - Declarations (portal upload recon): anaf-reference/declaratii/portal-upload.md

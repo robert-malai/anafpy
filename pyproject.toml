@@ -35,6 +35,10 @@ dependencies = [
     # IANA tz database for ZoneInfo("Europe/Bucharest") — ANAF-semantic "today"/"now"
     # defaults are computed in Romania's timezone; Windows has no system tz database.
     "tzdata; sys_platform == 'win32'",
+    # HTML scraping (CSS/XPath selectors over lxml) for ANAF's HTML-only surfaces:
+    # StareD112 filing status today, the declaration-upload portal next (both have
+    # no API). py.typed since 1.8, so mypy --strict needs no stubs.
+    "parsel>=1.9",
 ]
 
 [project.optional-dependencies]

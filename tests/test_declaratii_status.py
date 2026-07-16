@@ -16,11 +16,8 @@ import httpx
 import pytest
 import respx
 
-from anafpy.declaratii.status import (
-    DeclarationState,
-    DeclarationStatusClient,
-    _parse_status_page,
-)
+from anafpy.declaratii.models import DeclarationState
+from anafpy.declaratii.status import DeclarationStatusClient, _parse_status_page
 from anafpy.exceptions import AnafConfigError, AnafResponseError, AnafTransportError
 
 FIXTURES = Path(__file__).parent / "fixtures" / "stared112"
@@ -92,6 +89,11 @@ def test_parse_unrecognised_page_raises() -> None:
             "Fişierul depus nu este un document valid.",
             DeclarationState.NOT_VALID,
         ),
+        # Same wording, diacritic-less — ANAF emits both spellings.
+        (
+            "Fisierul depus nu este un document valid.",
+            DeclarationState.NOT_VALID,
+        ),
         ("Documentul are erori de validare.", DeclarationState.VALIDATION_ERRORS),
         ("Documentul este valid", DeclarationState.VALID),
         ("ceva nou", DeclarationState.UNKNOWN),
@@ -102,6 +104,15 @@ def test_state_classification(text: str, state: DeclarationState) -> None:
     result = _parse_status_page(page, queried_cui="99999909")
     assert result.documents[0].state is state
     assert result.documents[0].state_text == text.strip()
+
+
+def test_state_values_are_anaf_wording_with_descriptions() -> None:
+    # Values are ANAF's verbatim Romanian (the ReportType pattern); every
+    # member carries an English description.
+    assert DeclarationState.VALID.value == "Documentul este valid"
+    assert DeclarationState.PROCESSING.value == "In prelucrare"
+    for member in DeclarationState:
+        assert member.description
 
 
 # --- check_status wire ----------------------------------------------------------------

@@ -163,9 +163,14 @@ src/anafpy/
     duk.py               # DukIntegrator (async): validate/render via ANAF's DUK
                          # (-v/-p headless; judge by err-file, never exit code),
                          # installed_forms/feed_versions staleness
+    models.py            # status value types: DeclarationState (values = ANAF's
+                         # verbatim Romanian wording + English .description — the
+                         # ReportType enum pattern; .classify() is accent-insensitive),
+                         # DeclarationDocument, DeclarationStatusList
     status.py            # DeclarationStatusClient (async, NO auth): filing status
                          # + recipisa PDF via www.anaf.ro/StareD112 (index+CUI are
-                         # the access key; empty-PDF answer = receipt unavailable)
+                         # the access key; empty-PDF answer = receipt unavailable);
+                         # HTML extraction via parsel (core dep) — shape checks ours
     nr_evid.py           # payment_evidence_number (pure: the 23-char D300 nr_evid)
     signing.py           # RawSigner protocol + KeychainRawSigner (ctypes ->
                          # Security.framework: SecKeyCreateSignature; no key material,

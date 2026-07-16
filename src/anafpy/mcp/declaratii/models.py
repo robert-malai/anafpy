@@ -7,7 +7,7 @@ import datetime
 from pydantic import BaseModel, Field
 
 from ...declaratii.duk import DukFinding
-from ...declaratii.status import DeclarationDocument
+from ...declaratii.models import DeclarationDocument
 from ..gate import XmlInput
 
 __all__ = [

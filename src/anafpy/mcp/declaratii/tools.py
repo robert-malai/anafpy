@@ -193,10 +193,12 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         "to the configured fiscal code; pass filed_at_counter=true for documents "
         "filed at an ANAF counter (`index` is then the registration number). A "
         "matching pair returns ALL the CUI's documents from the last 3 months "
-        "(max 200), each with state valid / validation_errors / not_valid / "
-        "processing — on `processing`, check again later. found=false means the "
-        "pair matched nothing (wrong pair, older than 3 months, or beyond the "
-        "last 200 submissions).",
+        "(max 200), each with `state` in ANAF's verbatim Romanian wording: "
+        "'Documentul este valid' = accepted; 'In prelucrare' = still processing, "
+        "check again later; 'Documentul are erori de validare' and 'Fişierul "
+        "depus nu este un document valid' = must be fixed and refiled. "
+        "found=false means the pair matched nothing (wrong pair, older than 3 "
+        "months, or beyond the last 200 submissions).",
     )
     async def declaratie_status(
         index: str, cui: str | None = None, filed_at_counter: bool = False

@@ -119,9 +119,13 @@ async with DeclarationStatusClient() as client:
         Path("recipisa.pdf").write_bytes(pdf)
 ```
 
-Each document's `state` classifies ANAF's wording (`processing`, `not_valid`,
-`validation_errors`, `valid`; the verbatim text stays in `state_text`) — keep
-polling while a document is `processing`. For documents filed at an ANAF
+Each document's `state` is a `DeclarationState` — an enum whose **values are
+ANAF's verbatim Romanian wording** (`"Documentul este valid"`,
+`"In prelucrare"`, …) with a one-line English `description` per member, like
+the SPV `ReportType` nomenclature. Compare by member
+(`doc.state is DeclarationState.VALID`); the text as actually served stays in
+`state_text`. Keep polling while a document is `DeclarationState.PROCESSING`.
+For documents filed at an ANAF
 counter, pass `filed_at_counter=True` and give the registration number as the
 index. Service limits (ANAF's, not anafpy's): only the last **3 months** / last
 **200 submissions** are queryable, and the recipisa PDF is available for

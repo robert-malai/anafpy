@@ -100,8 +100,9 @@ is leaf-only and portal acceptance of that is unverified. Ask them to note the
 
 When the user comes back with the upload index (or later asks "was it accepted?"),
 call `declaratie_status` with the index (CUI defaults to the configured one). It
-needs no login. Read the queried index's row: `processing` means check again later;
-`valid` means accepted; `validation_errors` / `not_valid` mean the document must be
-fixed and refiled — say so plainly. Once valid, offer to save the signed filing
+needs no login. Read the queried index's row — `state` is ANAF's own wording:
+`In prelucrare` means check again later; `Documentul este valid` means accepted;
+`Documentul are erori de validare` / `Fişierul depus nu este un document valid`
+mean the document must be fixed and refiled — say so plainly. Once valid, offer to save the signed filing
 receipt with `declaratie_recipisa` to a path the user names, and advise archiving
 it: ANAF keeps the recipisa downloadable for only ~60 days.

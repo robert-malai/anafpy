@@ -102,6 +102,25 @@ service needs no session priming) are the only wire record, feeding
 | `stared112/recipisa-found.headers.txt` | `GET ObtineRecipisa?numefisier=<index>.pdf`, known index: 200 `application/pdf`, 9 078 bytes (PDF body itself not vendored — it is a real signed receipt) |
 | `stared112/recipisa-empty.headers.txt` | same GET, unknown index `9999999999`: 200 `application/pdf`, `Content-Length: 0` |
 
+## Declaration portal upload (WAS6DUS) — `decl-portal/`
+
+Live recon captures of `https://decl.anaf.mfinante.gov.ro/WAS6DUS/` (the
+"Transmitere declarații" upload app; no official documentation exists), feeding
+`declaratii/portal-upload.md`. Retrieved 2026-07-16: the unauthenticated
+choreography with plain curl, plus **one certificate login** (macOS
+SecureTransport curl + Keychain identity, vToken 2FA approved by the
+maintainer) — **no document was filed**. Session cookies visible in the
+captures were invalidated the same day (`/exit` + the 10-minute APM timeout).
+
+| File | What it captures |
+|---|---|
+| `decl-portal/root-redirect.headers.txt` | `GET /WAS6DUS/` cold: 302 `/my.policy`, BigIP, MRHSession cookies |
+| `decl-portal/logon-page.html` | the APM logon page: certificate-only form ("Prezentare certificat", `vhost=standard` → POST `/my.policy`) |
+| `decl-portal/login-choreography-verbose.txt` | curl verbose of the full cert login: form POST → cert GET → `/my.policy_nonce` → 302 `/WAS6DUS/` → 200 (ends in the benign `SSLRead -9806`) |
+| `decl-portal/app-welcome.html` | the authenticated upload app: multipart form `POST /WAS6DUS/displayFile.do`, file field `linkdoc`; links StareD112 for recipisa checks |
+| `decl-portal/replay-plain-get.headers.txt` | the same page re-fetched by a plain certificate-less curl riding the cookies (200 — bearer-cookie session confirmed) |
+| `decl-portal/upload-error-nofile.html` | the app's generic error page (`GET displayFile.do` with no file): reason in a red span + link to `/WAS6DUS/welcome.do` |
+
 ## Related ANAF artifacts, deliberately not vendored here
 
 - **CIUS-RO validation artifacts** — `ro16931-ubl-1.0.9.zip` (Schematron + XSD):

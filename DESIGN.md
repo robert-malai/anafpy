@@ -666,7 +666,11 @@ filing; an unknown/expired index answers HTTP 200 with an *empty* PDF body).
 So `DeclarationStatusClient` (`declaratii/status.py`) landed ahead of the upload
 client: a small no-auth httpx client with strict HTML parsing — "no declaration
 identified" is a returned business outcome (`found=False`), an unrecognised
-page raises, per the error model. This narrows M2 to the upload itself; the
+page raises, per the error model. Scraping is offloaded to **parsel** (Scrapy's
+selector layer: CSS/XPath over lxml, `py.typed`; a core dependency since
+2026-07-16) — decided when the WAS6DUS recon confirmed the upload portal is
+HTML-only too, making HTML extraction a pattern rather than a one-off; the
+strict shape checks stay ours, parsel only does the extraction. This narrows M2 to the upload itself; the
 recipisa-via-SPV route (`Duplicat Recipisa` cerere) remains the fallback for
 documents older than StareD112's windows. MCP: `declaratie_status` (read-only)
 + `declaratie_recipisa` (artifact-saving); both work with zero configuration.

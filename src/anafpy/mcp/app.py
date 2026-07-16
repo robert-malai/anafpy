@@ -92,7 +92,8 @@ confirm=true. Hand back the signed PDF path and tell the user to file it at
 anaf.ro → Depunere declarații (portal upload is a later release), asking them to
 note the upload index the portal returns. With that index, `declaratie_status`
 checks the processing state (public no-auth service — works without any login;
-`processing` means check again later, `valid` means accepted) and
+states come in ANAF's verbatim Romanian: 'In prelucrare' means check again
+later, 'Documentul este valid' means accepted) and
 `declaratie_recipisa` saves the signed filing receipt PDF to disk — recipisas
 are only available ~60 days, so advise archiving it promptly.
 `declaratie_duk_status` reports the DUKIntegrator install and validator

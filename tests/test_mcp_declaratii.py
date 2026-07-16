@@ -225,7 +225,8 @@ async def test_status_tool_parses_found(tmp_path: Path) -> None:
         server, "declaratie_status", index="1100000001", cui="99999909"
     )
     assert result["found"] is True
-    assert result["documents"][0]["state"] == "valid"
+    # The state serializes as ANAF's verbatim wording (the enum value).
+    assert result["documents"][0]["state"] == "Documentul este valid"
     assert b"cui=99999909" in route.calls.last.request.content
 
 

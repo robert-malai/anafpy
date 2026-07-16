@@ -1,0 +1,137 @@
+* Host decl.anaf.mfinante.gov.ro:443 was resolved.
+* IPv6: (none)
+* IPv4: 217.156.52.60
+*   Trying 217.156.52.60:443...
+* Connected to decl.anaf.mfinante.gov.ro (217.156.52.60) port 443
+* ALPN: curl offers h2,http/1.1
+* Client certificate: REDACTED (Keychain identity name)
+* TLS 1.2 connection using TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+* ALPN: server did not agree on a protocol. Uses default.
+* Server certificate: *.anaf.mfinante.gov.ro
+* Server certificate: RapidSSL TLS RSA CA G1
+* Server certificate: DigiCert Global Root G2
+* using HTTP/1.x
+> GET /my.policy HTTP/1.1
+> Host: decl.anaf.mfinante.gov.ro
+> User-Agent: curl/8.7.1
+> Accept: */*
+> Cookie: LastMRH_Session=REDACTED; MRHSession=REDACTED
+> 
+* Request completely sent off
+* HTTP 1.0, assume close after body
+< HTTP/1.0 302 Found
+< Server: BigIP
+* Added cookie F5_ST="REDACTED" for domain decl.anaf.mfinante.gov.ro, path /, expire 0
+< Set-Cookie: F5_ST=REDACTED;path=/;secure
+* Replaced cookie LastMRH_Session="REDACTED" for domain decl.anaf.mfinante.gov.ro, path /, expire 0
+< Set-Cookie: LastMRH_Session=REDACTED;path=/;secure
+* Replaced cookie MRHSession="REDACTED" for domain decl.anaf.mfinante.gov.ro, path /, expire 0
+< Set-Cookie: MRHSession=REDACTED;path=/;secure
+< Content-Length: 0
+< Location: https://decl.anaf.mfinante.gov.ro/my.policy
+< Connection: close
+< 
+* Closing connection
+* Issue another request to this URL: 'https://decl.anaf.mfinante.gov.ro/my.policy'
+* Hostname decl.anaf.mfinante.gov.ro was found in DNS cache
+*   Trying 217.156.52.60:443...
+* Connected to decl.anaf.mfinante.gov.ro (217.156.52.60) port 443
+* ALPN: curl offers h2,http/1.1
+* Client certificate: REDACTED (Keychain identity name)
+* SSL reusing session ID
+* TLS 1.2 connection using TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+* ALPN: server did not agree on a protocol. Uses default.
+* Server certificate: *.anaf.mfinante.gov.ro
+* Server certificate: RapidSSL TLS RSA CA G1
+* Server certificate: DigiCert Global Root G2
+* using HTTP/1.x
+> GET /my.policy HTTP/1.0
+> Host: decl.anaf.mfinante.gov.ro
+> User-Agent: curl/8.7.1
+> Accept: */*
+> Cookie: LastMRH_Session=REDACTED; MRHSession=REDACTED; F5_ST=REDACTED
+> 
+* Request completely sent off
+* HTTP 1.0, assume close after body
+< HTTP/1.0 302 Found
+< Server: BigIP
+* Replaced cookie F5_ST="REDACTED" for domain decl.anaf.mfinante.gov.ro, path /, expire 0
+< Set-Cookie: F5_ST=REDACTED;path=/;secure
+* Replaced cookie LastMRH_Session="REDACTED" for domain decl.anaf.mfinante.gov.ro, path /, expire 0
+< Set-Cookie: LastMRH_Session=REDACTED;path=/;secure
+* Replaced cookie MRHSession="REDACTED" for domain decl.anaf.mfinante.gov.ro, path /, expire 0
+< Set-Cookie: MRHSession=REDACTED;path=/;secure
+< Content-Length: 0
+< Location: https://decl.anaf.mfinante.gov.ro/my.policy_nonce?nonce=REDACTED
+< Connection: close
+< 
+* Closing connection
+* Issue another request to this URL: 'https://decl.anaf.mfinante.gov.ro/my.policy_nonce?nonce=REDACTED'
+* Hostname decl.anaf.mfinante.gov.ro was found in DNS cache
+*   Trying 217.156.52.60:443...
+* Connected to decl.anaf.mfinante.gov.ro (217.156.52.60) port 443
+* ALPN: curl offers h2,http/1.1
+* Client certificate: REDACTED (Keychain identity name)
+* SSL reusing session ID
+* TLS 1.2 connection using TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+* ALPN: server did not agree on a protocol. Uses default.
+* Server certificate: *.anaf.mfinante.gov.ro
+* Server certificate: RapidSSL TLS RSA CA G1
+* Server certificate: DigiCert Global Root G2
+* using HTTP/1.x
+> GET /my.policy_nonce?nonce=REDACTED HTTP/1.0
+> Host: decl.anaf.mfinante.gov.ro
+> User-Agent: curl/8.7.1
+> Accept: */*
+> Cookie: LastMRH_Session=REDACTED; MRHSession=REDACTED; F5_ST=REDACTED
+> 
+* Request completely sent off
+* HTTP 1.0, assume close after body
+< HTTP/1.0 302 Found
+< Server: BigIP
+* Replaced cookie F5_ST="REDACTED" for domain decl.anaf.mfinante.gov.ro, path /, expire 0
+< Set-Cookie: F5_ST=REDACTED;path=/;secure
+* Replaced cookie LastMRH_Session="REDACTED" for domain decl.anaf.mfinante.gov.ro, path /, expire 0
+< Set-Cookie: LastMRH_Session=REDACTED;path=/;secure
+* Replaced cookie MRHSession="REDACTED" for domain decl.anaf.mfinante.gov.ro, path /, expire 0
+< Set-Cookie: MRHSession=REDACTED;path=/;secure
+< Content-Length: 0
+< Location: /WAS6DUS/
+< Connection: close
+< 
+* Closing connection
+* Issue another request to this URL: 'https://decl.anaf.mfinante.gov.ro/WAS6DUS/'
+* Hostname decl.anaf.mfinante.gov.ro was found in DNS cache
+*   Trying 217.156.52.60:443...
+* Connected to decl.anaf.mfinante.gov.ro (217.156.52.60) port 443
+* ALPN: curl offers h2,http/1.1
+* Client certificate: REDACTED (Keychain identity name)
+* SSL reusing session ID
+* TLS 1.2 connection using TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+* ALPN: server did not agree on a protocol. Uses default.
+* Server certificate: *.anaf.mfinante.gov.ro
+* Server certificate: RapidSSL TLS RSA CA G1
+* Server certificate: DigiCert Global Root G2
+* using HTTP/1.x
+> GET /WAS6DUS/ HTTP/1.0
+> Host: decl.anaf.mfinante.gov.ro
+> User-Agent: curl/8.7.1
+> Accept: */*
+> Cookie: LastMRH_Session=REDACTED; MRHSession=REDACTED; F5_ST=REDACTED
+> 
+* Request completely sent off
+* HTTP 1.0, assume close after body
+< HTTP/1.0 200 OK
+< X-Powered-By: Servlet/3.0
+< Content-Type: text/html;charset=ISO-8859-1
+< Content-Language: en-US
+* Added cookie JSESSIONID="REDACTED" for domain decl.anaf.mfinante.gov.ro, path /, expire 0
+< Set-Cookie: JSESSIONID=REDACTED; Path=/; HttpOnly
+< Date: Thu, 16 Jul 2026 16:28:04 GMT
+< Expires: Thu, 01 Dec 1994 16:00:00 GMT
+< Cache-Control: no-cache="set-cookie, set-cookie2"
+< 
+{ [61 bytes data]
+* SSLRead() return error -9806
+* Closing connection
+curl: (56) SSLRead() return error -9806

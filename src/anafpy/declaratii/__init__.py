@@ -29,14 +29,10 @@ The signer and :func:`sign_pdf` need the optional ``anafpy[declaratii]`` extra
 from __future__ import annotations
 
 from .duk import DukFinding, DukIntegrator, DukResult
+from .models import DeclarationDocument, DeclarationState, DeclarationStatusList
 from .nr_evid import payment_evidence_number
 from .signing import KeychainRawSigner, RawSigner
-from .status import (
-    DeclarationDocument,
-    DeclarationState,
-    DeclarationStatusClient,
-    DeclarationStatusList,
-)
+from .status import DeclarationStatusClient
 
 __all__ = [
     "DeclarationDocument",
