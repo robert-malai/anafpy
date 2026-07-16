@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import datetime
+
 from pydantic import BaseModel, Field
 
 from ...declaratii.duk import DukFinding
+from ...declaratii.status import DeclarationDocument
 from ..gate import XmlInput
 
 __all__ = [
     "DeclarationXmlInput",
     "NrEvidResult",
+    "ReceiptResult",
     "RenderResult",
     "SignResult",
+    "StatusResult",
     "ValidationResult",
 ]
 
@@ -72,3 +77,28 @@ class NrEvidResult(BaseModel):
     tip_decont: str
     luna: int
     an: int
+
+
+class StatusResult(BaseModel):
+    """Outcome of ``declaratie_status`` — the StareD112 answer.
+
+    ``found=True`` carries **all** documents the CUI filed in the query window
+    (the queried index is just the access key); ``found=False`` is the
+    service's "no declaration identified" business outcome.
+    """
+
+    found: bool
+    cui: str
+    period_start: datetime.date | None = None
+    period_end: datetime.date | None = None
+    documents: list[DeclarationDocument] = []
+    message: str = ""
+
+
+class ReceiptResult(BaseModel):
+    """Outcome of ``declaratie_recipisa``. ``pdf_path`` is set only when ``ok``."""
+
+    ok: bool
+    index: str
+    pdf_path: str | None = None
+    message: str = ""

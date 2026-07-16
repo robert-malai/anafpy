@@ -65,6 +65,8 @@ async def test_tools_registered(tmp_path: Path) -> None:
         "declaratie_sign",
         "declaratie_nr_evid",
         "declaratie_duk_status",
+        "declaratie_status",
+        "declaratie_recipisa",
     } <= names
 
 
@@ -201,6 +203,99 @@ async def test_sign_without_certificate_returns_guidance(
     result = await _call(server, "declaratie_sign", pdf_path=str(pdf), confirm=True)
     assert result["signed"] is False
     assert "certificate" in result["guidance"]
+
+
+# --- status / recipisa (StareD112 — needs no DUK) ----------------------------------
+
+_STARED112_FIXTURES = Path(__file__).parent / "fixtures" / "stared112"
+
+
+@respx.mock
+async def test_status_tool_parses_found(tmp_path: Path) -> None:
+    route = respx.post("https://www.anaf.ro/StareD112/vizualizareStare.do").mock(
+        return_value=httpx.Response(
+            200,
+            text=(_STARED112_FIXTURES / "result-found.html").read_text(
+                encoding="iso-8859-1"
+            ),
+        )
+    )
+    server = create_server(_config(tmp_path, with_duk=False))
+    result = await _call(
+        server, "declaratie_status", index="1100000001", cui="99999909"
+    )
+    assert result["found"] is True
+    assert result["documents"][0]["state"] == "valid"
+    assert b"cui=99999909" in route.calls.last.request.content
+
+
+@respx.mock
+async def test_status_tool_uses_default_cif(tmp_path: Path) -> None:
+    route = respx.post("https://www.anaf.ro/StareD112/vizualizareStare.do").mock(
+        return_value=httpx.Response(
+            200,
+            text=(_STARED112_FIXTURES / "result-notfound.html").read_text(
+                encoding="iso-8859-1"
+            ),
+        )
+    )
+    server = create_server(_config(tmp_path, with_duk=False))
+    result = await _call(server, "declaratie_status", index="1100000001")
+    assert result["found"] is False
+    # The configured ANAFPY_CIF default fills the omitted `cui`.
+    assert b"cui=8000000000" in route.calls.last.request.content
+
+
+@respx.mock
+async def test_recipisa_tool_writes_pdf(tmp_path: Path) -> None:
+    respx.get("https://www.anaf.ro/StareD112/ObtineRecipisa").mock(
+        return_value=httpx.Response(
+            200, content=b"%PDF-1.4 x", headers={"Content-Type": "application/pdf"}
+        )
+    )
+    server = create_server(_config(tmp_path, with_duk=False))
+    out = tmp_path / "recipisa.pdf"
+    result = await _call(
+        server, "declaratie_recipisa", index="1100000001", save_pdf_as=str(out)
+    )
+    assert result["ok"] is True
+    assert result["pdf_path"] == str(out)
+    assert out.read_bytes() == b"%PDF-1.4 x"
+
+
+@respx.mock
+async def test_recipisa_tool_not_available(tmp_path: Path) -> None:
+    respx.get("https://www.anaf.ro/StareD112/ObtineRecipisa").mock(
+        return_value=httpx.Response(
+            200, content=b"", headers={"Content-Type": "application/pdf"}
+        )
+    )
+    server = create_server(_config(tmp_path, with_duk=False))
+    out = tmp_path / "recipisa.pdf"
+    result = await _call(
+        server, "declaratie_recipisa", index="9999999999", save_pdf_as=str(out)
+    )
+    assert result["ok"] is False
+    assert "60-day" in result["message"]
+    assert not out.exists()
+
+
+@respx.mock
+async def test_recipisa_tool_refuses_collision(tmp_path: Path) -> None:
+    respx.get("https://www.anaf.ro/StareD112/ObtineRecipisa").mock(
+        return_value=httpx.Response(
+            200, content=b"%PDF-1.4 new", headers={"Content-Type": "application/pdf"}
+        )
+    )
+    server = create_server(_config(tmp_path, with_duk=False))
+    out = tmp_path / "exists.pdf"
+    out.write_bytes(b"old")
+    result = await _call(
+        server, "declaratie_recipisa", index="1100000001", save_pdf_as=str(out)
+    )
+    assert result["ok"] is False
+    assert "overwrite" in result["message"]
+    assert out.read_bytes() == b"old"
 
 
 # --- duk_status -------------------------------------------------------------------

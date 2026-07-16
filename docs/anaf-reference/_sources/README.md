@@ -85,6 +85,23 @@ pin), retrieved 2026-07-12.
 | `clientspv/src/CertificateChooser.java` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/src/main/java/sqw/certificat/CertificateChooser.java |
 | `clientspv/src/Sign.java` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/src/main/java/sqw/certificat/Sign.java |
 
+## StareD112 (filing status + recipisa) — `stared112/`
+
+ANAF's public, unauthenticated filing-status page (`https://www.anaf.ro/StareD112/`)
+has **no official documentation** — these live captures (curl, plain HTTP; the
+service needs no session priming) are the only wire record, feeding
+`declaratii/stared112.md`. All retrieved 2026-07-16 against a real F4109 filing
+(index `1100000001`, CUI `99999909`).
+
+| File | What it captures |
+|---|---|
+| `stared112/form-page.html` (+ `.headers.txt`) | the query form (`GET /StareD112/`): field names `ghiseu`/`id`/`cui`, the 200-declaration warning |
+| `stared112/result-found.html` (+ `.headers.txt`) | `POST vizualizareStare.do`, matching pair: header line, six-column table (incl. a >60-day row with no recipisa link), the four documented states |
+| `stared112/result-notfound.html` (+ `.headers.txt`) | same POST, valid shape but no match (also returned for a mismatched pair) |
+| `stared112/result-invalid-input.html` | same POST, non-numeric input → "Nu ati introdus un index valid" |
+| `stared112/recipisa-found.headers.txt` | `GET ObtineRecipisa?numefisier=<index>.pdf`, known index: 200 `application/pdf`, 9 078 bytes (PDF body itself not vendored — it is a real signed receipt) |
+| `stared112/recipisa-empty.headers.txt` | same GET, unknown index `9999999999`: 200 `application/pdf`, `Content-Length: 0` |
+
 ## Related ANAF artifacts, deliberately not vendored here
 
 - **CIUS-RO validation artifacts** — `ro16931-ubl-1.0.9.zip` (Schematron + XSD):

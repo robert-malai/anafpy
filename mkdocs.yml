@@ -95,3 +95,4 @@ nav:
       - Public services: anaf-reference/public/api.md
       - SPV: anaf-reference/spv/api.md
       - Declarations (DUKIntegrator): anaf-reference/declaratii/duk.md
+      - Declarations (StareD112 status): anaf-reference/declaratii/stared112.md

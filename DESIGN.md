@@ -71,9 +71,10 @@ pin is 3.13), **httpx**, **Pydantic v2**.
 Since shipped, expanding the original scope: **SPV** (read-only mailbox, cert-mTLS
 — landed 2026-07-12, §11 notwithstanding its earlier "out of scope" listing) and
 **declaration authoring + signing** (`anafpy.declaratii`, landing 2026-07-15 —
-local D300 authoring, DUKIntegrator validation, qualified signing; see §12).
-**Filing declarations with ANAF stays out of scope** for now (there is no SPV
-declaration-upload API; portal upload is a later milestone).
+local D300 authoring, DUKIntegrator validation, qualified signing; plus
+StareD112 filing-status/recipisa tracking, public no-auth, added 2026-07-16;
+see §12). **Filing declarations with ANAF stays out of scope** for now (there is
+no SPV declaration-upload API; portal upload is a later milestone).
 
 Out of scope: local persistence of documents; reconciliation / accounting logic;
 inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; **filing tax
@@ -598,12 +599,13 @@ MCPB bundle for Claude Desktop (`server.type: "uv"` so the host manages Python;
 `user_config` with `sensitive` fields → OS keychain, mapped onto the existing
 `ANAFPY_*` env vars) — a thin wrapper over `anafpy[mcp]`.
 
-## 12. Declarations (authoring + signing)
+## 12. Declarations (authoring + signing + status tracking)
 
 > Landed 2026-07-15 (`anafpy.declaratii`, M1). Scope: **local document
 > generation and signing only, exposed via MCP.** Filing the signed document
-> with ANAF (portal upload + recipisa tracking) is a later milestone and
-> deliberately out of scope here.
+> with ANAF (portal upload) is a later milestone and deliberately out of scope
+> here. **Recipisa/status tracking, originally slated for M2, landed early**
+> (2026-07-16) — see "Status tracking" below.
 
 **The problem.** A taxpayer with no upstream software needs to produce a valid,
 signed tax declaration (D300 VAT return first; the design is per-form generic).
@@ -654,3 +656,19 @@ in [the DUK reference](docs/anaf-reference/declaratii/duk.md).
 `AnafConfigError` when it is absent, like the `mcp` extra. DUKIntegrator is the
 user's to install (like the OAuth app and the certificate): pointed at via
 `ANAFPY_DUK_DIR`, staleness checked, never auto-installed.
+
+**Status tracking (StareD112).** Recon for M2 (2026-07-16) found that recipisa
+tracking needs no certificate at all: ANAF's `www.anaf.ro/StareD112/` service is
+**public and unauthenticated** — the upload index + CUI pair is knowledge-based
+access to the CUI's filings from the last 3 months (max 200), with per-document
+processing state and the signed recipisa PDF (downloadable ~60 days from
+filing; an unknown/expired index answers HTTP 200 with an *empty* PDF body).
+So `DeclarationStatusClient` (`declaratii/status.py`) landed ahead of the upload
+client: a small no-auth httpx client with strict HTML parsing — "no declaration
+identified" is a returned business outcome (`found=False`), an unrecognised
+page raises, per the error model. This narrows M2 to the upload itself; the
+recipisa-via-SPV route (`Duplicat Recipisa` cerere) remains the fallback for
+documents older than StareD112's windows. MCP: `declaratie_status` (read-only)
++ `declaratie_recipisa` (artifact-saving); both work with zero configuration.
+Wire reference:
+[docs/anaf-reference/declaratii/stared112.md](docs/anaf-reference/declaratii/stared112.md).

@@ -53,6 +53,31 @@ async def test_live_render_nil_d300(tmp_path: Path) -> None:
     assert pdf.exists() and pdf.read_bytes().startswith(b"%PDF")
 
 
+# Real production index/CUI pair (the maintainer's own F4109 filings) — StareD112
+# is public, no-auth, read-only, so a prod query is within the live-testing
+# boundaries. Re-confirms the wire shapes captured 2026-07-16.
+_STARE_INDEX = "1100000001"
+_STARE_CUI = "99999909"
+
+
+async def test_live_stared112_status_and_recipisa(tmp_path: Path) -> None:
+    from anafpy.declaratii import DeclarationStatusClient
+
+    async with DeclarationStatusClient() as client:
+        result = await client.check_status(_STARE_INDEX, _STARE_CUI)
+        assert result.found, result.message
+        queried = result.document(_STARE_INDEX)
+        assert queried is not None
+        assert queried.form
+        assert queried.upload_date is not None
+        if queried.receipt_available:
+            pdf = await client.download_receipt(_STARE_INDEX)
+            assert pdf is not None and pdf.startswith(b"%PDF")
+        # The not-found business outcome (bogus pair) must be returned, not raised.
+        missing = await client.check_status("9999999999", "9999999999")
+        assert missing.found is False
+
+
 @pytest.mark.skipif(
     os.environ.get("ANAFPY_LIVE_SIGN") != "1",
     reason="signing fires a real 2FA — set ANAFPY_LIVE_SIGN=1 to run it",

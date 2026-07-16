@@ -1,16 +1,18 @@
-# Tax declarations (authoring, validation, signing)
+# Tax declarations (authoring, validation, signing, status)
 
 `anafpy.declaratii` prepares Romanian tax declarations (D300 VAT return first;
 the design is per-form generic) entirely **locally**: it validates with ANAF's
 own DUKIntegrator, renders the official PDF, and signs it with the taxpayer's
-qualified certificate. It has **no transport client, no ANAF host, no session** —
-it is subprocess + crypto + files. Filing the signed PDF with ANAF (portal
-upload) is a later milestone; for now you file the signed PDF manually on the
-portal.
+qualified certificate. Filing the signed PDF with ANAF (portal upload) is a
+later milestone; for now you file the signed PDF manually on the portal — and
+then **track it from here**: [`DeclarationStatusClient`](#filing-status-and-recipisa)
+checks the processing status and downloads the signed recipisa over ANAF's
+public StareD112 service, with no login of any kind.
 
 The pipeline: unstructured info → author the XML → DUKIntegrator `-v` (validate
 in a loop until `ok`) → DUKIntegrator `-p` (official PDF) → pyHanko + the
-platform raw signer (qualified signature) → signed PDF on disk.
+platform raw signer (qualified signature) → signed PDF on disk → manual portal
+upload → status/recipisa via StareD112.
 
 ## Prerequisites
 
@@ -93,12 +95,47 @@ unverified). The identity defaults to the persisted SPV certificate selection
 **Windows signing is not in this release**; the `RawSigner` protocol is the seam
 a `CngRawSigner` will slot into.
 
+## Filing status and recipisa
+
+After you upload the signed PDF on the portal, ANAF hands back an **upload
+index** (also the recipisa number). ANAF's
+[StareD112 service](../anaf-reference/declaratii/stared112.md) is **public and
+unauthenticated** — the index + CUI pair is the access key — so checking the
+processing status and fetching the signed recipisa needs no certificate, no
+OAuth, nothing:
+
+```python
+from anafpy.declaratii import DeclarationStatusClient
+
+async with DeclarationStatusClient() as client:
+    status = await client.check_status(1100000001, "99999909")
+    if status.found:
+        for doc in status.documents:        # ALL the CUI's filings, last 3 months
+            print(doc.index, doc.form, doc.state, doc.upload_date)
+        mine = status.document(1100000001)  # the row for the queried index
+
+    pdf = await client.download_receipt(1100000001)
+    if pdf is not None:                     # None: unknown index or window lapsed
+        Path("recipisa.pdf").write_bytes(pdf)
+```
+
+Each document's `state` classifies ANAF's wording (`processing`, `not_valid`,
+`validation_errors`, `valid`; the verbatim text stays in `state_text`) — keep
+polling while a document is `processing`. For documents filed at an ANAF
+counter, pass `filed_at_counter=True` and give the registration number as the
+index. Service limits (ANAF's, not anafpy's): only the last **3 months** / last
+**200 submissions** are queryable, and the recipisa PDF is available for
+**~60 days** from filing (`receipt_available` per row) — archive it promptly;
+it is the digitally signed proof of filing.
+
 ## CLI
 
 ```bash
 anafpy declaratii validate D300 d300.xml --duk-dir ~/DUKIntegrator/dist
 anafpy declaratii render   D300 d300.xml -o d300.pdf --duk-dir ~/DUKIntegrator/dist
 anafpy declaratii sign     d300.pdf -o d300-semnat.pdf   # fires the PIN/2FA prompt
+anafpy declaratii status   1100000001 99999909           # public — no login
+anafpy declaratii recipisa 1100000001 -o recipisa.pdf    # public — no login
 ```
 
 `--duk-dir` defaults to `ANAFPY_DUK_DIR`, `--java` to `ANAFPY_DUK_JAVA`. `sign`
@@ -108,6 +145,6 @@ persisted SPV selection.
 ## Using it through Claude (MCP)
 
 The same operations are MCP tools (`declaratie_validate`, `declaratie_render`,
-`declaratie_sign`, `declaratie_nr_evid`, `declaratie_duk_status`) and a
-`declaratie-compose` skill — see the [MCP tools](../mcp/tools.md) and
-[setup](../mcp/setup.md) pages.
+`declaratie_sign`, `declaratie_nr_evid`, `declaratie_duk_status`,
+`declaratie_status`, `declaratie_recipisa`) and a `declaratie-compose` skill —
+see the [MCP tools](../mcp/tools.md) and [setup](../mcp/setup.md) pages.

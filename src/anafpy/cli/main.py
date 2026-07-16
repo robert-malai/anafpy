@@ -49,7 +49,7 @@ from ..spv import (
 from ..spv.certs import DEFAULT_IDENTITY_PATH
 
 if TYPE_CHECKING:
-    from ..declaratii import DukFinding, DukIntegrator
+    from ..declaratii import DeclarationStatusList, DukFinding, DukIntegrator
 
 DEFAULT_STORE = "~/.anafpy/tokens.json"
 
@@ -397,6 +397,55 @@ def _cmd_decl_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_decl_status(args: argparse.Namespace) -> int:
+    from ..declaratii import DeclarationStatusClient
+
+    async def query() -> DeclarationStatusList:
+        async with DeclarationStatusClient() as client:
+            return await client.check_status(
+                args.index, args.cui, filed_at_counter=args.ghiseu
+            )
+
+    result = asyncio.run(query())
+    if not result.found:
+        print(f"No declaration found for index {args.index} / CUI {args.cui}.")
+        print(f"({result.message})")
+        return 1
+    print(
+        f"Documents filed by CUI {result.cui} "
+        f"({result.period_start} → {result.period_end}):"
+    )
+    for document in result.documents:
+        marker = " ←" if document.index == str(args.index).strip() else ""
+        receipt = "recipisa available" if document.receipt_available else "no recipisa"
+        print(
+            f"  {document.index}  {document.form:<8} {document.state.value:<18} "
+            f"{document.upload_date}  {receipt}{marker}"
+        )
+    return 0
+
+
+def _cmd_decl_recipisa(args: argparse.Namespace) -> int:
+    from ..declaratii import DeclarationStatusClient
+
+    async def download() -> bytes | None:
+        async with DeclarationStatusClient() as client:
+            return await client.download_receipt(args.index)
+
+    pdf = asyncio.run(download())
+    if pdf is None:
+        print(
+            f"No recipisa available for index {args.index} — it is unknown, or its "
+            "~60-day availability window has lapsed.",
+            file=sys.stderr,
+        )
+        return 1
+    out = Path(args.output).expanduser()
+    out.write_bytes(pdf)
+    print(f"✓ Recipisa {args.index} -> {out}")
+    return 0
+
+
 def _cmd_decl_sign(args: argparse.Namespace) -> int:
     try:
         from ..declaratii import pdfsign
@@ -517,7 +566,8 @@ def build_parser() -> argparse.ArgumentParser:
     spv_logout.set_defaults(func=_cmd_spv_logout)
 
     decl = sub.add_parser(
-        "declaratii", help="tax-declaration validation, rendering, and signing"
+        "declaratii",
+        help="tax-declaration validation, rendering, signing, and filing status",
     ).add_subparsers(dest="declaratii_cmd", required=True)
 
     decl_validate = decl.add_parser(
@@ -536,6 +586,29 @@ def build_parser() -> argparse.ArgumentParser:
     decl_render.add_argument("-o", "--output", required=True, help="output PDF path")
     _add_duk_args(decl_render)
     decl_render.set_defaults(func=_cmd_decl_render)
+
+    decl_status = decl.add_parser(
+        "status",
+        help="check a filed declaration's processing status (public, no login)",
+    )
+    decl_status.add_argument(
+        "index", help="upload index from the portal (= the recipisa number)"
+    )
+    decl_status.add_argument("cui", help="the taxpayer's fiscal code")
+    decl_status.add_argument(
+        "--ghiseu",
+        action="store_true",
+        help="the document was filed at an ANAF counter; INDEX is the "
+        "registration number",
+    )
+    decl_status.set_defaults(func=_cmd_decl_status)
+
+    decl_recipisa = decl.add_parser(
+        "recipisa", help="download the signed filing receipt PDF (public, no login)"
+    )
+    decl_recipisa.add_argument("index", help="upload index from the portal")
+    decl_recipisa.add_argument("-o", "--output", required=True, help="output PDF path")
+    decl_recipisa.set_defaults(func=_cmd_decl_recipisa)
 
     decl_sign = decl.add_parser(
         "sign", help="sign a rendered PDF with the qualified certificate (macOS)"

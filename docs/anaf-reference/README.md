@@ -18,6 +18,8 @@ are the authority on any discrepancy.
 | e-Transport | [etransport/api.md](etransport/api.md) | draft |
 | Public no-auth services (registries, bilanț) | [public/api.md](public/api.md) | draft |
 | SPV web services (inbox, downloads, report requests) | [spv/api.md](spv/api.md) | draft |
+| Declarations — DUKIntegrator (validate, render, sign) | [declaratii/duk.md](declaratii/duk.md) | draft |
+| Declarations — StareD112 (filing status, recipisa) | [declaratii/stared112.md](declaratii/stared112.md) | draft |
 
 ## Conventions
 

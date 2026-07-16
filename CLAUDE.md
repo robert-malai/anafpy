@@ -37,12 +37,16 @@ Phase 1 is the typed async clients; phase 2 is
 the **MCP server** (`anafpy.mcp`, extra `anafpy[mcp]`) exposing the operations as
 Claude Cowork skills. The client methods map 1:1 onto MCP tools — discrete operations,
 serializable typed inputs/outputs, good docstrings. A third strand is
-**`anafpy.declaratii`** (added 2026-07-15): purely **local** tax-declaration
+**`anafpy.declaratii`** (added 2026-07-15): **local** tax-declaration
 authoring, validation (via ANAF's DUKIntegrator), official-PDF rendering, and
 qualified signing (the raw op delegated to the OS token — no key material or PIN
-in-process), exposed as `declaratie_*` MCP tools. M1 is authoring + signing only;
+in-process), exposed as `declaratie_*` MCP tools. M1 is authoring + signing;
 **filing the signed document with ANAF is a later milestone** (no SPV/portal
-upload API yet). Distribution is **free and
+upload API yet) — but **status tracking already landed** (2026-07-16):
+`DeclarationStatusClient` checks a filed declaration's processing state and
+downloads the signed recipisa over ANAF's **public, no-auth** StareD112 service
+(upload index + CUI are the access key), so the post-manual-filing confirmation
+loop is automated. Distribution is **free and
 as-is**: the library is for anyone to use; the MCP server is **best-effort**, and
 configuring it — including provisioning the OAuth application on ANAF's portal —
 is the user's responsibility (DESIGN.md §11).
@@ -114,7 +118,7 @@ src/anafpy/
   auth/                  # OAuth2 layer: models, store, oauth, provider, callback
   cli/main.py            # `anafpy auth login|status|logout` +
                          # `anafpy spv certs|select|login|status|logout` +
-                         # `anafpy declaratii validate|render|sign`
+                         # `anafpy declaratii validate|render|sign|status|recipisa`
   efactura/
     README.md            # module map: layer diagram (flat <-> generated UBL <-> wire),
                          # outbound/inbound flows, who-owns-what table
@@ -154,11 +158,14 @@ src/anafpy/
                          # MessageList, ReportRequestResult; SpvMessage, ReportType
                          # nomenclature + ReportRequest (per-type param validation),
                          # error hints
-  declaratii/            # LOCAL tax-declaration authoring/validation/signing (M1;
-                         # no transport client, no ANAF host — subprocess + crypto):
+  declaratii/            # tax-declaration authoring/validation/signing (M1, local:
+                         # subprocess + crypto) + StareD112 filing status (public):
     duk.py               # DukIntegrator (async): validate/render via ANAF's DUK
                          # (-v/-p headless; judge by err-file, never exit code),
                          # installed_forms/feed_versions staleness
+    status.py            # DeclarationStatusClient (async, NO auth): filing status
+                         # + recipisa PDF via www.anaf.ro/StareD112 (index+CUI are
+                         # the access key; empty-PDF answer = receipt unavailable)
     nr_evid.py           # payment_evidence_number (pure: the 23-char D300 nr_evid)
     signing.py           # RawSigner protocol + KeychainRawSigner (ctypes ->
                          # Security.framework: SecKeyCreateSignature; no key material,
@@ -190,7 +197,8 @@ src/anafpy/
     spv/                 # tools.py (+ spvmsg:// resource), nomenclature.py
                          # (report types + per-type wire params)
     declaratii/          # tools.py (declaratie_validate/render/sign/nr_evid/
-                         # duk_status), models.py — LOCAL, no filing (M1)
+                         # duk_status — LOCAL, no filing (M1) — + declaratie_status/
+                         # recipisa over the public StareD112), models.py
     __main__.py          # `python -m anafpy.mcp` (stdio)
 skills/                  # workflow skills, served by the MCP server as same-name
                          # prompts (etransport-declare: source data -> FlatTransport
@@ -412,6 +420,15 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   the shared `write_artifact` collision guard, never base64. Needs
   `ANAFPY_DUK_DIR`; signing is macOS-only for now (the `RawSigner` protocol is
   the Windows seam). See the [DUK reference](docs/anaf-reference/declaratii/duk.md).
+  Two more tools close the post-manual-filing loop over the **public, no-auth**
+  StareD112 service (added 2026-07-16; they need neither `ANAFPY_DUK_DIR` nor any
+  login): `declaratie_status` (READ_ONLY; upload index + CUI → the CUI's
+  last-3-months filings with per-document state — the "no declaration identified"
+  page is a returned business outcome, `found=false`) and `declaratie_recipisa`
+  (ARTIFACT_SAVING; saves the signed filing-receipt PDF — ANAF answers an empty
+  PDF body for an unknown/expired index, returned as `ok=false`; recipisas last
+  ~60 days). Wire reference:
+  [docs/anaf-reference/declaratii/stared112.md](docs/anaf-reference/declaratii/stared112.md).
 - **Flat models live at the client layer**
   ([efactura/authoring/](src/anafpy/efactura/authoring/),
   [etransport/models.py](src/anafpy/etransport/models.py)) — the MCP layer only

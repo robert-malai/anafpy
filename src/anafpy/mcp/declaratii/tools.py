@@ -1,11 +1,15 @@
-"""Declaration MCP tools — author, validate, render, and sign locally.
+"""Declaration MCP tools — author, validate, render, sign, and track status.
 
-The whole flow is local: DUKIntegrator (ANAF's own validator/renderer) runs
+The authoring flow is local: DUKIntegrator (ANAF's own validator/renderer) runs
 ``-v``/``-p`` in a subprocess, and the qualified signature is embedded with
 pyHanko while the raw RSA op is delegated to the OS token middleware — no key
 material or PIN ever enters this process (``DESIGN.md`` invariant). Filing the
 signed PDF with ANAF is manual in this milestone (point the user at the portal);
-a later milestone automates the upload.
+a later milestone automates the upload. Status tracking is already automated:
+``declaratie_status`` / ``declaratie_recipisa`` ride ANAF's **public, no-auth**
+StareD112 service, so once the user filed manually and has the upload index,
+the confirmation loop (state + signed recipisa) needs no login. These two tools
+work without ``ANAFPY_DUK_DIR``.
 
 Validation authority is ANAF's: ``declaratie_validate`` runs DUK's per-form
 validator and returns its findings verbatim — the model's iteration loop is
@@ -33,8 +37,10 @@ from ..context import AppContext
 from .models import (
     DeclarationXmlInput,
     NrEvidResult,
+    ReceiptResult,
     RenderResult,
     SignResult,
+    StatusResult,
     ValidationResult,
 )
 
@@ -47,7 +53,9 @@ _INSTALL_HINT = (
 
 _FILE_IT = (
     "file the signed PDF manually at anaf.ro → Depunere declarații → Transmitere "
-    "declarații (portal upload is automated in a later release)"
+    "declarații (portal upload is automated in a later release); note the upload "
+    "index the portal returns — declaratie_status tracks the processing with it, "
+    "and declaratie_recipisa downloads the signed filing receipt"
 )
 
 
@@ -175,6 +183,65 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             chain_complete=signed.chain_complete,
             guidance=guidance,
         )
+
+    @mcp.tool(
+        title="Declarations: filing status",
+        annotations=READ_ONLY,
+        description="Check the processing status of a filed declaration on ANAF's "
+        "public StareD112 service (no login needed). `index` is the upload index "
+        "the portal returned on submission (= the recipisa number); `cui` defaults "
+        "to the configured fiscal code; pass filed_at_counter=true for documents "
+        "filed at an ANAF counter (`index` is then the registration number). A "
+        "matching pair returns ALL the CUI's documents from the last 3 months "
+        "(max 200), each with state valid / validation_errors / not_valid / "
+        "processing — on `processing`, check again later. found=false means the "
+        "pair matched nothing (wrong pair, older than 3 months, or beyond the "
+        "last 200 submissions).",
+    )
+    async def declaratie_status(
+        index: str, cui: str | None = None, filed_at_counter: bool = False
+    ) -> StatusResult:
+        result = await ctx.declaration_status().check_status(
+            index, config.require_cif(cui), filed_at_counter=filed_at_counter
+        )
+        return StatusResult(
+            found=result.found,
+            cui=result.cui,
+            period_start=result.period_start,
+            period_end=result.period_end,
+            documents=result.documents,
+            message=result.message,
+        )
+
+    @mcp.tool(
+        title="Declarations: download recipisa",
+        annotations=ARTIFACT_SAVING,
+        description="Download the signed recipisa (filing receipt) PDF for an "
+        "upload index from ANAF's public StareD112 service, and write it to "
+        "`save_pdf_as` (a full path) — the binary never enters the context. "
+        "Recipisas are only available ~60 days from filing: ok=false with an "
+        "explanation means the index is unknown or the window has lapsed "
+        "(declaratie_status reports availability per document as "
+        "receipt_available). An existing file is never replaced unless "
+        "overwrite=true. Advise the user to archive the recipisa — it is the "
+        "digitally signed proof of filing and ANAF does not keep it accessible.",
+    )
+    async def declaratie_recipisa(
+        index: str, save_pdf_as: str, overwrite: bool = False
+    ) -> ReceiptResult:
+        try:
+            pdf = await ctx.declaration_status().download_receipt(index)
+            if pdf is None:
+                return ReceiptResult(
+                    ok=False,
+                    index=index,
+                    message="no recipisa available for this index — it is unknown, "
+                    "or its ~60-day availability window has lapsed",
+                )
+            path = write_artifact(save_pdf_as, pdf, overwrite=overwrite)
+        except AnafError as exc:
+            return ReceiptResult(ok=False, index=index, message=str(exc))
+        return ReceiptResult(ok=True, index=index, pdf_path=path)
 
     @mcp.tool(
         title="Declarations: payment-evidence number",

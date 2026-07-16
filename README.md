@@ -105,6 +105,10 @@ no-auth services):
   your qualified certificate (the PIN/2FA prompt is the human gate).
 - **Filing is not automated yet** — you upload the signed PDF on the portal;
   automating that is the next milestone.
+- **Track the filing afterwards, with no login at all** — given the upload index
+  the portal returns, Claude checks whether the declaration was accepted (ANAF's
+  public status service) and saves the digitally signed filing receipt PDF —
+  which ANAF keeps available for only ~60 days.
 
 Setup caveats worth knowing: the e-Factura and e-Transport tools need a one-time login
 with your **qualified digital certificate** (the same one you use on ANAF's SPV) — the
@@ -189,7 +193,9 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   DUKIntegrator wrapper (`-v`/`-p`), the `nr_evid` composer, and a pyHanko
   qualified-signature path where the raw op is delegated to the OS token
   (macOS Keychain / CryptoTokenKit; no key material in-process). Filing is a
-  later milestone.
+  later milestone — but filing **status** and the signed recipisa are already
+  covered (`DeclarationStatusClient` over ANAF's public no-auth StareD112
+  service).
 
 A sync facade was dropped as a goal — the clients are async-only.
 

@@ -15,7 +15,7 @@ import time
 from pydantic import BaseModel
 
 from ..auth import FileTokenStore, KeyringTokenStore, TokenProvider, TokenStore
-from ..declaratii import DukIntegrator
+from ..declaratii import DeclarationStatusClient, DukIntegrator
 from ..efactura.client import EFacturaClient
 from ..etransport.client import ETransportClient
 from ..exceptions import AnafConfigError
@@ -77,6 +77,7 @@ class AppContext:
         self._public: PublicClient | None = None
         self._spv: SpvClient | None = None
         self._duk: DukIntegrator | None = None
+        self._declaration_status: DeclarationStatusClient | None = None
         #: Redeemed confirmation tokens (single-use gate for the submit tools).
         self.token_ledger = TokenLedger()
         #: Same-day `cerere` dedupe for agent loops: canonical params -> the
@@ -137,6 +138,12 @@ class AppContext:
             self._duk = DukIntegrator(self.config.duk_dir, java=self.config.duk_java)
         return self._duk
 
+    def declaration_status(self) -> DeclarationStatusClient:
+        """The StareD112 status client (public, no auth — needs no configuration)."""
+        if self._declaration_status is None:
+            self._declaration_status = DeclarationStatusClient()
+        return self._declaration_status
+
     def auth_status(self) -> AuthStatus:
         """Report whether a usable ANAF session is present (read-only)."""
         env = self.config.environment.value
@@ -185,5 +192,7 @@ class AppContext:
             await self._public.aclose()
         if self._spv is not None:
             await self._spv.aclose()
+        if self._declaration_status is not None:
+            await self._declaration_status.aclose()
         if self._provider is not None:
             await self._provider.aclose()

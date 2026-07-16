@@ -5,7 +5,8 @@ description: >
   first; the flow is per-form generic) from unstructured information. Use when the
   user wants to prepare, fill in, validate, or sign a declaration (declarație) for
   ANAF. Drives the anafpy declaration MCP tools (declaratie_validate loop →
-  declaratie_render → declaratie_sign). Filing with ANAF is manual in this release.
+  declaratie_render → declaratie_sign → after manual filing, declaratie_status /
+  declaratie_recipisa). Filing with ANAF is manual in this release.
 ---
 
 # Compose and sign a tax declaration
@@ -92,4 +93,15 @@ PIN / phone 2FA) is about to fire on their device, then call `declaratie_sign` w
 Give the user the signed PDF path and tell them to file it at
 **anaf.ro → Depunere declarații → Transmitere declarații** (portal upload is
 automated in a later release). If `chain_complete` was false, mention the signature
-is leaf-only and portal acceptance of that is unverified.
+is leaf-only and portal acceptance of that is unverified. Ask them to note the
+**upload index** the portal shows after submission — it is the key to step 8.
+
+## Step 8 — confirm the filing (after the user uploads)
+
+When the user comes back with the upload index (or later asks "was it accepted?"),
+call `declaratie_status` with the index (CUI defaults to the configured one). It
+needs no login. Read the queried index's row: `processing` means check again later;
+`valid` means accepted; `validation_errors` / `not_valid` mean the document must be
+fixed and refiled — say so plainly. Once valid, offer to save the signed filing
+receipt with `declaratie_recipisa` to a path the user names, and advise archiving
+it: ANAF keeps the recipisa downloadable for only ~60 days.

@@ -422,6 +422,16 @@ Document in the guide that M1 signing is macOS-only and Windows follows.
 
 ## 10. M2 sketch (do not implement now)
 
+> **Update 2026-07-16 — recipisa tracking landed early, and differently.**
+> Recon found ANAF's `www.anaf.ro/StareD112/` service is **public and
+> unauthenticated** (upload index + CUI is the access key), so status + recipisa
+> tracking shipped ahead of M2 as `declaratii/status.py`
+> (`DeclarationStatusClient`) + the `declaratie_status` / `declaratie_recipisa`
+> MCP tools — no cert wall involved. See
+> `docs/anaf-reference/declaratii/stared112.md`. M2 below narrows to the
+> **upload itself**; the SPV recipisa route stays the fallback for documents
+> older than StareD112's 3-month/200-filing windows.
+
 Portal upload of the signed PDF + recipisa tracking. Recon first (M0 of M2):
 capture the real upload at `decl.anaf.mfinante.gov.ro` / e-guvernare.ro with
 the certificate — expect the same F5 APM cookie wall as SPV (reuse

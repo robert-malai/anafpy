@@ -89,9 +89,15 @@ DUKIntegrator messages — fix and retry until ok); compute `nr_evid` with
 PDF; ask the user to review it; then, only on their explicit go, warn them the
 certificate PIN/2FA prompt is about to fire and call `declaratie_sign` with
 confirm=true. Hand back the signed PDF path and tell the user to file it at
-anaf.ro → Depunere declarații (portal upload is a later release).
+anaf.ro → Depunere declarații (portal upload is a later release), asking them to
+note the upload index the portal returns. With that index, `declaratie_status`
+checks the processing state (public no-auth service — works without any login;
+`processing` means check again later, `valid` means accepted) and
+`declaratie_recipisa` saves the signed filing receipt PDF to disk — recipisas
+are only available ~60 days, so advise archiving it promptly.
 `declaratie_duk_status` reports the DUKIntegrator install and validator
-staleness. These tools need ANAFPY_DUK_DIR set (and signing is macOS-only for now).
+staleness. The authoring tools need ANAFPY_DUK_DIR set (signing is macOS-only
+for now); the status/recipisa tools need nothing.
 
 The `anaf_*` lookup tools query ANAF's PUBLIC no-auth services and work even without
 a login: the taxpayer/VAT registry (`anaf_lookup_taxpayers` answers "is this CUI

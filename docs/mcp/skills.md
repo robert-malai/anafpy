@@ -78,7 +78,12 @@ the signed PDF on the portal. The playbook walks Claude through:
    check.
 6. **Sign on your explicit go** — `declaratie_sign` with `confirm=true`, after a
    warning that the certificate PIN/2FA prompt is about to fire.
-7. **Hand off** — the signed PDF path, to file at anaf.ro → Depunere declarații.
+7. **Hand off** — the signed PDF path, to file at anaf.ro → Depunere declarații,
+   noting the upload index the portal returns.
+8. **Confirm the filing** — once you have uploaded, `declaratie_status` checks
+   whether ANAF accepted the declaration (no login needed) and
+   `declaratie_recipisa` saves the signed filing receipt — available only
+   ~60 days, so it's archived promptly.
 
 The human gate here is the signature approval (certificate PIN / 2FA); the skill
 never signs without your explicit go-ahead relayed as `confirm=true`.
