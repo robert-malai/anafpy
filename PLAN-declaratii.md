@@ -400,6 +400,12 @@ Document in the guide that M1 signing is macOS-only and Windows follows.
   Appendix A (Swift reference semantics) lives here too.
 - `docs/library/declaratii.md` — library guide (wrapper, signer, pdfsign;
   the macOS-only caveat; DUK install walkthrough incl. update-feed jars).
+  Include the **manual Adobe fallback**: the rendered PDF can always be signed
+  by hand in Adobe Reader (signature field + Keychain/CAPI Digital ID — the
+  classic ANAF flow); there is no *automatable* Adobe path (no Reader API,
+  Acrobat automation needs the paid GUI app, the Adobe PDF Library is a
+  commercial SDK), and the pyHanko signature is the same ISO 32000
+  `adbe.pkcs7.detached` class, so the fallback is documentation, not code.
 - `docs/mcp/tools.md` — the five tools; `docs/mcp/skills.md` — the skill;
   `docs/mcp/setup.md` — `ANAFPY_DUK_DIR` setup section (accountant audience:
   download zip, extract, point the env var; screenshot-level detail).
