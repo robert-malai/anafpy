@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from mcp.server.fastmcp import FastMCP
 
-from . import efactura, etransport, prompts, public, reference, spv
+from . import declaratii, efactura, etransport, prompts, public, reference, spv
 from .artifacts import READ_ONLY
 from .config import ServerConfig
 from .context import AppContext, AuthStatus
@@ -80,6 +80,26 @@ an error. Downloads always go to disk at caller-given paths, never into context.
 A message's document also exists as the resource `spvmsg://<mesaj_id>/pdf`;
 never read it into context when a file on disk is what the user wants.
 
+The `declaratie_*` tools author, validate, render, and sign Romanian tax
+declarations (D300 first) entirely locally — nothing is filed with ANAF in this
+release. Compose the XML from the form's XSD (attributes on a single root
+element), then: `declaratie_validate` in a loop (findings are ANAF's own
+DUKIntegrator messages — fix and retry until ok); compute `nr_evid` with
+`declaratie_nr_evid`, never by hand; `declaratie_render` to write the official
+PDF; ask the user to review it; then, only on their explicit go, warn them the
+certificate PIN/2FA prompt is about to fire and call `declaratie_sign` with
+confirm=true. Hand back the signed PDF path and tell the user to file it at
+anaf.ro → Depunere declarații (portal upload is a later release), asking them to
+note the upload index the portal returns. With that index, `declaratie_status`
+checks the processing state (public no-auth service — works without any login;
+states come in ANAF's verbatim Romanian: 'In prelucrare' means check again
+later, 'Documentul este valid' means accepted) and
+`declaratie_recipisa` saves the signed filing receipt PDF to disk — recipisas
+are only available ~60 days, so advise archiving it promptly.
+`declaratie_duk_status` reports the DUKIntegrator install and validator
+staleness. The authoring tools need ANAFPY_DUK_DIR set (signing is macOS-only
+for now); the status/recipisa tools need nothing.
+
 The `anaf_*` lookup tools query ANAF's PUBLIC no-auth services and work even without
 a login: the taxpayer/VAT registry (`anaf_lookup_taxpayers` answers "is this CUI
 VAT-registered / e-Factura-registered" and more, in one call — use it to sanity-check
@@ -120,6 +140,7 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     etransport.register(mcp, ctx, cfg)
     public.register(mcp, ctx)
     spv.register(mcp, ctx, cfg)
+    declaratii.register(mcp, ctx, cfg)
     reference.register(mcp, cfg)
     prompts.register(mcp, cfg)
     return mcp

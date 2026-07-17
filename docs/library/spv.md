@@ -57,7 +57,7 @@ rather than hanging, and retrying (which re-fires the prompt) is safe.
 curl cannot load — the login then fails instantly with
 `SEC_E_UNKNOWN_CREDENTIALS`, before any network traffic. Point the bootstrap
 at an **x64** curl with Schannel support — Git for Windows'
-`mingw64\bin\curl.exe` is a known-good one — via the `ANAFPY_SPV_CURL`
+`mingw64\bin\curl.exe` is a known-good one — via the `ANAFPY_CURL`
 environment variable (honored by the CLI, the MCP server, and
 `CurlBootstrapper` alike) or the `curl_path` argument.
 

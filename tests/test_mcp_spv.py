@@ -341,6 +341,29 @@ async def test_asteapta_raport_timeout_is_a_pending_answer(tmp_path: Path) -> No
     assert "again later" in result["detail"]
 
 
+@respx.mock
+async def test_asteapta_raport_failed_poll_creates_no_directories(
+    tmp_path: Path,
+) -> None:
+    # The pre-poll collision check is side-effect-free: a poll that times out
+    # must not leave a freshly-created empty directory tree behind (parents
+    # are made only at actual write time).
+    respx.get(f"{BASE}/listaMesaje").respond(json=NO_MESSAGES_BODY)
+    server = create_server(_config(tmp_path))
+    target = tmp_path / "reports" / "2026" / "raport.pdf"
+    result = await _call(
+        server,
+        "spv_asteapta_raport",
+        id_solicitare="999",
+        save_as=str(target),
+        timeout_s=0.05,
+        poll_interval_s=0.01,
+    )
+    assert result["status"] == "pending"
+    assert not target.parent.exists()
+    assert not (tmp_path / "reports").exists()
+
+
 # --- certificates ---------------------------------------------------------------------
 
 _IDENTITY = StoreIdentity(

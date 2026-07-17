@@ -17,12 +17,11 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from enum import StrEnum
 from typing import Annotated, Self
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
-from .._transport.base import ROMANIA_TZ, strip_accents
+from .._transport.base import ROMANIA_TZ, DescribedStrEnum, strip_accents
 
 __all__ = [
     "INCOME_CERTIFICATE_REASONS",
@@ -151,7 +150,7 @@ class ReportRequestResult(SpvEnvelope):
     parameters: _StrNone = Field(default=None, validation_alias="parametri")
 
 
-class ReportType(StrEnum):
+class ReportType(DescribedStrEnum):
     """``tip`` values accepted by ``cerere`` (vendored README, verbatim casing).
 
     Members are named after ANAF's own report names, per the repo convention
@@ -166,15 +165,6 @@ class ReportType(StrEnum):
     ``CAF`` is deliberately absent — the README states it is not yet
     requestable via the web service.
     """
-
-    #: What the report returns, for callers choosing one.
-    description: str
-
-    def __new__(cls, value: str, description: str) -> Self:
-        member = str.__new__(cls, value)
-        member._value_ = value
-        member.description = description
-        return member
 
     D112CONTRIB = (
         "D112Contrib",

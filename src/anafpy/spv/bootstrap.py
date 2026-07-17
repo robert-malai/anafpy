@@ -23,20 +23,23 @@ non-exportable platform-store key.
 The bootstrap is **interactive** (the 2FA prompt fires every time — the
 middleware caches authorizations only for minutes) and intermittently flaky, so
 it is bounded by a timeout and surfaces actionable errors instead of hanging.
+
+The platform machinery (curl resolution, cert selectors, TLS-backend pin,
+subprocess runner, failure taxonomy) lives in :mod:`anafpy._transport.curl`,
+shared with the declaration portal bootstrap
+(:class:`anafpy.declaratii.upload.PortalCurlBootstrapper`) — only the SPV
+choreography (the one-probe redirect chain) and its success judgment (the SPV
+JSON) live here.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
-import os
-import sys
-import tempfile
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from ..exceptions import AnafAuthError, AnafConfigError
+from .._transport.curl import CurlBootstrapperBase, parse_netscape_cookies
+from ..exceptions import AnafAuthError
 from .session import SpvSession
 
 __all__ = [
@@ -49,9 +52,6 @@ __all__ = [
 #: Base URL of the SPV web services (no test/prod split — production only).
 SPV_BASE_URL = "https://webserviced.anaf.ro/SPVWS2/rest"
 
-# curl's exit code for `--max-time` expiry — almost always an unanswered 2FA.
-_CURL_EXIT_TIMEOUT = 28
-
 
 @runtime_checkable
 class SessionBootstrapper(Protocol):
@@ -60,147 +60,33 @@ class SessionBootstrapper(Protocol):
     async def bootstrap(self) -> SpvSession: ...
 
 
-def parse_netscape_cookies(text: str) -> dict[str, str]:
-    """Cookie ``name -> value`` from a curl-written Netscape cookie jar.
-
-    Hand-rolled because stdlib ``MozillaCookieJar`` silently skips the
-    ``#HttpOnly_`` lines curl emits for HttpOnly cookies.
-    """
-    cookies: dict[str, str] = {}
-    for line in text.splitlines():
-        if line.startswith("#HttpOnly_"):
-            line = line.removeprefix("#HttpOnly_")
-        elif line.startswith("#") or not line.strip():
-            continue
-        # domain, include-subdomains, path, secure, expires, name, value
-        fields = line.split("\t")
-        if len(fields) == 7:
-            cookies[fields[5]] = fields[6]
-    return cookies
-
-
-def _default_curl_path(platform: str) -> str:
-    """``ANAFPY_SPV_CURL`` if set, else the OS-shipped curl.
-
-    Deliberately not whatever is first on ``PATH``: a Homebrew curl (macOS)
-    or a curl.se Windows build lacks the platform TLS backend
-    (SecureTransport / Schannel) and would reject the platform cert-store
-    ``--cert`` syntax. One known case *needs* the override: on **Windows on
-    ARM** with x64-only vendor middleware (e.g. certSIGN Paperless vToken,
-    observed 2026-07-13) the ARM64 System32 curl cannot load the key-storage
-    provider — point ``ANAFPY_SPV_CURL`` (or ``curl_path``) at an **x64**
-    Schannel curl (Git for Windows' ``mingw64\\bin\\curl.exe`` is one; it is
-    multi-backend, which is why :meth:`CurlBootstrapper.environment` pins
-    ``CURL_SSL_BACKEND`` on Windows too). See the SPV reference §1.1.
-    """
-    if override := os.environ.get("ANAFPY_SPV_CURL"):
-        return override
-    if platform == "win32":
-        system_root = os.environ.get("SYSTEMROOT", r"C:\Windows")
-        return str(Path(system_root) / "System32" / "curl.exe")
-    return "/usr/bin/curl"
-
-
-class CurlBootstrapper:
+class CurlBootstrapper(CurlBootstrapperBase):
     """Establishes an SPV session via the platform curl and its native key store.
 
-    Args:
-        identity: which certificate to present — the Keychain identity **name**
-            on macOS (see :func:`~anafpy.spv.certs.list_keychain_identities`),
-            the SHA-1 **thumbprint** in ``CurrentUser\\MY`` on Windows.
-        timeout: seconds to wait for the whole handshake, 2FA included. The
-            authorization prompt fires on every bootstrap, so keep this
-            generous.
-        curl_path: override the curl binary (tests, exotic installs); the
-            ``ANAFPY_SPV_CURL`` environment variable does the same for the
-            CLI and the MCP server (see :func:`_default_curl_path`).
-        platform: override ``sys.platform`` (tests).
+    The choreography is a single probe: one ``--location`` chain through
+    ``/my.policy`` (the renegotiation fires the 2FA) that must land on the SPV
+    ``listaMesaje`` JSON. Constructor arguments are the shared base's
+    (:class:`~anafpy._transport.curl.CurlBootstrapperBase`): *identity* — the
+    Keychain identity **name** on macOS (see
+    :func:`~anafpy.spv.certs.list_keychain_identities`), the SHA-1
+    **thumbprint** in ``CurrentUser\\MY`` on Windows — plus *timeout*,
+    *curl_path*, and *platform*.
     """
 
-    def __init__(
-        self,
-        identity: str,
-        *,
-        timeout: float = 240.0,
-        curl_path: str | None = None,
-        platform: str | None = None,
-    ) -> None:
-        if not identity:
-            raise AnafConfigError("CurlBootstrapper: `identity` must be non-empty")
-        self.identity = identity
-        self.timeout = timeout
-        self.platform = platform if platform is not None else sys.platform
-        if self.platform not in ("darwin", "win32"):
-            raise AnafConfigError(
-                f"no SPV bootstrap backend for platform {self.platform!r} — "
-                "supported: macOS (Keychain) and Windows (CertStore)"
-            )
-        self.curl_path = (
-            curl_path if curl_path is not None else _default_curl_path(self.platform)
-        )
-
-    # -- command construction (separated for testability) -----------------------------
+    context = "SPV bootstrap"
 
     def command(self, jar_path: str) -> list[str]:
         """The curl argv for the bootstrap redirect chain."""
-        cert = (
-            rf"CurrentUser\MY\{self.identity}"
-            if self.platform == "win32"
-            else self.identity
-        )
         return [
-            self.curl_path,
-            "--silent",
-            "--show-error",
+            *self.curl_base(jar_path),
             "--location",  # follow the /my.policy -> /my.policy_nonce chain
-            "--max-time",
-            str(int(self.timeout)),
             "--cert",
-            cert,
-            "--cookie-jar",
-            jar_path,
-            "--cookie",
-            jar_path,
+            self.cert_selector,
             f"{SPV_BASE_URL}/listaMesaje?zile=1",
         ]
 
-    def environment(self) -> dict[str, str]:
-        """Process environment for curl — pins the platform TLS backend.
-
-        Single-backend builds ignore ``CURL_SSL_BACKEND``; setting it matters
-        for multi-backend ones (a Git-for-Windows curl defaults to OpenSSL,
-        which rejects the CertStore ``--cert`` syntax).
-        """
-        env = dict(os.environ)
-        env["CURL_SSL_BACKEND"] = (
-            "secure-transport" if self.platform == "darwin" else "schannel"
-        )
-        return env
-
-    # -- execution ---------------------------------------------------------------------
-
-    async def _run_curl(self, jar_path: str) -> tuple[int, bytes, bytes]:
-        """Run curl; returns ``(returncode, stdout, stderr)``. Overridable in tests."""
-        process = await asyncio.create_subprocess_exec(
-            *self.command(jar_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=self.environment(),
-        )
-        try:
-            # curl enforces --max-time itself; the outer margin covers process spawn.
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=self.timeout + 30
-            )
-        except TimeoutError:
-            process.kill()
-            await process.wait()
-            raise AnafAuthError(
-                f"SPV bootstrap did not finish within {self.timeout:.0f}s — "
-                "the certificate middleware may be stuck; retry (the 2FA prompt "
-                "fires again)"
-            ) from None
-        return process.returncode or 0, stdout, stderr
+    def commands(self, jar_path: str) -> list[list[str]]:
+        return [self.command(jar_path)]
 
     async def bootstrap(self) -> SpvSession:
         """Run the handshake and return the authenticated session.
@@ -216,13 +102,7 @@ class CurlBootstrapper:
                 stalled 2FA), curl failed, or ANAF answered with something other
                 than the SPV JSON (certificate without SPV rights, APM hangup).
         """
-        with tempfile.TemporaryDirectory(prefix="anafpy-spv-") as tmp_dir:
-            jar_path = str(Path(tmp_dir) / "cookies.txt")
-            returncode, stdout, stderr = await self._run_curl(jar_path)
-            jar_text = ""
-            jar = Path(jar_path)
-            if jar.exists():
-                jar_text = jar.read_text(encoding="utf-8")
+        returncode, stdout, stderr, cookies = await self.run_chain()
 
         body = stdout.decode("utf-8", errors="replace")
         try:
@@ -230,25 +110,11 @@ class CurlBootstrapper:
         except ValueError:
             payload = None
         answered = isinstance(payload, dict) and "titlu" in payload
-        cookies = parse_netscape_cookies(jar_text)
         session = SpvSession(cookies=cookies, established_at=datetime.now(tz=UTC))
         if answered and session.is_authenticated_shape:
             return session
 
-        if returncode == _CURL_EXIT_TIMEOUT:
-            raise AnafAuthError(
-                f"SPV handshake timed out after {self.timeout:.0f}s — the token "
-                "PIN / 2FA authorization was not completed in time, or the "
-                "middleware stalled (observed intermittently). Retry; the "
-                "prompt fires again on every attempt."
-            )
-        if returncode != 0:
-            detail = stderr.decode("utf-8", errors="replace").strip()
-            raise AnafAuthError(
-                f"SPV handshake failed (curl exit {returncode}): "
-                f"{detail or 'no error output'} — check that the identity "
-                f"{self.identity!r} exists and its middleware is running"
-            )
+        self.raise_curl_failure(returncode, stderr)
         if not answered:
             snippet = " ".join(body.split())[:200]
             raise AnafAuthError(

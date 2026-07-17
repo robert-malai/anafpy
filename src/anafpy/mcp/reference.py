@@ -18,7 +18,10 @@ def register(mcp: FastMCP, cfg: ServerConfig) -> None:
     if docs is None:
         return
     for md in sorted(docs.rglob("*.md")):
-        if md.name == "README.md" or "_sources" in md.parts:
+        # The root README is the tree's own index; nested READMEs (e.g. the
+        # declaration-form inventory) are content. _sources/ is captured raw
+        # material (vendored HTML/headers), never model-facing reference.
+        if md == docs / "README.md" or "_sources" in md.parts:
             continue
         rel = md.relative_to(docs).with_suffix("")
         uri = f"anafref://{rel.as_posix()}"

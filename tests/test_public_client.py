@@ -15,6 +15,7 @@ import httpx
 import pytest
 import respx
 
+from anafpy.declaratii import DeclarationStatusClient
 from anafpy.exceptions import (
     AnafConfigError,
     AnafRateLimitError,
@@ -165,6 +166,42 @@ async def test_taxpayer_lookup_accepts_documented_envelope() -> None:
         result = await client.lookup_taxpayers([123])
     assert result.found == []
     assert result.not_found == [123]
+
+
+async def test_injected_client_without_base_url_raises_config_error() -> None:
+    # An injected client is never mutated: an empty base_url is a
+    # misconfiguration, named loudly at construction.
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(AnafConfigError, match=f"{BASE}/"):
+            PublicClient(http=http, min_request_interval=0)
+
+
+@respx.mock
+async def test_injected_client_with_base_url_is_used_and_not_closed() -> None:
+    respx.post(f"{BASE}/api/PlatitorTvaRest/v9/tva").mock(
+        return_value=httpx.Response(200, json={"found": [], "notFound": [123]})
+    )
+    http = httpx.AsyncClient(base_url=f"{BASE}/")
+    client = PublicClient(http=http, min_request_interval=0)
+    result = await client.lookup_taxpayers([123], date="2026-07-01")
+    await client.aclose()
+    assert result.not_found == [123]
+    assert not http.is_closed
+    await http.aclose()
+
+
+async def test_injected_client_shared_across_anafpy_clients_is_not_mutated() -> None:
+    # A caller may drive several anafpy clients through one httpx client
+    # (proxy/test seam). Neither construction may touch its base_url.
+    seam_url = "https://proxy.example.test/anaf/"
+    async with httpx.AsyncClient(base_url=seam_url) as http:
+        public = PublicClient(http=http, min_request_interval=0)
+        status = DeclarationStatusClient(http=http)
+        assert str(http.base_url) == seam_url
+        await public.aclose()
+        await status.aclose()
+        assert str(http.base_url) == seam_url
+        assert not http.is_closed
 
 
 @respx.mock

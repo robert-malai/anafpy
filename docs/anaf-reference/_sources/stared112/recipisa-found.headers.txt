@@ -1,0 +1,13 @@
+HTTP/1.1 200 OK
+Content-Type: application/pdf
+Content-Length: 9078
+Expires: 0
+Cache-Control: must-revalidate, post-check=0, pre-check=0
+Content-Disposition: inline;filename=1100000001.pdf
+Accept-Ranges: bytes
+Content-Language: en-US
+Date: Thu, 16 Jul 2026 13:38:58 GMT
+content-location: 
+location: 
+Set-Cookie: TS01f4a1fb=REDACTED; Path=/; Domain=.www.anaf.ro
+

@@ -10,17 +10,16 @@ client (and the MCP ``spv_*`` tools) then ride non-interactively.
 
 from __future__ import annotations
 
-import argparse
-import asyncio
-import os
 import secrets
 import ssl
 import sys
 import time
 import webbrowser
 from pathlib import Path
+from typing import TYPE_CHECKING, Annotated
 
 import httpx
+from cyclopts import App, Parameter
 
 from .. import __version__
 from ..auth import (
@@ -47,6 +46,9 @@ from ..spv import (
 )
 from ..spv.certs import DEFAULT_IDENTITY_PATH
 
+if TYPE_CHECKING:
+    from ..declaratii import DukFinding, DukIntegrator
+
 DEFAULT_STORE = "~/.anafpy/tokens.json"
 
 #: How long the callback listener waits for the redirect before offering paste mode.
@@ -58,9 +60,63 @@ _PASTE_HINT = (
     "(promptly: ANAF's code expires in ~60 seconds)."
 )
 
+app = App(
+    name="anafpy",
+    help="ANAF e-Factura / e-Transport / public-services client",
+    version=f"anafpy {__version__}",
+    # `main` owns the exit-code mapping (AnafError -> 1, Ctrl-C -> 130), so
+    # commands hand their exit codes back instead of sys.exit()-ing inside
+    # cyclopts, and KeyboardInterrupt propagates to `main`'s handler.
+    result_action="return_value",
+    suppress_keyboard_interrupt=False,
+)
 
-def _env(name: str) -> str | None:
-    return os.environ.get(name)
+auth_app = App(name="auth", help="authentication")
+spv_app = App(name="spv", help="SPV mailbox session (certificate mTLS)")
+declaratii_app = App(
+    name="declaratii",
+    help="tax-declaration validation, rendering, signing, and filing status",
+)
+app.command(auth_app)
+app.command(spv_app)
+app.command(declaratii_app)
+
+# Shared option shapes, mirrored across commands the way argparse's helper
+# functions used to. The env-var fallback lives on the Parameter, read at parse
+# time, so wrappers and tests can set the environment after module import.
+_StoreOption = Annotated[
+    str, Parameter(env_var="ANAFPY_TOKEN_STORE", help="token store path (file backend)")
+]
+_StoreBackendOption = Annotated[
+    str,
+    Parameter(
+        env_var="ANAFPY_TOKEN_STORE_BACKEND",
+        help="where tokens live: the OS credential store (macOS Keychain / "
+        "Windows Credential Manager; the default), or a JSON file at --store "
+        "(for Docker/headless hosts)",
+    ),
+]
+_SessionOption = Annotated[
+    str, Parameter(env_var="ANAFPY_SPV_SESSION", help="SPV session store path")
+]
+_IdentityFileOption = Annotated[
+    str,
+    Parameter(
+        env_var="ANAFPY_SPV_IDENTITY_FILE", help="persisted certificate selection"
+    ),
+]
+_DukDirOption = Annotated[
+    str | None,
+    Parameter(
+        env_var="ANAFPY_DUK_DIR", help="the extracted DUKIntegrator dist/ folder"
+    ),
+]
+_JavaOption = Annotated[
+    str | None,
+    Parameter(
+        env_var="ANAFPY_DUK_JAVA", help="the java binary to run DUKIntegrator with"
+    ),
+]
 
 
 def _load_ssl_context(cert: str, key: str | None) -> ssl.SSLContext:
@@ -83,21 +139,21 @@ def _paste_code(expected_state: str | None = None) -> str:
     )
 
 
-def _token_store(args: argparse.Namespace) -> tuple[TokenStore, str]:
+def _token_store(store: str, store_backend: str) -> tuple[TokenStore, str]:
     """The store selected by ``--store-backend``, plus a human label for messages.
 
-    Validated here rather than by argparse ``choices``: the default comes from
-    ``ANAFPY_TOKEN_STORE_BACKEND``, and argparse never checks defaults.
+    Validated here rather than by a ``Literal`` type: a bad value must travel
+    the ``AnafConfigError`` path (``error: ...`` + exit 1) whether it came from
+    the flag or from ``ANAFPY_TOKEN_STORE_BACKEND``, not exit via a parse error.
     """
-    if args.store_backend == "keyring":
-        store = KeyringTokenStore()
-        return store, f"the OS credential store (service {store.service!r})"
-    if args.store_backend != "file":
+    if store_backend == "keyring":
+        backend = KeyringTokenStore()
+        return backend, f"the OS credential store (service {backend.service!r})"
+    if store_backend != "file":
         raise AnafConfigError(
-            f"unknown token store backend {args.store_backend!r} — "
-            "use 'file' or 'keyring'"
+            f"unknown token store backend {store_backend!r} — use 'file' or 'keyring'"
         )
-    path = Path(args.store).expanduser()
+    path = Path(store).expanduser()
     return FileTokenStore(path), str(path)
 
 
@@ -163,9 +219,32 @@ async def _do_login(
     return 0
 
 
-def _cmd_login(args: argparse.Namespace) -> int:
-    client_id = args.client_id or _env("ANAFPY_CLIENT_ID")
-    client_secret = args.client_secret or _env("ANAFPY_CLIENT_SECRET")
+@auth_app.command(name="login")
+async def auth_login(
+    *,
+    redirect_uri: str,
+    client_id: Annotated[str | None, Parameter(env_var="ANAFPY_CLIENT_ID")] = None,
+    client_secret: Annotated[
+        str | None, Parameter(env_var="ANAFPY_CLIENT_SECRET")
+    ] = None,
+    paste: bool = False,
+    tls_cert: str | None = None,
+    tls_key: str | None = None,
+    store: _StoreOption = DEFAULT_STORE,
+    store_backend: _StoreBackendOption = "keyring",
+) -> int:
+    """Interactive OAuth bootstrap (browser + certificate).
+
+    Args:
+        redirect_uri: Must match the registered Callback URL (ANAF requires
+            ``https://``).
+        client_id: OAuth application id from ANAF's portal.
+        client_secret: OAuth application secret from ANAF's portal.
+        paste: Run no listener; paste the redirect URL from the browser instead.
+        tls_cert: PEM certificate: serve the callback listener over TLS directly.
+        tls_key: PEM private key for ``--tls-cert`` (omit if the key is in the
+            cert file).
+    """
     if not client_id or not client_secret:
         print(
             "error: client id/secret required "
@@ -173,34 +252,36 @@ def _cmd_login(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if args.paste and args.tls_cert:
+    if paste and tls_cert:
         print("error: --paste and --tls-cert are mutually exclusive", file=sys.stderr)
         return 2
-    if args.tls_key and not args.tls_cert:
+    if tls_key and not tls_cert:
         print("error: --tls-key requires --tls-cert", file=sys.stderr)
         return 2
-    ssl_context = (
-        _load_ssl_context(args.tls_cert, args.tls_key) if args.tls_cert else None
-    )
+    ssl_context = _load_ssl_context(tls_cert, tls_key) if tls_cert else None
     # Build the store before the browser flow so a missing keyring package or
     # backend fails fast, not after the user has authorized with the certificate.
-    store, store_label = _token_store(args)
-    return asyncio.run(
-        _do_login(
-            client_id,
-            client_secret,
-            args.redirect_uri,
-            store,
-            store_label,
-            paste=args.paste,
-            ssl_context=ssl_context,
-        )
+    token_store, store_label = _token_store(store, store_backend)
+    return await _do_login(
+        client_id,
+        client_secret,
+        redirect_uri,
+        token_store,
+        store_label,
+        paste=paste,
+        ssl_context=ssl_context,
     )
 
 
-def _cmd_status(args: argparse.Namespace) -> int:
-    store, _ = _token_store(args)
-    tokens = store.load()
+@auth_app.command(name="status")
+def auth_status(
+    *,
+    store: _StoreOption = DEFAULT_STORE,
+    store_backend: _StoreBackendOption = "keyring",
+) -> int:
+    """Show stored token validity."""
+    token_store, _ = _token_store(store, store_backend)
+    tokens = token_store.load()
     if tokens is None:
         print("not authenticated — run `anafpy auth login`")
         return 1
@@ -214,14 +295,20 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_logout(args: argparse.Namespace) -> int:
+@auth_app.command(name="logout")
+def auth_logout(
+    *,
+    store: _StoreOption = DEFAULT_STORE,
+    store_backend: _StoreBackendOption = "keyring",
+) -> int:
+    """Remove the stored tokens (ends this machine's access)."""
     # Purely local: ANAF's documented /revoke is not reachable headlessly (it
     # answers with the certificate login wall — live-probed 2026-07-05), so
     # deleting the refresh token from this machine IS the logout; server-side the
     # tokens end by expiry or the portal's "Renunțare Oauth".
-    store, store_label = _token_store(args)
+    token_store, store_label = _token_store(store, store_backend)
     try:
-        tokens = store.load()
+        tokens = token_store.load()
     except AnafConfigError:
         # An unreadable store is exactly what logout should get rid of.
         print("warning: token store unreadable — removing it anyway", file=sys.stderr)
@@ -229,7 +316,7 @@ def _cmd_logout(args: argparse.Namespace) -> int:
         if tokens is None:
             print("not authenticated — nothing to remove")
             return 0
-    store.clear()
+    token_store.clear()
     print(f"✓ Logged out. Tokens removed from {store_label}.")
     return 0
 
@@ -248,12 +335,18 @@ def _print_spv_identity(listing: MessageList) -> None:
     print(f"  authorized CUIs/CNPs    : {', '.join(listing.authorized_cuis)}")
 
 
-def _cmd_spv_certs(args: argparse.Namespace) -> int:
+@spv_app.command(name="certs")
+def spv_certs(
+    *,
+    session: _SessionOption = DEFAULT_SESSION_PATH,
+    identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
+) -> int:
+    """List usable certificates."""
     identities = discover_identities()
     if not identities:
         print("no usable TLS-client identities found — is the token plugged in?")
         return 1
-    selected = load_selected_identity(args.identity_file)
+    selected = load_selected_identity(identity_file)
     for identity in identities:
         marker = (
             " (selected)"
@@ -268,21 +361,34 @@ def _cmd_spv_certs(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_spv_select(args: argparse.Namespace) -> int:
-    identity = identity_by_thumbprint(args.thumbprint)
-    save_selected_identity(identity, args.identity_file)
+@spv_app.command(name="select")
+def spv_select(
+    thumbprint: str,
+    *,
+    session: _SessionOption = DEFAULT_SESSION_PATH,
+    identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
+) -> int:
+    """Persist which certificate to use.
+
+    Args:
+        thumbprint: SHA-1 thumbprint from ``anafpy spv certs``.
+    """
+    identity = identity_by_thumbprint(thumbprint)
+    save_selected_identity(identity, identity_file)
     print(f"✓ Selected {identity.name!r} ({identity.sha1_thumbprint}).")
     print("  Establish a session with `anafpy spv login`.")
     return 0
 
 
-def _resolve_spv_identity(args: argparse.Namespace) -> str:
+def _resolve_spv_identity(
+    identity: str | None, thumbprint: str | None, identity_file: str
+) -> str:
     """The ``--cert`` selector for the bootstrap, from args/selection/discovery."""
-    if args.identity:
-        return str(args.identity)
-    if args.thumbprint:
-        return identity_by_thumbprint(args.thumbprint).bootstrap_identity
-    if (selected := load_selected_identity(args.identity_file)) is not None:
+    if identity:
+        return identity
+    if thumbprint:
+        return identity_by_thumbprint(thumbprint).bootstrap_identity
+    if (selected := load_selected_identity(identity_file)) is not None:
         return selected.bootstrap_identity
     identities = discover_identities()
     if len(identities) == 1:
@@ -293,30 +399,44 @@ def _resolve_spv_identity(args: argparse.Namespace) -> str:
     )
 
 
-def _cmd_spv_login(args: argparse.Namespace) -> int:
-    identity = _resolve_spv_identity(args)
+@spv_app.command(name="login")
+async def spv_login(
+    *,
+    identity: str | None = None,
+    thumbprint: Annotated[
+        str | None, Parameter(help="pick the certificate by SHA-1 thumbprint")
+    ] = None,
+    timeout: float = 240.0,
+    session: _SessionOption = DEFAULT_SESSION_PATH,
+    identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
+) -> int:
+    """Establish the SPV cookie session (interactive: certificate + 2FA).
 
-    async def run() -> MessageList | AnafError:
-        provider = SpvSessionProvider(
-            store=FileSessionStore(args.session),
-            bootstrapper=CurlBootstrapper(identity, timeout=args.timeout),
-        )
-        async with SpvClient(provider) as spv:
-            await spv.login()
-            # 60-day window: the identity fields (CNP/serial/authorized CUIs)
-            # only ride responses that contain messages. Best-effort: the login
-            # already succeeded and the session is saved — a probe hiccup must
-            # not report it as failed (observed live 2026-07-13: the probe
-            # raised right after a good login).
-            try:
-                return await spv.list_messages(60)
-            except AnafError as exc:
-                return exc
-
-    print(f"Establishing SPV session with identity {identity!r}...", flush=True)
+    Args:
+        identity: Certificate selector passed to curl verbatim (macOS Keychain
+            name / Windows thumbprint); overrides the persisted selection.
+        timeout: Seconds to wait for the handshake incl. the 2FA.
+    """
+    resolved = _resolve_spv_identity(identity, thumbprint, identity_file)
+    print(f"Establishing SPV session with identity {resolved!r}...", flush=True)
     print("Answer the certificate PIN / 2FA prompt when it appears.", flush=True)
-    outcome = asyncio.run(run())
-    print(f"\n✓ SPV session established; saved to {args.session}.")
+    provider = SpvSessionProvider(
+        store=FileSessionStore(session),
+        bootstrapper=CurlBootstrapper(resolved, timeout=timeout),
+    )
+    async with SpvClient(provider) as spv:
+        await spv.login()
+        # 60-day window: the identity fields (CNP/serial/authorized CUIs)
+        # only ride responses that contain messages. Best-effort: the login
+        # already succeeded and the session is saved — a probe hiccup must
+        # not report it as failed (observed live 2026-07-13: the probe
+        # raised right after a good login).
+        outcome: MessageList | AnafError
+        try:
+            outcome = await spv.list_messages(60)
+        except AnafError as exc:
+            outcome = exc
+    print(f"\n✓ SPV session established; saved to {session}.")
     if isinstance(outcome, AnafError):
         print(f"(identity probe failed: {outcome} — `anafpy spv status` re-checks)")
     else:
@@ -324,14 +444,17 @@ def _cmd_spv_login(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_spv_status(args: argparse.Namespace) -> int:
-    async def run() -> MessageList:
-        provider = SpvSessionProvider(store=FileSessionStore(args.session))
-        async with SpvClient(provider) as spv:
-            return await spv.list_messages(60)
-
+@spv_app.command(name="status")
+async def spv_status(
+    *,
+    session: _SessionOption = DEFAULT_SESSION_PATH,
+    identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
+) -> int:
+    """Check the stored SPV session."""
+    provider = SpvSessionProvider(store=FileSessionStore(session))
     try:
-        listing = asyncio.run(run())
+        async with SpvClient(provider) as spv:
+            listing = await spv.list_messages(60)
     except AnafAuthError as exc:
         print(f"no usable SPV session ({exc})")
         print("run `anafpy spv login`")
@@ -341,149 +464,264 @@ def _cmd_spv_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_spv_logout(args: argparse.Namespace) -> int:
+@spv_app.command(name="logout")
+def spv_logout(
+    *,
+    session: _SessionOption = DEFAULT_SESSION_PATH,
+    identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
+) -> int:
+    """Remove the stored SPV session."""
     # Purely local, like `auth logout`: the APM session server-side ends by its
     # own idle timeout; removing the cookies ends this machine's access.
-    FileSessionStore(args.session).clear()
-    print(f"✓ SPV session removed from {args.session}.")
+    FileSessionStore(session).clear()
+    print(f"✓ SPV session removed from {session}.")
     return 0
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="anafpy",
-        description="ANAF e-Factura / e-Transport / public-services client",
-    )
-    parser.add_argument("--version", action="version", version=f"anafpy {__version__}")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    auth = sub.add_parser("auth", help="authentication").add_subparsers(
-        dest="auth_cmd", required=True
-    )
-
-    login = auth.add_parser(
-        "login", help="interactive OAuth bootstrap (browser + certificate)"
-    )
-    login.add_argument("--client-id")
-    login.add_argument("--client-secret")
-    login.add_argument(
-        "--redirect-uri",
-        required=True,
-        help="must match the registered Callback URL (ANAF requires https://)",
-    )
-    login.add_argument(
-        "--paste",
-        action="store_true",
-        help="run no listener; paste the redirect URL from the browser instead",
-    )
-    login.add_argument(
-        "--tls-cert",
-        help="PEM certificate: serve the callback listener over TLS directly",
-    )
-    login.add_argument(
-        "--tls-key",
-        help="PEM private key for --tls-cert (omit if the key is in the cert file)",
-    )
-    _add_store_args(login)
-    login.set_defaults(func=_cmd_login)
-
-    status = auth.add_parser("status", help="show stored token validity")
-    _add_store_args(status)
-    status.set_defaults(func=_cmd_status)
-
-    logout = auth.add_parser(
-        "logout", help="remove the stored tokens (ends this machine's access)"
-    )
-    _add_store_args(logout)
-    logout.set_defaults(func=_cmd_logout)
-
-    spv = sub.add_parser(
-        "spv", help="SPV mailbox session (certificate mTLS)"
-    ).add_subparsers(dest="spv_cmd", required=True)
-
-    spv_certs = spv.add_parser("certs", help="list usable certificates")
-    _add_spv_args(spv_certs)
-    spv_certs.set_defaults(func=_cmd_spv_certs)
-
-    spv_select = spv.add_parser("select", help="persist which certificate to use")
-    spv_select.add_argument("thumbprint", help="SHA-1 thumbprint from `spv certs`")
-    _add_spv_args(spv_select)
-    spv_select.set_defaults(func=_cmd_spv_select)
-
-    spv_login = spv.add_parser(
-        "login",
-        help="establish the SPV cookie session (interactive: certificate + 2FA)",
-    )
-    spv_login.add_argument(
-        "--identity",
-        help="certificate selector passed to curl verbatim (macOS Keychain name / "
-        "Windows thumbprint); overrides the persisted selection",
-    )
-    spv_login.add_argument(
-        "--thumbprint", help="pick the certificate by SHA-1 thumbprint"
-    )
-    spv_login.add_argument(
-        "--timeout",
-        type=float,
-        default=240.0,
-        help="seconds to wait for the handshake incl. the 2FA (default 240)",
-    )
-    _add_spv_args(spv_login)
-    spv_login.set_defaults(func=_cmd_spv_login)
-
-    spv_status = spv.add_parser("status", help="check the stored SPV session")
-    _add_spv_args(spv_status)
-    spv_status.set_defaults(func=_cmd_spv_status)
-
-    spv_logout = spv.add_parser("logout", help="remove the stored SPV session")
-    _add_spv_args(spv_logout)
-    spv_logout.set_defaults(func=_cmd_spv_logout)
-
-    return parser
+# --- declaratii -------------------------------------------------------------------
 
 
-def _add_spv_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--session",
-        # Read at parse time (not import) so tests and wrappers can set the env.
-        default=os.environ.get("ANAFPY_SPV_SESSION", DEFAULT_SESSION_PATH),
-        help="SPV session store path; default from ANAFPY_SPV_SESSION",
-    )
-    parser.add_argument(
-        "--identity-file",
-        default=os.environ.get("ANAFPY_SPV_IDENTITY_FILE", DEFAULT_IDENTITY_PATH),
-        help="persisted certificate selection; default from ANAFPY_SPV_IDENTITY_FILE",
-    )
+def _duk(duk_dir: str | None, java: str | None) -> DukIntegrator:
+    """Build the DUKIntegrator wrapper from ``--duk-dir`` / ``ANAFPY_DUK_DIR``."""
+    from ..declaratii import DukIntegrator
+
+    if not duk_dir:
+        raise AnafConfigError(
+            "no DUKIntegrator directory — pass --duk-dir or set ANAFPY_DUK_DIR to "
+            "the extracted dist/ folder"
+        )
+    return DukIntegrator(Path(duk_dir).expanduser(), java=java)
 
 
-def _add_store_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--store",
-        # Read at parse time (not import) so tests and wrappers can set the env.
-        default=os.environ.get("ANAFPY_TOKEN_STORE", DEFAULT_STORE),
+def _print_findings(findings: list[DukFinding]) -> None:
+    for finding in findings:
+        print(f"{finding.severity.upper()}: {finding.message}")
+
+
+def _read_bytes(path: Path, what: str) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise AnafConfigError(f"cannot read {what} {str(path)!r}: {exc}") from exc
+
+
+def _write_bytes(path: Path, data: bytes, what: str) -> None:
+    # Overwrite-by-default is fine at a terminal (a human is watching), but a
+    # replacement must never be silent (mirrors the MCP layer's stricter guard).
+    replaced = path.exists()
+    try:
+        path.write_bytes(data)
+    except OSError as exc:
+        raise AnafConfigError(f"cannot write {what} {str(path)!r}: {exc}") from exc
+    if replaced:
+        print(f"replaced existing {path}")
+
+
+@declaratii_app.command(name="validate")
+async def declaratii_validate(
+    form: str,
+    xml: Path,
+    *,
+    duk_dir: _DukDirOption = None,
+    java: _JavaOption = None,
+    option: Annotated[int, Parameter(help="DUKIntegrator valOption")] = 0,
+) -> int:
+    """Validate a declaration with DUKIntegrator.
+
+    Args:
+        form: Form name, e.g. D300.
+        xml: Path to the declaration XML.
+    """
+    duk = _duk(duk_dir, java)
+    xml_bytes = _read_bytes(xml.expanduser(), "declaration XML")
+    result = await duk.validate(form, xml_bytes, option=option)
+    if result.ok:
+        # A warning-only run passes, but DUK's notices are the user's to see
+        # (mirrors the MCP declaratie_validate `warnings` field).
+        _print_findings(result.warnings)
+        print(f"✓ {form} is valid.")
+        return 0
+    _print_findings(result.findings)
+    return 1
+
+
+@declaratii_app.command(name="render")
+async def declaratii_render(
+    form: str,
+    xml: Path,
+    *,
+    output: Annotated[
+        Path,
+        Parameter(
+            name=["--output", "-o"],
+            help="output PDF path (an existing file is overwritten, with a notice)",
+        ),
+    ],
+    duk_dir: _DukDirOption = None,
+    java: _JavaOption = None,
+    option: Annotated[int, Parameter(help="DUKIntegrator valOption")] = 0,
+) -> int:
+    """Render the official PDF (validates first).
+
+    Args:
+        form: Form name, e.g. D300.
+        xml: Path to the declaration XML.
+    """
+    duk = _duk(duk_dir, java)
+    xml_bytes = _read_bytes(xml.expanduser(), "declaration XML")
+    out = output.expanduser()
+    replacing = out.exists()  # DUK itself writes the PDF — note a replacement.
+    result = await duk.render(form, xml_bytes, out, option=option)
+    if not result.ok:
+        print("validation failed; no PDF written:", file=sys.stderr)
+        _print_findings(result.findings)
+        return 1
+    _print_findings(result.warnings)
+    if replacing:
+        print(f"replaced existing {out}")
+    print(f"✓ Rendered {form} -> {out}")
+    return 0
+
+
+@declaratii_app.command(name="status")
+async def declaratii_status(
+    index: str,
+    cui: str,
+    *,
+    ghiseu: bool = False,
+) -> int:
+    """Check a filed declaration's processing status (public, no login).
+
+    Args:
+        index: Upload index from the portal (= the recipisa number).
+        cui: The taxpayer's fiscal code.
+        ghiseu: The document was filed at an ANAF counter; INDEX is the
+            registration number.
+    """
+    from ..declaratii import DeclarationStatusClient
+
+    async with DeclarationStatusClient() as client:
+        result = await client.check_status(index, cui, filed_at_counter=ghiseu)
+    if not result.found:
+        print(f"No declaration found for index {index} / CUI {cui}.")
+        print(f"({result.message})")
+        return 1
+    print(
+        f"Documents filed by CUI {result.cui} "
+        f"({result.period_start} → {result.period_end}):"
     )
-    parser.add_argument(
-        "--store-backend",
-        choices=("file", "keyring"),
-        # Read at parse time (not import) so tests and wrappers can set the env.
-        default=os.environ.get("ANAFPY_TOKEN_STORE_BACKEND", "keyring"),
-        help="where tokens live: the OS credential store (macOS Keychain / "
-        "Windows Credential Manager; the default), or a JSON file at --store "
-        "(for Docker/headless hosts); default from ANAFPY_TOKEN_STORE_BACKEND",
+    queried = index.strip()
+    for document in result.documents:
+        # With --ghiseu the query key is the counter registration number, which
+        # lives in the registration column — the internet upload index in
+        # document.index can never match it.
+        matches_query = (
+            queried in document.registration if ghiseu else document.index == queried
+        )
+        marker = " ←" if matches_query else ""
+        receipt = "recipisa available" if document.receipt_available else "no recipisa"
+        # Print ANAF's preserved wording, including future unclassified states.
+        print(
+            f"  {document.index}  {document.form:<8} {document.state_text:<40} "
+            f"{document.upload_date}  {receipt}{marker}"
+        )
+    return 0
+
+
+@declaratii_app.command(name="recipisa")
+async def declaratii_recipisa(
+    index: str,
+    *,
+    output: Annotated[
+        Path,
+        Parameter(
+            name=["--output", "-o"],
+            help="output PDF path (an existing file is overwritten, with a notice)",
+        ),
+    ],
+) -> int:
+    """Download the signed filing receipt PDF (public, no login).
+
+    Args:
+        index: Upload index from the portal.
+    """
+    from ..declaratii import DeclarationStatusClient
+
+    async with DeclarationStatusClient() as client:
+        pdf = await client.download_receipt(index)
+    if pdf is None:
+        print(
+            f"No recipisa available for index {index} — it is unknown, or its "
+            "~60-day availability window has lapsed.",
+            file=sys.stderr,
+        )
+        return 1
+    out = output.expanduser()
+    _write_bytes(out, pdf, "recipisa PDF")
+    print(f"✓ Recipisa {index} -> {out}")
+    return 0
+
+
+@declaratii_app.command(name="sign")
+async def declaratii_sign(
+    pdf: Path,
+    *,
+    output: Annotated[
+        Path | None,
+        Parameter(
+            name=["--output", "-o"],
+            help="signed PDF path (default: <name>-semnat.pdf); an existing file "
+            "is overwritten, with a notice",
+        ),
+    ] = None,
+    identity: str | None = None,
+    identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
+) -> int:
+    """Sign a rendered PDF with the qualified certificate (macOS).
+
+    Args:
+        pdf: Path to the rendered PDF to sign.
+        identity: Keychain identity name to sign with; overrides
+            ANAFPY_SIGN_IDENTITY and the persisted SPV certificate selection.
+    """
+    from ..declaratii.signing import (
+        KeychainRawSigner,
+        default_signed_path,
+        load_pdfsign,
+        resolve_signing_label,
     )
+
+    pdfsign = load_pdfsign()
+    label = resolve_signing_label(identity, identity_path=identity_file)
+    source = pdf.expanduser()
+    out = output.expanduser() if output else default_signed_path(source)
+    # Read the source and check the destination BEFORE the PIN/2FA prompt: a
+    # bad path must not fire (or worse, discard the result of) an approval.
+    pdf_bytes = _read_bytes(source, "PDF")
+    if not out.parent.is_dir():
+        raise AnafConfigError(f"output directory {str(out.parent)!r} does not exist")
+    print(f"Signing with identity {label!r}.")
+    print("Answer the certificate PIN / 2FA prompt when it appears.", flush=True)
+    signer = KeychainRawSigner(label)
+    result = await pdfsign.sign_pdf(pdf_bytes, signer)
+    _write_bytes(out, result.pdf, "signed PDF")
+    print(f"\n✓ Signed -> {out}")
+    if not result.chain_complete and result.warning:
+        print(f"  note: {result.warning}")
+    print("  File it at anaf.ro → Depunere declarații → Transmitere declarații.")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
     try:
-        result: int = args.func(args)
-        return result
+        result = app(argv)
     except AnafError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         return 130
+    # --help/--version take the None branch; commands always return their code.
+    return result if isinstance(result, int) else 0
 
 
 if __name__ == "__main__":
