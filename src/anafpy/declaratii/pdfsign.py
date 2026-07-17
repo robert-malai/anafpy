@@ -7,10 +7,8 @@ and the signature covers the whole file. The raw RSA operation is delegated to a
 :class:`~anafpy.declaratii.signing.RawSigner` (the OS / token middleware) — no
 key material or PIN passes through here.
 
-Requires the optional ``anafpy[declaratii]`` extra (pyHanko). Callers should
-import this module inside a ``try`` and translate :class:`ModuleNotFoundError`
-into a "install anafpy[declaratii]" :class:`AnafConfigError`, mirroring the
-``mcp`` extra's pattern.
+Requires the optional ``anafpy[declaratii]`` extra (pyHanko). Use
+:func:`anafpy.declaratii.load_pdfsign` when a guarded optional import is needed.
 
 Proven end-to-end 2026-07-15 (pyHanko 0.35.2): validation ``intact=True,
 valid=True``, coverage ``ENTIRE_FILE``, embedded XML preserved.
@@ -18,32 +16,23 @@ valid=True``, coverage ``ENTIRE_FILE``, embedded XML preserved.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 from pathlib import Path
 
 import httpx
-from asn1crypto import x509
-from pydantic import BaseModel
+from asn1crypto import cms, pem, x509
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 
+from .models import PdfSignResult
 from .signing import RawSigner
 
-__all__ = ["PdfSignResult", "sign_pdf"]
+__all__ = ["sign_pdf"]
 
 _CA_CACHE_DIR = Path("~/.anafpy/ca-cache").expanduser()
-
-
-class PdfSignResult(BaseModel):
-    """A signed PDF plus whether the issuer chain could be completed."""
-
-    pdf: bytes
-    #: The intermediate CA was embedded (chain leaf -> issuer), not leaf-only.
-    chain_complete: bool
-    #: Non-fatal note (e.g. the AIA fetch failed and the CMS is leaf-only).
-    warning: str | None = None
 
 
 class _RawSignerAdapter(signers.Signer):
@@ -109,26 +98,80 @@ async def sign_pdf(
 
 
 async def _fetch_issuer(leaf: x509.Certificate) -> bytes | None:
-    """Fetch the issuer (CA) certificate DER from the leaf's AIA, best-effort."""
+    """Fetch and validate the issuer certificate DER, best-effort.
+
+    AIA endpoints commonly serve DER, PEM, or a PKCS#7 certificate bundle.
+    Only a successfully extracted certificate is cached; corrupt legacy cache
+    entries are removed and fetched once more.
+    """
     url = _ca_issuers_url(leaf)
     if not url:
         return None
     cache = _CA_CACHE_DIR / f"{hashlib.sha256(url.encode()).hexdigest()[:16]}.crt"
     if cache.exists():
-        return cache.read_bytes()
+        try:
+            cached = cache.read_bytes()
+        except OSError:
+            cached = b""
+        if issuer_der := _certificate_der(cached):
+            return issuer_der
+        with contextlib.suppress(OSError):
+            cache.unlink()
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(url)
             response.raise_for_status()
-            der = response.content
+            issuer_der = _certificate_der(response.content)
     except httpx.HTTPError:
+        return None
+    if issuer_der is None:
         return None
     try:
         _CA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cache.write_bytes(der)
+        cache.write_bytes(issuer_der)
     except OSError:
         pass  # caching is an optimisation, not required
-    return der
+    return issuer_der
+
+
+def _certificate_der(data: bytes) -> bytes | None:
+    """Extract one validated certificate as canonical DER from common AIA bodies."""
+    if not data:
+        return None
+    candidates = [data]
+    if pem.detect(data):
+        try:
+            _, _, unarmored = pem.unarmor(data)
+        except ValueError:
+            pass
+        else:
+            candidates.insert(0, unarmored)
+
+    for candidate in candidates:
+        try:
+            certificate = x509.Certificate.load(candidate)
+            _ = certificate.native  # force lazy ASN.1 validation before caching
+        except (TypeError, ValueError):
+            pass
+        else:
+            return bytes(certificate.dump())
+
+        try:
+            content = cms.ContentInfo.load(candidate)
+            if content["content_type"].native != "signed_data":
+                continue
+            certificates = content["content"]["certificates"]
+            if certificates is None:
+                continue
+            for choice in certificates:
+                if choice.name != "certificate":
+                    continue
+                certificate = choice.chosen
+                _ = certificate.native
+                return bytes(certificate.dump())
+        except (KeyError, TypeError, ValueError):
+            continue
+    return None
 
 
 def _ca_issuers_url(cert: x509.Certificate) -> str | None:

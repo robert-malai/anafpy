@@ -120,11 +120,15 @@ green and must stay green.
 ```
 src/anafpy/
   exceptions.py          # AnafError hierarchy (see "Error model")
-  _transport/base.py     # Environment, Service, service_base_url + shared error raising
+  _transport/base.py     # Environment/Service + shared enums/CUI normalization/error raising
+  _transport/http.py     # HttpClientBase: six clients' owned/injected lifecycle,
+                         # base_url adoption + network-error translation
+  _transport/subprocess.py # bounded async subprocess runner; kills the process
+                           # group on timeout (DUK JVM + platform curl)
   _transport/curl.py     # CurlBootstrapperBase — shared platform-curl machinery of
                          # the two APM certificate bootstraps (SPV + declaration
                          # portal): curl resolution (ANAFPY_CURL), cert
-                         # selectors, TLS-backend pin, runner, failure taxonomy;
+                         # selectors, TLS-backend pin, failure taxonomy;
                          # subclasses own choreography + success judgment
   auth/                  # OAuth2 layer: models, store, oauth, provider, callback
   cli/main.py            # `anafpy auth login|status|logout` +
@@ -174,11 +178,10 @@ src/anafpy/
                          # subprocess + crypto) + StareD112 filing status (public):
     duk.py               # DukIntegrator (async): validate/render via ANAF's DUK
                          # (-v/-p headless; judge by err-file, never exit code),
-                         # installed_forms/feed_versions staleness
-    models.py            # status value types: DeclarationState (values = ANAF's
-                         # verbatim Romanian wording + English .description — the
-                         # ReportType enum pattern; .classify() is accent-insensitive),
-                         # DeclarationDocument, DeclarationStatusList
+                         # installed_forms + free fetch_feed_versions staleness
+    models.py            # declaration-family value-type home: DUK, upload, PDF-sign
+                         # outcomes + DeclarationState/Document/StatusList
+    _html.py             # whole-text/accent handling shared by both JSP parsers
     status.py            # DeclarationStatusClient (async, NO auth): filing status
                          # + recipisa PDF via www.anaf.ro/StareD112 (index+CUI are
                          # the access key; empty-PDF answer = receipt unavailable);
@@ -193,7 +196,8 @@ src/anafpy/
                          # filing a D406T, pyHanko CMS accepted)
     signing.py           # RawSigner protocol + KeychainRawSigner (ctypes ->
                          # Security.framework: SecKeyCreateSignature; no key material,
-                         # 2FA is the human gate) + resolve_signing_label
+                         # 2FA is the human gate) + shared framework cache,
+                         # default_signed_path/load_pdfsign/resolve_signing_label
     pdfsign.py           # sign_pdf (pyHanko: adbe.pkcs7.detached incremental update,
                          # AIA issuer fetch) — needs the anafpy[declaratii] extra
   mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2, split BY SERVICE:
@@ -208,7 +212,7 @@ src/anafpy/
                          # HMAC confirmation tokens + TokenLedger, XmlInput base
                          # ({xml|path} -> bytes), PreparedSubmission/SubmitResult,
                          # run_submit (the STEP-2 skeleton with its two orderings)
-    artifacts.py         # tool annotations + collision-guarded write_artifact
+    artifacts.py         # tool annotations + shared ensure_writable/write_artifact
     reference.py         # docs/anaf-reference/ as anafref:// resources
     prompts.py           # skills/*/SKILL.md loader + same-name MCP prompts
     efactura/            # tools.py (tools + anafmsg:// resource), models.py
@@ -471,8 +475,9 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   names.
 - **Tool display names**: every tool has an English MCP `title` following
   `Service: operation` — services are `e-Factura`, `e-Transport`, `ANAF Info`
-  (public no-auth lookups), plus bare `ANAF` for `auth_status`. Titles are
-  UI-only (the model sees `name` + `description`); keep them single-language.
+  (public no-auth lookups), `SPV`, and `Declarations`, plus bare `ANAF` for
+  `auth_status`. Titles are UI-only (the model sees `name` + `description`);
+  keep them single-language.
 - **Branded service names in prose**: in strings, messages, and docs the services
   are written exactly `e-Factura` and `e-Transport` — even at the start of a
   sentence or title. This is the branding ANAF itself uses on its website

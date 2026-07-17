@@ -168,6 +168,20 @@ async def test_taxpayer_lookup_accepts_documented_envelope() -> None:
 
 
 @respx.mock
+async def test_injected_client_without_base_url_adopts_public_url() -> None:
+    respx.post(f"{BASE}/api/PlatitorTvaRest/v9/tva").mock(
+        return_value=httpx.Response(200, json={"found": [], "notFound": [123]})
+    )
+    http = httpx.AsyncClient()
+    client = PublicClient(http=http, min_request_interval=0)
+    result = await client.lookup_taxpayers([123], date="2026-07-01")
+    await client.aclose()
+    assert result.not_found == [123]
+    assert not http.is_closed
+    await http.aclose()
+
+
+@respx.mock
 async def test_lookup_default_date_is_romania_today() -> None:
     # The as-of default is today on the register's own clock (Romania time),
     # not the machine's — a host in another timezone must not shift the date.

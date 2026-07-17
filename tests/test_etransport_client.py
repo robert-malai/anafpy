@@ -220,6 +220,20 @@ async def test_get_status_ok_is_terminal() -> None:
 
 
 @respx.mock
+async def test_injected_client_without_base_url_adopts_etransport_url() -> None:
+    respx.get(f"{BASE}/stareMesaj/5001").mock(
+        return_value=httpx.Response(200, json=_STATUS_OK)
+    )
+    http = httpx.AsyncClient()
+    client = ETransportClient(_provider(), environment=Environment.TEST, http=http)
+    status = await client.get_status("5001")
+    await client.aclose()
+    assert status.state is MessageState.OK
+    assert not http.is_closed
+    await http.aclose()
+
+
+@respx.mock
 async def test_get_status_nok_is_terminal_and_carries_errors() -> None:
     respx.get(f"{BASE}/stareMesaj/5002").mock(
         return_value=httpx.Response(

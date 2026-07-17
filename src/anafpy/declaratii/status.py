@@ -35,21 +35,21 @@ from __future__ import annotations
 
 import datetime
 import re
-from types import TracebackType
-from typing import Self
 
 import httpx
 from parsel import Selector
 
-from .._transport.base import as_text, raise_for_status, strip_accents
-from ..exceptions import AnafConfigError, AnafResponseError, AnafTransportError
+from .._transport.base import as_text, normalize_cui, raise_for_status
+from .._transport.http import HttpClientBase
+from ..exceptions import AnafConfigError, AnafResponseError
+from ._html import strip_accents, whole_text
 from .models import DeclarationDocument, DeclarationState, DeclarationStatusList
 
 __all__ = ["DeclarationStatusClient"]
 
 _STARE_HOST = "https://www.anaf.ro"
-_STATUS_PATH = "/StareD112/vizualizareStare.do"
-_RECEIPT_PATH = "/StareD112/ObtineRecipisa"
+_STATUS_PATH = "StareD112/vizualizareStare.do"
+_RECEIPT_PATH = "StareD112/ObtineRecipisa"
 
 #: Header of a results page: CUI + the three-month query window.
 _FOUND_RE = re.compile(
@@ -65,11 +65,6 @@ _NOT_FOUND_MESSAGE = (
     "declaration may be older than 3 months, or it may not be among the CUI's "
     "last 200 submissions"
 )
-
-
-def _cell_text(selector: Selector) -> str:
-    """A node's whole text content, whitespace-normalized."""
-    return " ".join(selector.xpath("string(.)").get("").split())
 
 
 def _parse_date(text: str) -> datetime.date | None:
@@ -101,7 +96,7 @@ def _document_from_row(
 
 def _parse_status_page(html: str, *, queried_cui: str) -> DeclarationStatusList:
     page = Selector(text=html)
-    text = _cell_text(page)
+    text = whole_text(page)
     normalized = strip_accents(text)
 
     if match := _FOUND_RE.search(normalized):
@@ -115,7 +110,7 @@ def _parse_status_page(html: str, *, queried_cui: str) -> DeclarationStatusList:
             for row in page.css("tr")
             if (
                 document := _document_from_row(
-                    [_cell_text(cell) for cell in row.xpath("./td")],
+                    [whole_text(cell) for cell in row.xpath("./td")],
                     bool(row.xpath(".//a[contains(@href, 'ObtineRecipisa')]")),
                 )
             )
@@ -146,25 +141,31 @@ def _parse_status_page(html: str, *, queried_cui: str) -> DeclarationStatusList:
     )
 
 
-def _digits(value: int | str, *, name: str, strip_ro: bool = False) -> str:
-    """Coerce an index/CUI to the bare digit string the form expects."""
+def _digits(value: int | str, *, name: str) -> str:
+    """Coerce an internet upload index to the bare digit string expected."""
     text = str(value).strip()
-    if strip_ro:
-        text = text.upper().removeprefix("RO").strip()
     if not text.isdigit():
         raise AnafConfigError(f"invalid {name}: {value!r} (digits expected)")
     return text
 
 
-class DeclarationStatusClient:
+def _counter_registration(value: int | str) -> str:
+    """Preserve an ANAF-counter registration number, requiring only non-empty."""
+    text = str(value).strip()
+    if not text:
+        raise AnafConfigError("invalid index: a registration number is required")
+    return text
+
+
+class DeclarationStatusClient(HttpClientBase):
     """Checks filed declarations on ANAF's public StareD112 service.
 
     No credentials are needed (the service is public and unauthenticated); the
-    client owns an ``httpx.AsyncClient`` (unless one is injected — it must then
-    be configured with ``base_url="https://www.anaf.ro"``) and should be used
-    as an async context manager so it is closed cleanly. Like the other
-    discrete client methods, it does **no transport retry** — one call, one
-    result-or-raise.
+    client owns an ``httpx.AsyncClient`` unless one is injected. An injected
+    client with an empty ``base_url`` adopts the StareD112 host; a non-empty
+    one is preserved. Use it as an async context manager so owned clients close
+    cleanly. Like the other discrete client methods, it does **no transport
+    retry** — one call, one result-or-raise.
     """
 
     def __init__(
@@ -173,23 +174,7 @@ class DeclarationStatusClient:
         http: httpx.AsyncClient | None = None,
         timeout: float = 60.0,
     ) -> None:
-        self._owns_http = http is None
-        self._http = http or httpx.AsyncClient(timeout=timeout, base_url=_STARE_HOST)
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        await self.aclose()
-
-    async def aclose(self) -> None:
-        if self._owns_http:
-            await self._http.aclose()
+        super().__init__(http=http, base_url=_STARE_HOST, timeout=timeout)
 
     async def check_status(
         self,
@@ -216,20 +201,22 @@ class DeclarationStatusClient:
             "no declaration identified" business outcome.
 
         Raises:
-            AnafConfigError: *index*/*cui* is not a number.
+            AnafConfigError: *cui* or an internet *index* is not numeric, or a
+                counter registration number is empty.
             AnafTransportError: network failure.
             AnafResponseError: non-success HTTP, or a page shape this client
                 does not recognise.
         """
         data = {
             "ghiseu": "Y" if filed_at_counter else "N",
-            "id": _digits(index, name="index"),
-            "cui": _digits(cui, name="cui", strip_ro=True),
+            "id": (
+                _counter_registration(index)
+                if filed_at_counter
+                else _digits(index, name="index")
+            ),
+            "cui": normalize_cui(cui),
         }
-        try:
-            response = await self._http.post(_STATUS_PATH, data=data)
-        except httpx.HTTPError as exc:
-            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        response = await self._request_http("POST", _STATUS_PATH, data=data)
         raise_for_status(response)
         return _parse_status_page(response.text, queried_cui=data["cui"])
 
@@ -247,10 +234,7 @@ class DeclarationStatusClient:
             AnafResponseError: non-success HTTP, or a non-PDF body.
         """
         params = {"numefisier": f"{_digits(index, name='index')}.pdf"}
-        try:
-            response = await self._http.get(_RECEIPT_PATH, params=params)
-        except httpx.HTTPError as exc:
-            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        response = await self._request_http("GET", _RECEIPT_PATH, params=params)
         raise_for_status(response)
         if not response.content:
             return None

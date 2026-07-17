@@ -30,7 +30,6 @@ CLI contract facts baked in below (proven 2026-07-15, Oracle Java 26, macOS):
 
 from __future__ import annotations
 
-import asyncio
 import os
 import shutil
 import tempfile
@@ -38,39 +37,20 @@ from pathlib import Path
 
 import httpx
 from parsel import Selector
-from pydantic import BaseModel
 
+from .._transport.subprocess import run_subprocess
 from ..exceptions import AnafConfigError, AnafTransportError
+from .models import DukFinding, DukResult
 
-__all__ = ["DukFinding", "DukIntegrator", "DukResult"]
+__all__ = [
+    "DukIntegrator",
+    "fetch_feed_versions",
+]
 
 _DUK_DOWNLOAD_URL = (
     "https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip"
 )
 _VERSIONS_FEED_URL = "http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml"
-
-
-class DukFinding(BaseModel):
-    """One validator finding — an ``E:``/``F:`` (error) or ``W:`` (warning) line.
-
-    ``F:`` is the SAF-T validators' structure/fatal prefix (D406/D406T); it maps
-    to ``severity="error"`` like ``E:``.
-    """
-
-    severity: str  # "error" | "warning"
-    message: str  # the header line plus its indented detail lines, joined
-
-
-class DukResult(BaseModel):
-    """Outcome of a ``-v`` / ``-p`` run.
-
-    ``ok`` is the err file's verdict (``ok`` text on success), not the exit
-    code. ``raw`` is the full err-file text for debugging.
-    """
-
-    ok: bool
-    findings: list[DukFinding]
-    raw: str
 
 
 def _parse_err_file(text: str) -> DukResult:
@@ -128,7 +108,7 @@ class DukIntegrator:
         java: str | None = None,
         timeout: float = 120.0,
     ) -> None:
-        self.duk_dir = Path(duk_dir).expanduser()
+        self.duk_dir = Path(duk_dir).expanduser().resolve()
         self.jar = self.duk_dir / "DUKIntegrator.jar"
         self.lib = self.duk_dir / "lib"
         if not self.jar.exists() or not self.lib.is_dir():
@@ -155,8 +135,8 @@ class DukIntegrator:
         ``ok``. Findings are DUK's own messages, verbatim.
         """
         with tempfile.TemporaryDirectory(prefix="anafpy-duk-") as tmp:
-            xml_path = Path(tmp) / "decl.xml"
-            err_path = Path(tmp) / "err.txt"
+            xml_path = (Path(tmp) / "decl.xml").resolve()
+            err_path = (Path(tmp) / "err.txt").resolve()
             xml_path.write_bytes(xml)
             await self._run(["-v", form, str(xml_path), str(err_path), str(option)])
             return _parse_err_file(_read_err(err_path))
@@ -171,10 +151,10 @@ class DukIntegrator:
         On success ``ok=True`` and *pdf_path* holds the multi-page PDF with the
         XML embedded (``/EmbeddedFiles``).
         """
-        pdf_path = Path(pdf_path).expanduser()
+        pdf_path = Path(pdf_path).expanduser().resolve()
         with tempfile.TemporaryDirectory(prefix="anafpy-duk-") as tmp:
-            xml_path = Path(tmp) / "decl.xml"
-            err_path = Path(tmp) / "err.txt"
+            xml_path = (Path(tmp) / "decl.xml").resolve()
+            err_path = (Path(tmp) / "err.txt").resolve()
             xml_path.write_bytes(xml)
             # -p <form> <xml> <err> <option> <zipFile=0> <pdf>
             await self._run(
@@ -211,13 +191,10 @@ class DukIntegrator:
         Best-effort — returns ``"unknown"`` if java cannot be run.
         """
         try:
-            process = await asyncio.create_subprocess_exec(
-                self.java,
-                "-version",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            _, _, stderr = await run_subprocess(
+                [self.java, "-version"],
+                timeout=15.0,
             )
-            _, stderr = await asyncio.wait_for(process.communicate(), timeout=15.0)
         except (OSError, TimeoutError):
             return "unknown"
         # `java -version` writes to stderr.
@@ -225,24 +202,8 @@ class DukIntegrator:
         return lines[0].strip() if lines else "unknown"
 
     async def feed_versions(self) -> dict[str, str]:
-        """Current per-form validator versions from ANAF's update feed.
-
-        Reads ``versiuni.xml`` and returns ``{form: version}`` for entries that
-        look like ``<form>Validator.jar``. Best-effort — used only to surface
-        staleness.
-
-        Raises:
-            AnafTransportError: the feed could not be fetched or parsed.
-        """
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(_VERSIONS_FEED_URL)
-                response.raise_for_status()
-                return _parse_versions_feed(response.text)
-        except httpx.HTTPError as exc:
-            raise AnafTransportError(
-                f"cannot fetch the DUK update feed {_VERSIONS_FEED_URL}: {exc}"
-            ) from exc
+        """Delegate to :func:`fetch_feed_versions` for caller convenience."""
+        return await fetch_feed_versions()
 
     # -- execution ---------------------------------------------------------------------
 
@@ -253,25 +214,41 @@ class DukIntegrator:
         by the err file, never by this.
         """
         command = [self.java, "-jar", str(self.jar), *args]
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(self.duk_dir),
-        )
         try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=self.timeout
+            return await run_subprocess(
+                command,
+                timeout=self.timeout,
+                cwd=self.duk_dir,
             )
         except TimeoutError:
-            process.kill()
-            await process.wait()
             raise AnafConfigError(
                 f"DUKIntegrator did not finish within {self.timeout:.0f}s "
                 f"(command: {' '.join(args)}) — is the form's validator jar in "
                 f"{self.lib}?"
             ) from None
-        return process.returncode or 0, stdout, stderr
+        except OSError as exc:
+            raise AnafConfigError(
+                f"cannot run java at {self.java!r}: {exc}; check ANAFPY_DUK_JAVA"
+            ) from exc
+
+
+async def fetch_feed_versions(
+    http: httpx.AsyncClient | None = None,
+) -> dict[str, str]:
+    """Fetch current per-form validator versions without requiring a DUK install."""
+    owns_http = http is None
+    client = http or httpx.AsyncClient(timeout=30.0)
+    try:
+        response = await client.get(_VERSIONS_FEED_URL)
+        response.raise_for_status()
+        return _parse_versions_feed(response.text)
+    except httpx.HTTPError as exc:
+        raise AnafTransportError(
+            f"cannot fetch the DUK update feed {_VERSIONS_FEED_URL}: {exc}"
+        ) from exc
+    finally:
+        if owns_http:
+            await client.aclose()
 
 
 def _default_java() -> str | None:

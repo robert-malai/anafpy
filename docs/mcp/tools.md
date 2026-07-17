@@ -123,12 +123,12 @@ login at all.
 
 | Tool | What it does |
 |---|---|
-| `declaratie_validate` | Validate a declaration with ANAF's own DUKIntegrator (authoritative); returns its findings verbatim — the compose→validate→fix loop |
-| `declaratie_render` | Render the official multi-page PDF (XML embedded) to a path you name; validates first, so a failure writes no PDF |
+| `declaratie_validate` | Validate a declaration with ANAF's own DUKIntegrator (authoritative); returns its findings verbatim — the compose→validate→fix loop. Missing DUK/Java configuration is a tool error, not an invalid-document result |
+| `declaratie_render` | Render the official multi-page PDF (XML embedded) directly to a path you name; validates first, so a failure writes no PDF. Missing DUK/Java configuration is a tool error |
 | `declaratie_sign` | Sign a rendered PDF with your qualified certificate — requires your explicit approval (`confirm=true`) since it fires your PIN/2FA prompt; failures come back as `signed=false` + guidance |
 | `declaratie_nr_evid` | Compose the D300 `nr_evid` payment-evidence number (it has a check digit — never compute it by hand) |
-| `declaratie_duk_status` | The DUKIntegrator install: directory, Java version, and installed-vs-current validator versions (CLI-mode DUK does not auto-update) |
-| `declaratie_status` | Check a filed declaration's processing state by upload index + CUI — returns all the CUI's filings from the last 3 months (max 200), each state in ANAF's own wording (accepted / validation errors / not valid / still processing) |
+| `declaratie_duk_status` | The DUKIntegrator install: directory, Java version, and installed-vs-current validator versions (CLI-mode DUK does not auto-update); the current feed is still returned before DUK is installed |
+| `declaratie_status` | Check a filed declaration's processing state by upload index + CUI — returns the client-layer `DeclarationStatusList` directly, containing all the CUI's filings from the last 3 months (max 200). Config/network/input failures return the same typed shape with `found=false` and `message` |
 | `declaratie_recipisa` | Save the digitally signed recipisa (filing receipt) PDF to a path you name — available only ~60 days from filing, so archive it |
 
 ## Resources and prompts

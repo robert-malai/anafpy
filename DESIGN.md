@@ -113,6 +113,15 @@ skills/            # workflow skills, served by the MCP server as same-name prom
 docs/anaf-reference/   # agent-compiled local reference (+ _sources/)
 ```
 
+The six network clients share only a small `_transport.HttpClientBase`
+chassis: owned-versus-injected `httpx.AsyncClient` lifecycle, trailing-slash
+base-URL convention, adoption of a service URL by an injected client whose
+`base_url` is empty, and network-error translation. Request semantics and
+response/business-outcome parsing remain in each service client. Package-level
+`models.py` modules are the value-type homes; in particular,
+`declaratii/models.py` owns the DUK, signing, portal-upload, and StareD112
+outcomes without importing the optional pyHanko stack.
+
 ## 3. Authentication (shared)
 
 ANAF OAuth2, Authorization Code grant. Endpoints:
@@ -601,11 +610,10 @@ MCPB bundle for Claude Desktop (`server.type: "uv"` so the host manages Python;
 
 ## 12. Declarations (authoring + signing + status tracking)
 
-> Landed 2026-07-15 (`anafpy.declaratii`, M1). Scope: **local document
-> generation and signing only, exposed via MCP.** Filing the signed document
-> with ANAF (portal upload) is a later milestone and deliberately out of scope
-> here. **Recipisa/status tracking, originally slated for M2, landed early**
-> (2026-07-16) — see "Status tracking" below.
+> Landed 2026-07-15 (`anafpy.declaratii`, M1): **local document generation and
+> signing, exposed via MCP.** Recipisa/status tracking landed 2026-07-16, and
+> the recon-grade library upload client landed 2026-07-17; MCP filing exposure
+> remains the next M2 slice. See the two later subsections below.
 
 **The problem.** A taxpayer with no upstream software needs to produce a valid,
 signed tax declaration (D300 VAT return first; the design is per-form generic).

@@ -145,9 +145,25 @@ async def test_check_status_counter_filing_sets_ghiseu() -> None:
         return_value=httpx.Response(200, text=_fixture("result-notfound.html"))
     )
     async with DeclarationStatusClient() as client:
-        result = await client.check_status("555", "99999909", filed_at_counter=True)
+        result = await client.check_status(
+            "REG-555/2026", "99999909", filed_at_counter=True
+        )
     assert result.found is False
-    assert b"ghiseu=Y" in route.calls.last.request.content
+    sent = dict(httpx.QueryParams(route.calls.last.request.content.decode()))
+    assert sent["ghiseu"] == "Y"
+    assert sent["id"] == "REG-555/2026"
+
+
+@respx.mock
+async def test_injected_client_without_base_url_adopts_stared112_url() -> None:
+    respx.post(STATUS_URL).mock(
+        return_value=httpx.Response(200, text=_fixture("result-notfound.html"))
+    )
+    http = httpx.AsyncClient()
+    async with DeclarationStatusClient(http=http) as client:
+        result = await client.check_status("1100000001", "99999909")
+    await http.aclose()
+    assert result.found is False
 
 
 async def test_check_status_rejects_non_numeric_input() -> None:

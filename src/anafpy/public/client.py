@@ -32,8 +32,7 @@ import asyncio
 import datetime
 import json
 from collections.abc import Sequence
-from types import TracebackType
-from typing import Any, Self
+from typing import Any
 
 import httpx
 from pydantic import ValidationError
@@ -43,12 +42,13 @@ from .._transport.base import (
     ROMANIA_TZ,
     Service,
     as_text,
+    normalize_cui,
     raise_for_status,
 )
+from .._transport.http import HttpClientBase
 from ..exceptions import (
     AnafConfigError,
     AnafResponseError,
-    AnafTransportError,
 )
 from .models import (
     CultLookup,
@@ -82,17 +82,15 @@ _XML_BODY_HEADERS = {"Content-Type": "text/plain"}
 
 
 def _normalize_cui(value: int | str) -> int:
-    """Coerce a CUI to the bare number ANAF expects (an optional ``RO`` VAT prefix
-    and whitespace are tolerated). Raises :class:`AnafConfigError` on anything else.
+    """Return the positive integer the public APIs expect.
+
+    The shared normalizer preserves leading zeroes for services that need a
+    string; this wrapper deliberately converts to the public API's integer form.
     """
-    if isinstance(value, str):
-        text = value.strip().upper().removeprefix("RO").strip()
-        if not text.isdigit():
-            raise AnafConfigError(f"invalid CUI: {value!r}")
-        value = int(text)
-    if value <= 0:
+    normalized = int(normalize_cui(value))
+    if normalized <= 0:
         raise AnafConfigError(f"invalid CUI: {value!r}")
-    return value
+    return normalized
 
 
 def _query_date(date: datetime.date | str | None) -> str:
@@ -187,14 +185,15 @@ class _RequestPacer:
             self._earliest = loop.time() + self._interval
 
 
-class PublicClient:
+class PublicClient(HttpClientBase):
     """Talks to ANAF's unauthenticated public services (``webservicesp.anaf.ro``).
 
-    No credentials are needed; the client owns an ``httpx.AsyncClient`` (unless one
-    is injected — it must then be configured with ``base_url=PUBLIC_HOST``) and
-    should be used as an async context manager so it is closed cleanly. Requests
-    are paced at ``min_request_interval`` seconds (default 1.0, ANAF's stated
-    limit); pass ``0`` to disable pacing and bring your own.
+    No credentials are needed; the client owns an ``httpx.AsyncClient`` unless
+    one is injected. An injected client with an empty ``base_url`` adopts
+    :data:`PUBLIC_HOST`; a non-empty one is preserved. Use it as an async
+    context manager so owned clients close cleanly. Requests are paced at
+    ``min_request_interval`` seconds (default 1.0, ANAF's stated limit); pass
+    ``0`` to disable pacing and bring your own.
     """
 
     def __init__(
@@ -204,31 +203,16 @@ class PublicClient:
         timeout: float = 60.0,
         min_request_interval: float = 1.0,
     ) -> None:
-        self._owns_http = http is None
         # No keep-alive: ANAF's public host resets pooled idle connections between
         # paced requests (RegAgric RSTs on reuse, live-observed 2026-07-02), and at
         # ≤1 req/s a fresh connection per request costs nothing.
-        self._http = http or httpx.AsyncClient(
+        super().__init__(
+            http=http,
+            base_url=PUBLIC_HOST,
             timeout=timeout,
             limits=httpx.Limits(max_keepalive_connections=0),
-            base_url=PUBLIC_HOST,
         )
         self._pacer = _RequestPacer(min_request_interval)
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        await self.aclose()
-
-    async def aclose(self) -> None:
-        if self._owns_http:
-            await self._http.aclose()
 
     # -- transport -------------------------------------------------------------------
 
@@ -244,17 +228,14 @@ class PublicClient:
         tolerate: tuple[int, ...] = (),
     ) -> httpx.Response:
         await self._pacer.wait()
-        try:
-            response = await self._http.request(
-                method,
-                path,
-                params=params,
-                json=json_body,
-                content=content,
-                headers=headers,
-            )
-        except httpx.HTTPError as exc:
-            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        response = await self._request_http(
+            method,
+            path,
+            params=params,
+            json=json_body,
+            content=content,
+            headers=headers,
+        )
         if response.status_code not in tolerate:
             raise_for_status(response)
         return response

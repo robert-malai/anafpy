@@ -418,10 +418,9 @@ def _cmd_decl_status(args: argparse.Namespace) -> int:
     for document in result.documents:
         marker = " ←" if document.index == str(args.index).strip() else ""
         receipt = "recipisa available" if document.receipt_available else "no recipisa"
-        # The state prints in ANAF's verbatim Romanian (the enum value); the
-        # widest documented wording is 40 characters.
+        # Print ANAF's preserved wording, including future unclassified states.
         print(
-            f"  {document.index}  {document.form:<8} {document.state.value:<40} "
+            f"  {document.index}  {document.form:<8} {document.state_text:<40} "
             f"{document.upload_date}  {receipt}{marker}"
         )
     return 0
@@ -449,22 +448,17 @@ def _cmd_decl_recipisa(args: argparse.Namespace) -> int:
 
 
 def _cmd_decl_sign(args: argparse.Namespace) -> int:
-    try:
-        from ..declaratii import pdfsign
-    except ModuleNotFoundError as exc:
-        raise AnafConfigError(
-            "signing needs the anafpy[declaratii] extra — "
-            "install it with `pip install 'anafpy[declaratii]'`"
-        ) from exc
-    from ..declaratii.signing import KeychainRawSigner, resolve_signing_label
+    from ..declaratii.signing import (
+        KeychainRawSigner,
+        default_signed_path,
+        load_pdfsign,
+        resolve_signing_label,
+    )
 
+    pdfsign = load_pdfsign()
     label = resolve_signing_label(args.identity, identity_path=args.identity_file)
     source = Path(args.pdf).expanduser()
-    out = (
-        Path(args.output).expanduser()
-        if args.output
-        else source.with_name(f"{source.stem}-semnat.pdf")
-    )
+    out = Path(args.output).expanduser() if args.output else default_signed_path(source)
     print(f"Signing with identity {label!r}.")
     print("Answer the certificate PIN / 2FA prompt when it appears.", flush=True)
     signer = KeychainRawSigner(label)

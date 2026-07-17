@@ -32,30 +32,30 @@ from __future__ import annotations
 import contextlib
 import re
 from datetime import UTC, datetime
-from types import TracebackType
-from typing import Protocol, Self, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import httpx
 from parsel import Selector
-from pydantic import BaseModel
 
-from .._transport.base import raise_for_status, strip_accents
+from .._transport.base import raise_for_status
 from .._transport.curl import CurlBootstrapperBase
-from ..exceptions import AnafAuthError, AnafConfigError, AnafTransportError
+from .._transport.http import HttpClientBase
+from ..exceptions import AnafAuthError, AnafConfigError
+from ._html import strip_accents, whole_text
+from .models import PortalUploadResult
 
 __all__ = [
     "PORTAL_BASE_URL",
     "DeclarationUploadClient",
     "PortalCurlBootstrapper",
     "PortalSessionBootstrapper",
-    "PortalUploadResult",
 ]
 
 #: Base URL of the declaration upload portal (production only — there is no
 #: TEST environment for declaration filing; D406T is the no-effect test path).
 PORTAL_BASE_URL = "https://decl.anaf.mfinante.gov.ro"
 
-_UPLOAD_PATH = "/WAS6DUS/displayFile.do"
+_UPLOAD_PATH = "WAS6DUS/displayFile.do"
 
 #: Accent-stripped marker of the app's generic rejection page.
 _REJECTION_MARKER = "ne cerem scuze"
@@ -64,25 +64,7 @@ _FORM_MARKER = "displayfile.do"
 #: Accent-stripped marker of the success page (captured 2026-07-17).
 _SUCCESS_MARKER = "depus cu succes"
 #: The upload index on the success page: "… Indexul este <b>1100000005</b>."
-_INDEX_RE = re.compile(r"index[^\d]{0,60}(\d{6,})")
-
-
-class PortalUploadResult(BaseModel):
-    """Outcome of one upload POST.
-
-    ``accepted`` is ``True`` for the portal's success page ("depus cu succes";
-    *upload_index* carries its "Indexul este …" number — the key StareD112 and
-    the recipisa use), ``False`` for the known rejection page (*reason*
-    carries its red-span text), and ``None`` for a page this module does not
-    recognise; ``html`` always carries the raw page. Note the portal's own
-    caveat: the success page is **not** the registration confirmation — that
-    is the recipisa (poll StareD112).
-    """
-
-    accepted: bool | None
-    upload_index: str | None = None
-    reason: str | None = None
-    html: str
+_INDEX_RE = re.compile(r"indexul\s+este[^\d]{0,60}(\d{6,})")
 
 
 @runtime_checkable
@@ -159,11 +141,11 @@ class PortalCurlBootstrapper(CurlBootstrapperBase):
 def _parse_upload_page(html: str) -> PortalUploadResult:
     """Parse the ``displayFile.do`` response (shapes live-captured, see §3-§4)."""
     page = Selector(text=html)
-    text = " ".join(page.xpath("string(.)").get("").split())
+    text = whole_text(page)
     normalized = strip_accents(text).lower()
 
     if _REJECTION_MARKER in normalized:
-        reason = page.css("span[style*='red']::text").get("") or ""
+        reason = whole_text(page.css("span[style*='red']"))
         if not reason.strip():
             # Fallback: the sentence after the "Motivul:" label.
             match = re.search(r"motivul:\s*(.+?)(?:\.|$)", normalized)
@@ -181,7 +163,7 @@ def _parse_upload_page(html: str) -> PortalUploadResult:
     return PortalUploadResult(accepted=None, html=html)
 
 
-class DeclarationUploadClient:
+class DeclarationUploadClient(HttpClientBase):
     """Files a signed declaration PDF on the ``WAS6DUS`` upload portal.
 
     The client is deliberately session-per-use (the portal states a 10-minute
@@ -194,8 +176,8 @@ class DeclarationUploadClient:
         bootstrapper: the certificate login step (a
             :class:`PortalCurlBootstrapper` in production; fakes in tests).
             Optional when an *http* client with a live cookie set is injected.
-        http: injected ``httpx.AsyncClient`` (tests); it must be configured
-            with ``base_url=PORTAL_BASE_URL``.
+        http: injected ``httpx.AsyncClient`` (tests). An empty ``base_url``
+            adopts :data:`PORTAL_BASE_URL`; a non-empty one is preserved.
         timeout: HTTP timeout for the upload POST (the PDF is small, but the
             portal can be slow).
     """
@@ -208,26 +190,13 @@ class DeclarationUploadClient:
         timeout: float = 120.0,
     ) -> None:
         self._bootstrapper = bootstrapper
-        self._owns_http = http is None
-        self._http = http or httpx.AsyncClient(
-            base_url=PORTAL_BASE_URL, timeout=timeout, follow_redirects=True
+        super().__init__(
+            http=http,
+            base_url=PORTAL_BASE_URL,
+            timeout=timeout,
+            follow_redirects=True,
         )
         self._session_established_at: datetime | None = None
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        await self.aclose()
-
-    async def aclose(self) -> None:
-        if self._owns_http:
-            await self._http.aclose()
 
     async def login(self) -> None:
         """Run the certificate bootstrap and install its cookies.
@@ -274,13 +243,11 @@ class DeclarationUploadClient:
         """
         if not self._http.cookies:
             raise AnafConfigError("no portal session — call login() first")
-        try:
-            response = await self._http.post(
-                _UPLOAD_PATH,
-                files={"linkdoc": (filename, pdf, "application/pdf")},
-            )
-        except httpx.HTTPError as exc:
-            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        response = await self._request_http(
+            "POST",
+            _UPLOAD_PATH,
+            files={"linkdoc": (filename, pdf, "application/pdf")},
+        )
         if "my.policy" in response.url.path:
             raise AnafAuthError(
                 "the portal bounced the upload to its login wall — the session "
@@ -292,6 +259,6 @@ class DeclarationUploadClient:
     async def logout(self) -> None:
         """Tear the APM session down (``GET /exit``); best-effort."""
         with contextlib.suppress(httpx.HTTPError):
-            await self._http.get("/exit")
+            await self._http.get("exit")
         self._http.cookies.clear()
         self._session_established_at = None

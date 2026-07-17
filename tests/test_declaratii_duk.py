@@ -77,6 +77,8 @@ async def test_validate_command_shape(duk_dir: Path) -> None:
     assert args[2].endswith(".xml")
     assert args[3].endswith(".txt")
     assert args[4] == "0"
+    assert Path(args[2]).is_absolute()
+    assert Path(args[3]).is_absolute()
 
 
 async def test_render_command_shape(duk_dir: Path, tmp_path: Path) -> None:
@@ -91,6 +93,18 @@ async def test_render_command_shape(duk_dir: Path, tmp_path: Path) -> None:
     assert args[5] == "0"  # zipFile: no attachment
     assert args[6] == str(pdf)
     assert pdf.read_bytes().startswith(b"%PDF")
+
+
+async def test_render_resolves_relative_output_before_duk_cwd(
+    duk_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    duk = FakeDuk(duk_dir, java="java")
+    duk.pdf_on_success = True
+
+    await duk.render("D300", b"<x/>", Path("relative.pdf"))
+
+    assert duk.calls[0][-1] == str((tmp_path / "relative.pdf").resolve())
 
 
 async def test_render_validation_failure_writes_no_pdf(
@@ -144,19 +158,16 @@ def test_parse_multi_finding() -> None:
     assert "pro_rata" in result.findings[1].message
 
 
-def test_parse_cp1250_bytes() -> None:
+def test_parse_cp1250_bytes(tmp_path: Path) -> None:
     # A cp1250-encoded Romanian message decoded through _read_err.
     from anafpy.declaratii.duk import _read_err
 
     raw = "E: eroare: cîmp invalid".encode("cp1250")
-    err_path = Path("/tmp/anafpy-cp1250-test.txt")
+    err_path = tmp_path / "cp1250.txt"
     err_path.write_bytes(raw)
-    try:
-        result = _parse_err_file(_read_err(err_path))
-        assert not result.ok
-        assert "invalid" in result.findings[0].message
-    finally:
-        err_path.unlink(missing_ok=True)
+    result = _parse_err_file(_read_err(err_path))
+    assert not result.ok
+    assert "invalid" in result.findings[0].message
 
 
 # -- installed_forms ---------------------------------------------------------------
@@ -233,21 +244,15 @@ async def test_run_timeout_raises(
 ) -> None:
     duk = DukIntegrator(duk_dir, java="java", timeout=0.01)
 
-    async def hang(*_a: object, **_k: object) -> object:
-        import asyncio
+    async def hang(*_a: object, **_k: object) -> tuple[int, bytes, bytes]:
+        raise TimeoutError
 
-        class _Proc:
-            returncode = None
-
-            async def communicate(self) -> tuple[bytes, bytes]:
-                await asyncio.sleep(1)
-                return b"", b""
-
-            def kill(self) -> None: ...
-            async def wait(self) -> None: ...
-
-        return _Proc()
-
-    monkeypatch.setattr("anafpy.declaratii.duk.asyncio.create_subprocess_exec", hang)
+    monkeypatch.setattr("anafpy.declaratii.duk.run_subprocess", hang)
     with pytest.raises(AnafConfigError, match="did not finish within"):
+        await duk.validate("D300", b"<x/>")
+
+
+async def test_run_oserror_is_config_error(duk_dir: Path) -> None:
+    duk = DukIntegrator(duk_dir, java="/definitely/missing/java")
+    with pytest.raises(AnafConfigError, match="ANAFPY_DUK_JAVA"):
         await duk.validate("D300", b"<x/>")

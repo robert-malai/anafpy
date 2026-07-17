@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import time
 from pathlib import Path
@@ -380,3 +381,44 @@ def test_declaratii_validate_without_duk_dir_errors(
     xml.write_text("<x/>")
     assert main(["declaratii", "validate", "D300", str(xml)]) == 1
     assert "ANAFPY_DUK_DIR" in capsys.readouterr().err
+
+
+def test_declaratii_status_prints_unclassified_wire_wording(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from anafpy.declaratii import DeclarationStatusClient
+    from anafpy.declaratii.models import (
+        DeclarationDocument,
+        DeclarationState,
+        DeclarationStatusList,
+    )
+
+    async def status(
+        _self: DeclarationStatusClient,
+        _index: int | str,
+        _cui: int | str,
+        *,
+        filed_at_counter: bool = False,
+    ) -> DeclarationStatusList:
+        assert filed_at_counter is False
+        return DeclarationStatusList(
+            found=True,
+            cui="99999909",
+            documents=[
+                DeclarationDocument(
+                    index="1100000001",
+                    form="D300",
+                    state=DeclarationState.UNKNOWN,
+                    state_text="Document în verificare manuală",
+                    registration="INTERNT-1100000001-2026",
+                    upload_date=datetime.date(2026, 7, 17),
+                    receipt_available=False,
+                )
+            ],
+        )
+
+    monkeypatch.setattr(DeclarationStatusClient, "check_status", status)
+    assert main(["declaratii", "status", "1100000001", "99999909"]) == 0
+    output = capsys.readouterr().out
+    assert "Document în verificare manuală" in output
+    assert " unknown " not in output

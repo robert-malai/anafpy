@@ -1,9 +1,9 @@
 """Tests for the WAS6DUS portal upload client — choreography and page parsing.
 
 Credential-free: the curl subprocess is faked by overriding ``_run_curl`` and
-the upload POST is respx-mocked. The success-page parse is provisional (that
-page is deliberately unobserved until the first D406T test filing), so its
-tests pin the *contract*: known rejection page -> returned business outcome,
+the upload POST is respx-mocked. The success-page parse follows the page
+live-captured by the first D406T test filing; its tests pin the contract:
+known rejection page -> returned business outcome,
 unknown page -> ``accepted=None`` with the raw HTML carried.
 """
 
@@ -134,6 +134,18 @@ async def test_bootstrap_timeout_exit_raises_2fa_hint() -> None:
         await boot.bootstrap()
 
 
+async def test_bootstrap_stops_at_first_failing_step() -> None:
+    boot = FakeBootstrapper(
+        (0, b"", b""),
+        (56, b"", b"connection reset by peer"),
+        (0, _UPLOAD_FORM.encode(), b""),
+        cookies=_JAR,
+    )
+    with pytest.raises(AnafAuthError, match=r"step 2.*connection reset"):
+        await boot.bootstrap()
+    assert len(boot.commands_run) == 2
+
+
 async def test_bootstrap_hangup_page_raises() -> None:
     boot = FakeBootstrapper(
         (0, b"", b""), (0, b"", b""), (0, b"<html>hangup</html>", b""), cookies=_JAR
@@ -178,6 +190,19 @@ async def test_upload_success_page_yields_index() -> None:
     async with _client() as client:
         result = await client.upload(b"%PDF-1.7", filename="d406t.pdf")
     assert result.accepted is True
+    assert result.upload_index == "1100000005"
+
+
+@respx.mock
+async def test_injected_client_without_base_url_adopts_portal_url() -> None:
+    respx.post(f"{PORTAL_BASE_URL}/WAS6DUS/displayFile.do").mock(
+        return_value=httpx.Response(200, text=_SUCCESS_PAGE)
+    )
+    http = httpx.AsyncClient()
+    http.cookies.set("MRHSession", "abc123")
+    async with DeclarationUploadClient(http=http) as client:
+        result = await client.upload(b"%PDF-1.7", filename="d406t.pdf")
+    await http.aclose()
     assert result.upload_index == "1100000005"
 
 
@@ -249,12 +274,31 @@ def test_parse_rejection_reason_from_red_span() -> None:
     assert result.reason == "Nu ati selectat fisierul ce urmeaza a fi transmis"
 
 
+def test_parse_rejection_reason_includes_inline_markup() -> None:
+    html = (
+        "<html>Ne cerem scuze. Motivul: "
+        '<span style="color:red">Semnatura <b>nu este valida</b><br>pentru CUI</span>'
+        "</html>"
+    )
+    result = _parse_upload_page(html)
+    assert result.reason == "Semnatura nu este valida pentru CUI"
+
+
 def test_parse_success_page_with_diacritics() -> None:
     # Diacritics survive: "depus cu succes" rides accent-stripped matching.
     html = "<html>Fișierul a fost depus cu succes. Indexul este 987654321</html>"
     result = _parse_upload_page(html)
     assert result.accepted is True
     assert result.upload_index == "987654321"
+
+
+def test_parse_success_ignores_index_like_filename() -> None:
+    html = (
+        '<html>Fișierul "index_20260630.pdf" a fost depus cu succes. '
+        "Indexul este <b>1100000005</b>.</html>"
+    )
+    result = _parse_upload_page(html)
+    assert result.upload_index == "1100000005"
 
 
 def test_parse_index_without_success_marker_is_unrecognised() -> None:

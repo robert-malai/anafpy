@@ -62,7 +62,7 @@ ghiseu=N&id=<index>&cui=<cui>
 | field | meaning |
 |---|---|
 | `ghiseu` | `N` = filed over the internet (`id` is the upload index); `Y` = filed at an ANAF counter (`id` is the registration number) |
-| `id` | the upload index / registration number, digits only |
+| `id` | internet leg: upload index, digits only; counter leg: registration number as issued (the service's text field permits dash/slash-shaped values; no counter capture yet proves a narrower grammar) |
 | `cui` | the taxpayer's fiscal code, digits only |
 
 The response is always **HTTP 200** `text/html;charset=ISO-8859-1` (diacritics

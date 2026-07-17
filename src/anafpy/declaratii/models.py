@@ -1,32 +1,61 @@
-"""Value types for declaration filing-status tracking (StareD112).
+"""Value types shared by declaration validation, signing, filing, and status.
 
-The wire reference is ``docs/anaf-reference/declaratii/stared112.md``; the
-client and page parsing live in :mod:`.status`. Like the SPV nomenclature,
-:class:`DeclarationState` keeps **ANAF's verbatim Romanian wording as the enum
-value** (the page documents exactly four states) and carries a one-line English
-:attr:`~DeclarationState.description` — the enum-with-attributes pattern shared
-with :class:`anafpy.spv.models.ReportType`, where a member declared without a
-description fails at import time.
+This module remains importable without the optional ``declaratii`` extra:
+these are plain Pydantic/domain values and never import pyHanko.
 """
 
 from __future__ import annotations
 
 import datetime
-from enum import StrEnum
-from typing import Self
 
 from pydantic import BaseModel
 
-from .._transport.base import strip_accents
+from .._transport.base import DescribedStrEnum, strip_accents
 
 __all__ = [
     "DeclarationDocument",
     "DeclarationState",
     "DeclarationStatusList",
+    "DukFinding",
+    "DukResult",
+    "PdfSignResult",
+    "PortalUploadResult",
 ]
 
 
-class DeclarationState(StrEnum):
+class DukFinding(BaseModel):
+    """One DUK ``E:``/``F:`` error or ``W:`` warning."""
+
+    severity: str
+    message: str
+
+
+class DukResult(BaseModel):
+    """Outcome of a DUK validation/render run, judged by its err file."""
+
+    ok: bool
+    findings: list[DukFinding]
+    raw: str
+
+
+class PortalUploadResult(BaseModel):
+    """Outcome of one declaration-portal upload POST."""
+
+    accepted: bool | None
+    upload_index: str | None = None
+    reason: str | None = None
+    html: str
+
+
+class PdfSignResult(BaseModel):
+    """A signed PDF plus whether the issuer chain could be completed."""
+
+    pdf: bytes
+    chain_complete: bool
+    warning: str | None = None
+
+
+class DeclarationState(DescribedStrEnum):
     """Processing state of a filed declaration, in ANAF's own words.
 
     Values are the four state wordings the StareD112 results page documents,
@@ -39,15 +68,6 @@ class DeclarationState(StrEnum):
     with the verbatim text preserved in
     :attr:`~DeclarationDocument.state_text`.
     """
-
-    #: One-line English rendering of ANAF's explanation of the state.
-    description: str
-
-    def __new__(cls, value: str, description: str) -> Self:
-        member = str.__new__(cls, value)
-        member._value_ = value
-        member.description = description
-        return member
 
     PROCESSING = (
         # ANAF's page writes this one without the diacritic (unlike "Fişierul").

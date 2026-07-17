@@ -208,6 +208,20 @@ async def test_get_status_ok_exposes_download_id() -> None:
 
 
 @respx.mock
+async def test_injected_client_without_base_url_adopts_efactura_url() -> None:
+    respx.get(f"{BASE}/stareMesaj").mock(
+        return_value=httpx.Response(200, text='<header stare="ok"/>')
+    )
+    http = httpx.AsyncClient()
+    client = EFacturaClient(_provider(), environment=Environment.TEST, http=http)
+    status = await client.get_status("3828")
+    await client.aclose()
+    assert status.state is MessageState.OK
+    assert not http.is_closed
+    await http.aclose()
+
+
+@respx.mock
 async def test_get_status_nok_is_terminal_business_outcome() -> None:
     respx.get(f"{BASE}/stareMesaj").mock(
         return_value=httpx.Response(200, text='<header stare="nok" id_descarcare="7"/>')

@@ -12,8 +12,8 @@ positions    content
 ``[0:2]``    fixed ``10``
 ``[2:5]``    ``cod_imp``, correlated with ``tip_decont``
 ``[5:7]``    fixed ``01``
-``[7:11]``   reporting period ``MMYY`` (zero-padded ``luna`` + last 2 of ``an``)
-``[11:17]``  payment due date ``25`` + ``MM`` (``luna`` + 1, wrapping) + ``YY``
+``[7:11]``   reporting period ``MMYY`` (zero-padded month + last 2 of year)
+``[11:17]``  payment due date ``25`` + next month (wrapping) + ``YY``
 ``[17:21]``  fixed ``0000``
 ``[21:23]``  check: the two-digit sum of the first 21 digits
 ===========  ==========================================================
@@ -31,15 +31,18 @@ __all__ = ["payment_evidence_number"]
 _COD_IMP: dict[str, str] = {"L": "301", "T": "302", "S": "303", "A": "304"}
 
 
-def payment_evidence_number(*, tip_decont: str, luna: int, an: int) -> str:
+def payment_evidence_number(*, tip_decont: str, month: int, year: int) -> str:
     """Compose the 23-character D300 ``nr_evid`` for a reporting period.
 
     Args:
-        tip_decont: the D300 settlement type — one of ``L`` (monthly), ``T``
+        tip_decont: the D300 wire attribute and settlement code — one of
+            ``L`` (monthly), ``T``
             (quarterly), ``S``, ``A``. ``1`` (special settlement) has no known
-            ``cod_imp`` mapping and is rejected.
-        luna: reporting month, 1-12.
-        an: reporting year (four digits).
+            ``cod_imp`` mapping and is rejected. The Romanian identifier is
+            retained because translating this ANAF-coded attribute would hide
+            its direct correspondence to the form.
+        month: reporting month, 1-12.
+        year: reporting year (four digits).
 
     Returns:
         The 23-digit payment-evidence number.
@@ -55,17 +58,17 @@ def payment_evidence_number(*, tip_decont: str, luna: int, an: int) -> str:
                 f"mapping for nr_evid; expected one of: {valid}"
             )
         raise ValueError(f"unknown tip_decont {tip_decont!r}; expected one of: {valid}")
-    if not 1 <= luna <= 12:
-        raise ValueError(f"luna must be 1..12, got {luna}")
+    if not 1 <= month <= 12:
+        raise ValueError(f"month must be 1..12, got {month}")
 
-    period = f"{luna:02d}{an % 100:02d}"
+    period = f"{month:02d}{year % 100:02d}"
     # Payment due date: the 25th of the following month; December wraps to
     # January of the next year.
-    due_month = luna + 1
-    due_year = an
+    due_month = month + 1
+    due_year = year
     if due_month > 12:
         due_month = 1
-        due_year = an + 1
+        due_year = year + 1
     due_date = f"25{due_month:02d}{due_year % 100:02d}"
 
     body = f"10{cod_imp}01{period}{due_date}0000"

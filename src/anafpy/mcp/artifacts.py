@@ -8,7 +8,14 @@ from mcp.types import ToolAnnotations
 
 from ..exceptions import AnafConfigError
 
-__all__ = ["ARTIFACT_SAVING", "MUTATING", "READ_ONLY", "REQUESTING", "write_artifact"]
+__all__ = [
+    "ARTIFACT_SAVING",
+    "MUTATING",
+    "READ_ONLY",
+    "REQUESTING",
+    "ensure_writable",
+    "write_artifact",
+]
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 MUTATING = ToolAnnotations(readOnlyHint=False, idempotentHint=False, openWorldHint=True)
@@ -25,13 +32,8 @@ ARTIFACT_SAVING = ToolAnnotations(
 )
 
 
-def write_artifact(target: str, data: bytes, *, overwrite: bool) -> str:
-    """Write a downloaded artifact to a caller-given path, creating parent dirs.
-
-    An existing file is never silently replaced: a batch flow naming files from
-    document metadata ("<date> - <partner>.pdf") must not lose one document to a
-    name collision. Raises :class:`AnafConfigError` unless ``overwrite`` is set.
-    """
+def ensure_writable(target: str | Path, *, overwrite: bool) -> Path:
+    """Resolve an artifact target, reject collisions, and create its parent."""
     path = Path(target).expanduser()
     if path.exists() and not overwrite:
         raise AnafConfigError(
@@ -39,5 +41,11 @@ def write_artifact(target: str, data: bytes, *, overwrite: bool) -> str:
             "pass overwrite=true to replace it deliberately"
         )
     path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def write_artifact(target: str | Path, data: bytes, *, overwrite: bool) -> str:
+    """Write a downloaded artifact without silently replacing an existing file."""
+    path = ensure_writable(target, overwrite=overwrite)
     path.write_bytes(data)
     return str(path)

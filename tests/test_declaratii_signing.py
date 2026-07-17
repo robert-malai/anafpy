@@ -10,7 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from anafpy.declaratii.signing import _Frameworks, resolve_signing_label
+from anafpy.declaratii.signing import (
+    _Frameworks,
+    default_signed_path,
+    load_pdfsign,
+    resolve_signing_label,
+)
 from anafpy.exceptions import AnafConfigError
 from anafpy.spv.certs import SelectedIdentity, save_selected_identity
 
@@ -53,3 +58,18 @@ def test_frameworks_rejects_non_darwin(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("anafpy.declaratii.signing.sys.platform", "linux")
     with pytest.raises(AnafConfigError, match="macOS-only"):
         _Frameworks()
+
+
+def test_default_signed_path() -> None:
+    assert default_signed_path(Path("/tmp/d300.pdf")) == Path("/tmp/d300-semnat.pdf")
+
+
+def test_load_pdfsign_translates_missing_extra(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing(*_args: object, **_kwargs: object) -> object:
+        raise ModuleNotFoundError("No module named 'pyhanko'", name="pyhanko")
+
+    monkeypatch.setattr("anafpy.declaratii.signing.importlib.import_module", missing)
+    with pytest.raises(AnafConfigError, match=r"anafpy\[declaratii\]"):
+        load_pdfsign()

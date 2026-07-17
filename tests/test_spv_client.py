@@ -86,6 +86,19 @@ async def test_session_loads_from_the_store_per_request() -> None:
 
 
 @respx.mock
+async def test_injected_client_without_base_url_adopts_spv_url() -> None:
+    respx.get(f"{BASE}/listaMesaje").respond(json=NO_MESSAGES_BODY)
+    http = httpx.AsyncClient()
+    provider = SpvSessionProvider(store=MemorySessionStore(_session()))
+    client = SpvClient(provider, http=http)
+    listing = await client.list_messages(5)
+    await client.aclose()
+    assert listing.note == "Nu exista mesaje in ultimele 5 zile"
+    assert not http.is_closed
+    await http.aclose()
+
+
+@respx.mock
 async def test_cookies_ride_every_request() -> None:
     route = respx.get(f"{BASE}/listaMesaje").respond(json=NO_MESSAGES_BODY)
     async with _client() as client:

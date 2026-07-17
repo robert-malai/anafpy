@@ -22,7 +22,6 @@ final payload (their ``bootstrap()``).
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 import tempfile
@@ -30,6 +29,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from ..exceptions import AnafAuthError, AnafConfigError
+from .subprocess import run_subprocess
 
 __all__ = ["CurlBootstrapperBase", "default_curl_path", "parse_netscape_cookies"]
 
@@ -174,26 +174,19 @@ class CurlBootstrapperBase:
 
     async def _run_curl(self, argv: list[str]) -> tuple[int, bytes, bytes]:
         """Run one curl step; returns ``(returncode, stdout, stderr)``."""
-        process = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=self.environment(),
-        )
         try:
             # curl enforces --max-time itself; the outer margin covers process spawn.
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=self.timeout + 30
+            return await run_subprocess(
+                argv,
+                timeout=self.timeout + 30,
+                env=self.environment(),
             )
         except TimeoutError:
-            process.kill()
-            await process.wait()
             raise AnafAuthError(
                 f"{self.context} did not finish within {self.timeout:.0f}s — "
                 "the certificate middleware may be stuck; retry (the 2FA prompt "
                 "fires again)"
             ) from None
-        return process.returncode or 0, stdout, stderr
 
     async def run_chain(self) -> tuple[int, bytes, bytes, dict[str, str]]:
         """Run :meth:`commands` sequentially over one temporary cookie jar.
@@ -204,15 +197,24 @@ class CurlBootstrapperBase:
         with tempfile.TemporaryDirectory(prefix="anafpy-curl-") as tmp_dir:
             jar_path = str(Path(tmp_dir) / "cookies.txt")
             returncode, stdout, stderr = 0, b"", b""
-            for argv in self.commands(jar_path):
+            commands = self.commands(jar_path)
+            for step, argv in enumerate(commands, start=1):
                 returncode, stdout, stderr = await self._run_curl(argv)
+                if returncode != 0 and step < len(commands):
+                    # Only the final payload can redeem ANAF's observed curl-56
+                    # close-notify quirk. An earlier failed step dooms the
+                    # choreography, so stop before a later certificate step can
+                    # fire the user's 2FA.
+                    self.raise_curl_failure(returncode, stderr, step=step)
             jar_text = ""
             jar = Path(jar_path)
             if jar.exists():
                 jar_text = jar.read_text(encoding="utf-8")
         return returncode, stdout, stderr, parse_netscape_cookies(jar_text)
 
-    def raise_curl_failure(self, returncode: int, stderr: bytes) -> None:
+    def raise_curl_failure(
+        self, returncode: int, stderr: bytes, *, step: int | None = None
+    ) -> None:
         """Raise for the curl-level failures; return when the body must judge.
 
         Call **after** the payload said "not success": exit 28 is the
@@ -220,9 +222,10 @@ class CurlBootstrapperBase:
         exit returns — the caller then raises its service-specific
         wrong-payload error.
         """
+        step_text = f" step {step}" if step is not None else ""
         if returncode == _CURL_EXIT_TIMEOUT:
             raise AnafAuthError(
-                f"{self.context} timed out after {self.timeout:.0f}s — the "
+                f"{self.context}{step_text} timed out after {self.timeout:.0f}s — the "
                 "token PIN / 2FA authorization was not completed in time, or "
                 "the middleware stalled (observed intermittently). Retry; the "
                 "prompt fires again on every attempt."
@@ -230,7 +233,7 @@ class CurlBootstrapperBase:
         if returncode != 0:
             detail = stderr.decode("utf-8", errors="replace").strip()
             raise AnafAuthError(
-                f"{self.context} failed (curl exit {returncode}): "
+                f"{self.context}{step_text} failed (curl exit {returncode}): "
                 f"{detail or 'no error output'} — check that the identity "
                 f"{self.identity!r} exists and its middleware is running"
             )

@@ -23,15 +23,28 @@ returned as base64.
 
 from __future__ import annotations
 
-import tempfile
+import asyncio
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 from ...declaratii import payment_evidence_number
-from ...declaratii.signing import KeychainRawSigner, resolve_signing_label
+from ...declaratii.duk import fetch_feed_versions
+from ...declaratii.models import DeclarationStatusList
+from ...declaratii.signing import (
+    KeychainRawSigner,
+    default_signed_path,
+    load_pdfsign,
+    resolve_signing_label,
+)
 from ...exceptions import AnafConfigError, AnafError
-from ..artifacts import ARTIFACT_SAVING, MUTATING, READ_ONLY, write_artifact
+from ..artifacts import (
+    ARTIFACT_SAVING,
+    MUTATING,
+    READ_ONLY,
+    ensure_writable,
+    write_artifact,
+)
 from ..config import ServerConfig
 from ..context import AppContext
 from .models import (
@@ -40,16 +53,10 @@ from .models import (
     ReceiptResult,
     RenderResult,
     SignResult,
-    StatusResult,
     ValidationResult,
 )
 
 __all__ = ["register"]
-
-_INSTALL_HINT = (
-    "declaration signing needs the anafpy[declaratii] extra — install it "
-    "(pip install 'anafpy[declaratii]') and restart the server"
-)
 
 _FILE_IT = (
     "file the signed PDF manually at anaf.ro → Depunere declarații → Transmitere "
@@ -77,6 +84,8 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         try:
             xml = document.resolve()
             result = await ctx.duk().validate(form, xml, option=option)
+        except AnafConfigError:
+            raise
         except AnafError as exc:
             return ValidationResult(ok=False, form=form, message=str(exc))
         return ValidationResult(ok=result.ok, form=form, findings=result.findings)
@@ -102,27 +111,20 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         try:
             xml = document.resolve()
             # Fail a name collision BEFORE running DUK.
-            target = Path(save_pdf_as).expanduser()
-            if target.exists() and not overwrite:
-                raise AnafConfigError(
-                    f"refusing to overwrite existing file {target} — pick another "
-                    "name, or pass overwrite=true to replace it deliberately"
+            target = ensure_writable(save_pdf_as, overwrite=overwrite)
+            result = await ctx.duk().render(form, xml, target, option=option)
+            if not result.ok:
+                return RenderResult(
+                    ok=False,
+                    form=form,
+                    findings=result.findings,
+                    message="validation failed; no PDF was written",
                 )
-            with tempfile.TemporaryDirectory(prefix="anafpy-decl-") as tmp:
-                tmp_pdf = Path(tmp) / "out.pdf"
-                result = await ctx.duk().render(form, xml, tmp_pdf, option=option)
-                if not result.ok:
-                    return RenderResult(
-                        ok=False,
-                        form=form,
-                        findings=result.findings,
-                        message="validation failed; no PDF was written",
-                    )
-                pdf_bytes = tmp_pdf.read_bytes()
-            path = write_artifact(save_pdf_as, pdf_bytes, overwrite=overwrite)
+        except AnafConfigError:
+            raise
         except AnafError as exc:
             return RenderResult(ok=False, form=form, message=str(exc))
-        return RenderResult(ok=True, form=form, pdf_path=path)
+        return RenderResult(ok=True, form=form, pdf_path=str(target))
 
     @mcp.tool(
         title="Declarations: sign",
@@ -152,26 +154,23 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
                 "coming, then call again with confirm=true",
             )
         source = Path(pdf_path).expanduser()
-        target = (
-            save_as
-            if save_as is not None
-            else str(source.with_name(f"{source.stem}-semnat.pdf"))
-        )
+        target = Path(save_as).expanduser() if save_as else default_signed_path(source)
         try:
-            pdf_bytes = source.read_bytes()
-        except OSError as exc:
-            return SignResult(signed=False, guidance=f"cannot read {pdf_path}: {exc}")
-        try:
-            from ...declaratii import pdfsign
-        except ModuleNotFoundError:
-            return SignResult(signed=False, guidance=_INSTALL_HINT)
-        try:
+            # Fail before certificate discovery/2FA, including the natural retry
+            # state where the default signed target already exists.
+            target = ensure_writable(target, overwrite=overwrite)
+            pdf_bytes = await asyncio.to_thread(source.read_bytes)
+            pdfsign = load_pdfsign()
             label = resolve_signing_label(
                 config.sign_identity, identity_path=config.spv_identity_path
             )
-            signer = KeychainRawSigner(label)
+            signer = await asyncio.to_thread(KeychainRawSigner, label)
             signed = await pdfsign.sign_pdf(pdf_bytes, signer)
-            path = write_artifact(target, signed.pdf, overwrite=overwrite)
+            path = await asyncio.to_thread(
+                write_artifact, target, signed.pdf, overwrite=overwrite
+            )
+        except OSError as exc:
+            return SignResult(signed=False, guidance=f"cannot read {pdf_path}: {exc}")
         except AnafError as exc:
             return SignResult(signed=False, guidance=str(exc))
         guidance = _FILE_IT
@@ -202,18 +201,13 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     )
     async def declaratie_status(
         index: str, cui: str | None = None, filed_at_counter: bool = False
-    ) -> StatusResult:
-        result = await ctx.declaration_status().check_status(
-            index, config.require_cif(cui), filed_at_counter=filed_at_counter
-        )
-        return StatusResult(
-            found=result.found,
-            cui=result.cui,
-            period_start=result.period_start,
-            period_end=result.period_end,
-            documents=result.documents,
-            message=result.message,
-        )
+    ) -> DeclarationStatusList:
+        try:
+            return await ctx.declaration_status().check_status(
+                index, config.require_cif(cui), filed_at_counter=filed_at_counter
+            )
+        except AnafError as exc:
+            return DeclarationStatusList(found=False, cui=cui or "", message=str(exc))
 
     @mcp.tool(
         title="Declarations: download recipisa",
@@ -251,15 +245,19 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         description="Compose the D300 `nr_evid` (numărul de evidență a plății), "
         "the required 23-character payment-evidence number, from the settlement "
         "type and reporting period. `tip_decont` is one of L (monthly), T "
-        "(quarterly), S, A; `luna` is 1-12; `an` is the four-digit year. Always "
+        "(quarterly), S, A; `month` is 1-12; `year` is four digits. Always "
         "use this — never compute the number (its check digit) by hand.",
     )
-    def declaratie_nr_evid(tip_decont: str, luna: int, an: int) -> NrEvidResult:
+    def declaratie_nr_evid(tip_decont: str, month: int, year: int) -> NrEvidResult:
         try:
-            number = payment_evidence_number(tip_decont=tip_decont, luna=luna, an=an)
+            number = payment_evidence_number(
+                tip_decont=tip_decont, month=month, year=year
+            )
         except ValueError as exc:
             raise AnafConfigError(str(exc)) from exc
-        return NrEvidResult(nr_evid=number, tip_decont=tip_decont, luna=luna, an=an)
+        return NrEvidResult(
+            nr_evid=number, tip_decont=tip_decont, month=month, year=year
+        )
 
     @mcp.tool(
         title="Declarations: DUKIntegrator status",
@@ -272,29 +270,52 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         "versions are reported.",
     )
     async def declaratie_duk_status() -> dict[str, object]:
-        duk = ctx.duk()  # raises AnafConfigError with the how-to-enable message
+        try:
+            duk = ctx.duk()
+        except AnafConfigError as exc:
+            result: dict[str, object] = {
+                "installed_forms": {},
+                "install_error": str(exc),
+            }
+            try:
+                feed = await fetch_feed_versions()
+            except AnafError as feed_exc:
+                result["feed_error"] = str(feed_exc)
+                return result
+            result["forms"] = [
+                {
+                    "form": form,
+                    "installed": "not installed",
+                    "current": version,
+                    "stale": True,
+                }
+                for form, version in sorted(feed.items())
+            ]
+            return result
+
         installed = duk.installed_forms()
-        java = await duk.java_version()
-        result: dict[str, object] = {
+        java_result, feed_result = await asyncio.gather(
+            duk.java_version(), fetch_feed_versions(), return_exceptions=True
+        )
+        result = {
             "duk_dir": str(duk.duk_dir),
-            "java": java,
+            "java": java_result if isinstance(java_result, str) else "unknown",
             "installed_forms": installed,
         }
-        try:
-            feed = await duk.feed_versions()
-        except AnafError as exc:
-            result["feed_error"] = str(exc)
+        if isinstance(feed_result, BaseException):
+            result["feed_error"] = str(feed_result)
             result["note"] = (
                 "could not reach ANAF's update feed; showing installed versions only"
             )
             return result
+        feed = feed_result
         result["forms"] = [
             {
                 "form": form,
-                "installed": version,
+                "installed": installed.get(form, "not installed"),
                 "current": feed.get(form, "unknown"),
-                "stale": form in feed and feed[form] != version,
+                "stale": form in feed and installed.get(form) != feed[form],
             }
-            for form, version in sorted(installed.items())
+            for form in sorted(installed.keys() | feed.keys())
         ]
         return result

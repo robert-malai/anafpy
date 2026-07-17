@@ -8,8 +8,8 @@ unauthenticated, so :class:`DeclarationStatusClient` answers "was my
 declaration accepted?" and downloads the signed recipisa with nothing but the
 upload index and the CUI. **Filing** (M2, recon-grade) is
 :class:`DeclarationUploadClient`: the certificate login on the ``WAS6DUS``
-portal plus the one multipart POST — its success-page parse stays provisional
-until the first D406T test filing captures that page.
+portal plus the one multipart POST; its success-page parse was live-verified
+by a D406T filing on 2026-07-17.
 
 Public surface:
 
@@ -17,8 +17,8 @@ Public surface:
 * :class:`DukIntegrator` (+ :class:`DukResult`, :class:`DukFinding`) — the
   headless DUKIntegrator wrapper (validate / render).
 * :class:`RawSigner` protocol and its macOS :class:`KeychainRawSigner`
-  implementation, plus :func:`sign_pdf` — the pyHanko embedding that turns a
-  raw OS signature into a qualified PDF signature.
+  implementation. :func:`load_pdfsign` loads the optional pyHanko embedding
+  module with a clear install hint.
 * :class:`DeclarationStatusClient` (+ :class:`DeclarationStatusList`,
   :class:`DeclarationDocument`, :class:`DeclarationState`) — filing status and
   recipisa download over the public StareD112 service.
@@ -26,23 +26,27 @@ Public surface:
   :class:`PortalUploadResult`) — the portal upload (certificate login + the
   multipart filing POST).
 
-The signer and :func:`sign_pdf` need the optional ``anafpy[declaratii]`` extra
-(pyHanko); importing them without it raises a clear
+The platform signer imports without optional dependencies; calling
+:func:`load_pdfsign` without ``anafpy[declaratii]`` raises a clear
 :class:`~anafpy.exceptions.AnafConfigError`.
 """
 
 from __future__ import annotations
 
-from .duk import DukFinding, DukIntegrator, DukResult
-from .models import DeclarationDocument, DeclarationState, DeclarationStatusList
-from .nr_evid import payment_evidence_number
-from .signing import KeychainRawSigner, RawSigner
-from .status import DeclarationStatusClient
-from .upload import (
-    DeclarationUploadClient,
-    PortalCurlBootstrapper,
+from .duk import DukIntegrator, fetch_feed_versions
+from .models import (
+    DeclarationDocument,
+    DeclarationState,
+    DeclarationStatusList,
+    DukFinding,
+    DukResult,
+    PdfSignResult,
     PortalUploadResult,
 )
+from .nr_evid import payment_evidence_number
+from .signing import KeychainRawSigner, RawSigner, default_signed_path, load_pdfsign
+from .status import DeclarationStatusClient
+from .upload import DeclarationUploadClient, PortalCurlBootstrapper
 
 __all__ = [
     "DeclarationDocument",
@@ -54,8 +58,12 @@ __all__ = [
     "DukIntegrator",
     "DukResult",
     "KeychainRawSigner",
+    "PdfSignResult",
     "PortalCurlBootstrapper",
     "PortalUploadResult",
     "RawSigner",
+    "default_signed_path",
+    "fetch_feed_versions",
+    "load_pdfsign",
     "payment_evidence_number",
 ]

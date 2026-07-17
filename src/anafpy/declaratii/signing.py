@@ -23,16 +23,22 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
+import importlib
 import os
 import sys
-from typing import Protocol, runtime_checkable
+from functools import lru_cache
+from pathlib import Path
+from typing import Protocol, cast, runtime_checkable
 
 from ..exceptions import AnafConfigError
 from ..spv.certs import DEFAULT_IDENTITY_PATH, load_selected_identity
+from .models import PdfSignResult
 
 __all__ = [
     "KeychainRawSigner",
     "RawSigner",
+    "default_signed_path",
+    "load_pdfsign",
     "resolve_signing_label",
 ]
 
@@ -62,6 +68,32 @@ class RawSigner(Protocol):
     async def sign(self, data: bytes) -> bytes:
         """Raw signature bytes over *data* (SHA-256, PKCS#1 v1.5)."""
         ...
+
+
+def default_signed_path(source: Path) -> Path:
+    """Return the conventional ``<stem>-semnat.pdf`` path beside *source*."""
+    source = Path(source).expanduser()
+    return source.with_name(f"{source.stem}-semnat.pdf")
+
+
+class PdfSignModule(Protocol):
+    """Typed shape of the optional :mod:`anafpy.declaratii.pdfsign` module."""
+
+    async def sign_pdf(
+        self, pdf: bytes, signer: RawSigner, *, field_name: str = "Semnatura1"
+    ) -> PdfSignResult: ...
+
+
+def load_pdfsign() -> PdfSignModule:
+    """Load the optional pyHanko-backed signing module with an install hint."""
+    try:
+        module = importlib.import_module(".pdfsign", __package__)
+    except ModuleNotFoundError as exc:
+        raise AnafConfigError(
+            "signing needs the anafpy[declaratii] extra — install it with "
+            "`pip install 'anafpy[declaratii]'`"
+        ) from exc
+    return cast(PdfSignModule, module)
 
 
 def resolve_signing_label(
@@ -224,6 +256,12 @@ class _Frameworks:
         return text
 
 
+@lru_cache(maxsize=1)
+def _frameworks() -> _Frameworks:
+    """Return the immutable platform-framework bindings shared by all signers."""
+    return _Frameworks()
+
+
 class KeychainRawSigner:
     """A :class:`RawSigner` over a macOS Keychain / CryptoTokenKit identity.
 
@@ -242,7 +280,7 @@ class KeychainRawSigner:
     def __init__(self, label: str, *, sign_timeout: float = _SIGN_TIMEOUT) -> None:
         self.label = label
         self.sign_timeout = sign_timeout
-        self._fw = _Frameworks()
+        self._fw = _frameworks()
         self._identity = self._find_identity(label)
         self._certificate = self._copy_certificate(self._identity)
 

@@ -27,8 +27,6 @@ import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import AsyncIterator
 from datetime import datetime
-from types import TracebackType
-from typing import Self
 
 import httpx
 from tenacity import (
@@ -48,11 +46,11 @@ from .._transport.base import (
     raise_for_status,
     service_base_url,
 )
+from .._transport.http import HttpClientBase
 from ..auth.provider import AnafAuth, TokenProvider
 from ..exceptions import (
     AnafConfigError,
     AnafResponseError,
-    AnafTransportError,
 )
 from .authoring import DocumentKind, InvoiceDocument, render_invoice
 from .models import (
@@ -157,15 +155,14 @@ def _parse_xml_header(body: bytes, operation: str) -> ET.Element:
         ) from exc
 
 
-class EFacturaClient:
+class EFacturaClient(HttpClientBase):
     """Talks to ANAF e-Factura over OAuth2.
 
     Construct with an authenticated :class:`~anafpy.auth.provider.TokenProvider`; the
     client owns an ``httpx.AsyncClient`` (unless one is injected — it must then
-    carry :class:`~anafpy.auth.oauth.AnafAuth` and be configured with the
-    service ``base_url``, ``service_base_url(Service.EFACTURA, environment)``
-    plus a trailing slash) and should be used as an async context manager so it
-    is closed cleanly.
+    carry :class:`~anafpy.auth.oauth.AnafAuth`; an empty injected ``base_url``
+    adopts this service's URL, while a non-empty one is preserved) and should
+    be used as an async context manager so it is closed cleanly.
     """
 
     def __init__(
@@ -176,29 +173,12 @@ class EFacturaClient:
         http: httpx.AsyncClient | None = None,
         timeout: float = 60.0,
     ) -> None:
-        self._owns_http = http is None
-        # The env-specific service prefix rides the client's base_url; requests
-        # use relative paths (the trailing slash matters — httpx concatenates).
-        self._http = http or httpx.AsyncClient(
-            auth=AnafAuth(provider),
+        super().__init__(
+            http=http,
+            base_url=service_base_url(Service.EFACTURA, environment),
             timeout=timeout,
-            base_url=f"{service_base_url(Service.EFACTURA, environment)}/",
+            auth=AnafAuth(provider),
         )
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        await self.aclose()
-
-    async def aclose(self) -> None:
-        if self._owns_http:
-            await self._http.aclose()
 
     # -- transport -------------------------------------------------------------------
 
@@ -211,12 +191,9 @@ class EFacturaClient:
         content: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
-        try:
-            response = await self._http.request(
-                method, path, params=params, content=content, headers=headers
-            )
-        except httpx.HTTPError as exc:  # connect/read/timeout/etc.
-            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        response = await self._request_http(
+            method, path, params=params, content=content, headers=headers
+        )
         raise_for_status(response)
         return response
 
@@ -479,10 +456,7 @@ class EFacturaClient:
         # base_url prefix (no FCTEL/rest, no env segment); httpx passes
         # absolute URLs through unmerged.
         url = f"{OAUTH_HOST}/api/validate/signature"
-        try:
-            response = await self._http.post(url, files=files)
-        except httpx.HTTPError as exc:
-            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        response = await self._request_http("POST", url, files=files)
         raise_for_status(response)
         return self._parse_signature_validation(response.content)
 

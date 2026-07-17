@@ -51,8 +51,9 @@ assert rendered.ok
 
 `validate`/`render` judge success by the err-file content, never by the exit
 code (DUK exits `0` on a validation failure). `installed_forms()` and
-`feed_versions()` power a staleness check — CLI-mode DUK does not auto-update, so
-an installed validator can lag ANAF's current one.
+`fetch_feed_versions()` power a staleness check — the feed works before DUK is
+installed, and CLI-mode DUK does not auto-update, so an installed validator can
+lag ANAF's current one.
 
 ## The `nr_evid` helper
 
@@ -62,7 +63,7 @@ digit. Compute it — never by hand:
 ```python
 from anafpy.declaratii import payment_evidence_number
 
-payment_evidence_number(tip_decont="L", luna=6, an=2026)
+payment_evidence_number(tip_decont="L", month=6, year=2026)
 # '10301010626250726000042'
 ```
 
@@ -75,20 +76,21 @@ through Security.framework via `KeychainRawSigner`; **each signature fires the
 token's approval prompt**.
 
 ```python
-from anafpy.declaratii import KeychainRawSigner
+from anafpy.declaratii import KeychainRawSigner, load_pdfsign
 from anafpy.declaratii.signing import resolve_signing_label
-from anafpy.declaratii.pdfsign import sign_pdf
 
+pdfsign = load_pdfsign()                 # clear install hint if the extra is absent
 label = resolve_signing_label()          # ANAFPY_SIGN_IDENTITY / persisted SPV cert
 signer = KeychainRawSigner(label)        # same qualified certificate as SPV
-result = await sign_pdf(Path("d300.pdf").read_bytes(), signer)
+result = await pdfsign.sign_pdf(Path("d300.pdf").read_bytes(), signer)
 Path("d300-semnat.pdf").write_bytes(result.pdf)
 ```
 
-`sign_pdf` embeds a standard `adbe.pkcs7.detached` CMS as an incremental update,
+`pdfsign.sign_pdf` embeds a standard `adbe.pkcs7.detached` CMS as an incremental update,
 so a rendered PDF's embedded XML (`/EmbeddedFiles`) survives and the signature
 covers the whole file. The issuer certificate is fetched best-effort from the
-leaf's AIA URL; if that fetch fails the CMS is leaf-only and
+leaf's AIA URL; DER, PEM, and PKCS#7 responses are validated and cached as DER
+only. If fetching or parsing fails the CMS is leaf-only and
 `result.chain_complete` is `False` (portal acceptance of a leaf-only chain is
 unverified). The identity defaults to the persisted SPV certificate selection
 (`anafpy spv select`) — the same qualified certificate — or set
@@ -163,7 +165,9 @@ the SPV `ReportType` nomenclature. Compare by member
 `state_text`. Keep polling while a document is `DeclarationState.PROCESSING`.
 For documents filed at an ANAF
 counter, pass `filed_at_counter=True` and give the registration number as the
-index. Service limits (ANAF's, not anafpy's): only the last **3 months** / last
+index. Counter registration numbers are passed through after whitespace
+trimming (dash/slash formats are accepted); internet upload indexes remain
+digits-only. Service limits (ANAF's, not anafpy's): only the last **3 months** / last
 **200 submissions** are queryable, and the recipisa PDF is available for
 **~60 days** from filing (`receipt_available` per row) — archive it promptly;
 it is the digitally signed proof of filing.
@@ -188,3 +192,7 @@ The same operations are MCP tools (`declaratie_validate`, `declaratie_render`,
 `declaratie_sign`, `declaratie_nr_evid`, `declaratie_duk_status`,
 `declaratie_status`, `declaratie_recipisa`) and a `declaratie-compose` skill —
 see the [MCP tools](../mcp/tools.md) and [setup](../mcp/setup.md) pages.
+Missing DUK/Java configuration is a tool error for validate/render, distinct
+from a real DUK verdict with `ok=false`. Status/config/network failures use the
+typed status shape (`found=false` plus `message`) rather than an unstructured
+tool exception.
