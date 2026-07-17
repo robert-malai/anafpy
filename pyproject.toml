@@ -39,6 +39,10 @@ dependencies = [
     # StareD112 filing status today, the declaration-upload portal next (both have
     # no API). py.typed since 1.8, so mypy --strict needs no stubs.
     "parsel>=1.9",
+    # Type-hint-driven CLI (replaced argparse 2026-07-18): async commands run
+    # natively, help text comes from the Google-style docstrings, env-var
+    # fallbacks live on the Parameter annotations.
+    "cyclopts>=3.14",
 ]
 
 [project.optional-dependencies]

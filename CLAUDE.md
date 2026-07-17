@@ -133,7 +133,7 @@ src/anafpy/
                          # selectors, TLS-backend pin, failure taxonomy;
                          # subclasses own choreography + success judgment
   auth/                  # OAuth2 layer: models, store, oauth, provider, callback
-  cli/main.py            # `anafpy auth login|status|logout` +
+  cli/main.py            # cyclopts CLI: `anafpy auth login|status|logout` +
                          # `anafpy spv certs|select|login|status|logout` +
                          # `anafpy declaratii validate|render|sign|status|recipisa`
   efactura/

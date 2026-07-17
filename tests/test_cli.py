@@ -116,7 +116,8 @@ def test_status_env_selects_the_keyring_backend(
 def test_unknown_store_backend_from_env_is_a_cli_error(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # argparse never validates defaults, so a bad env value must be caught later.
+    # The backend is deliberately a plain str (no Literal): a bad env value must
+    # travel the AnafConfigError path, not exit via a cyclopts parse error.
     monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "vault")
     assert main(["auth", "status"]) == 1
     assert "backend" in capsys.readouterr().err
