@@ -13,7 +13,11 @@ by a D406T filing on 2026-07-17.
 
 Public surface:
 
-* :func:`payment_evidence_number` — the ``nr_evid`` payment-evidence composer.
+* :func:`payment_evidence_number` (D300) and its siblings
+  :func:`obligation_evidence_number` (D100/D710),
+  :func:`profit_tax_evidence_number` (D101),
+  :func:`special_vat_evidence_number` (D301) — the ``nr_evid``
+  payment-evidence composers.
 * :class:`DukIntegrator` (+ :class:`DukResult`, :class:`DukFinding`) — the
   headless DUKIntegrator wrapper (validate / render).
 * :class:`RawSigner` protocol and its macOS :class:`KeychainRawSigner`
@@ -43,7 +47,12 @@ from .models import (
     PdfSignResult,
     PortalUploadResult,
 )
-from .nr_evid import payment_evidence_number
+from .nr_evid import (
+    obligation_evidence_number,
+    payment_evidence_number,
+    profit_tax_evidence_number,
+    special_vat_evidence_number,
+)
 from .signing import KeychainRawSigner, RawSigner, default_signed_path, load_pdfsign
 from .status import DeclarationStatusClient
 from .upload import DeclarationUploadClient, PortalCurlBootstrapper
@@ -65,5 +74,8 @@ __all__ = [
     "default_signed_path",
     "fetch_feed_versions",
     "load_pdfsign",
+    "obligation_evidence_number",
     "payment_evidence_number",
+    "profit_tax_evidence_number",
+    "special_vat_evidence_number",
 ]

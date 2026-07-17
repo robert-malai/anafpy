@@ -79,12 +79,21 @@ class SignResult(BaseModel):
 
 
 class NrEvidResult(BaseModel):
-    """The composed 23-character D300 payment-evidence number."""
+    """The composed 23-character ``nr_evid`` payment-evidence number.
+
+    ``form`` echoes the declaration it was composed for; the per-form inputs
+    that were used (``tip_decont`` for D300, ``cod_oblig``/``scadenta`` for
+    D100/D710/D101) are echoed back for traceability, ``None`` when they do
+    not apply.
+    """
 
     nr_evid: str
-    tip_decont: str
+    form: str
     month: int
     year: int
+    tip_decont: str | None = None
+    cod_oblig: str | None = None
+    scadenta: str | None = None
 
 
 class ReceiptResult(BaseModel):

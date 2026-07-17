@@ -21,9 +21,11 @@ Every form ANAF's DUKIntegrator update feed lists has a validator jar and is
 therefore filable electronically (portal upload / e-guvernare). This page is the
 full inventory — **173 forms** on 2026-07-17 — bucketed by how often a **typical
 SME** (VAT-registered SRL with employees) files them. The buckets drive our
-hands-on coverage: the top two buckets each get a per-form quirk file in this
-folder (XSD location, authoring gotchas, DUK behaviour), the third is
-inventory-only.
+hands-on coverage: the top two buckets each get a per-form **completion guide**
+in this folder — purpose & legal basis, who-files-&-when, a row-by-row
+filling map onto the XSD attributes anafpy authors, DUK-validated example
+instances, and researched filing gotchas, followed by the technical XSD/DUK
+layer — produced per [METHOD.md](METHOD.md). The third bucket is inventory-only.
 
 Conventions:
 
@@ -41,31 +43,34 @@ Conventions:
 - Validator jars install by dropping the feed's `JURL`/`PURL` jars into the DUK
   `dist/lib/` folder (CLI mode does not auto-update — see the
   [DUK reference](../duk.md) §1).
+- The per-form files are produced and kept current by the documented
+  procedure in [METHOD.md](METHOD.md) — structure, source tiers, research
+  sweep, and verification gates for generating or updating a `dXXX.md`.
 
-## Most used (hands-on: quirk file per form)
+## Most used (hands-on: completion guide per form)
 
 The recurring compliance calendar of a VAT-registered SRL with employees.
 
-| Form | Purpose | Validator (J/P) | Quirks |
+| Form | Purpose | Validator (J/P) | Guide |
 |---|---|---|---|
 | D300 | VAT return (decont de TVA) — monthly/quarterly | `J12.0.1` / `P9.0.0` | [d300.md](d300.md) |
 | D390 | EU recapitulative statement (VIES) — intra-EU supplies/acquisitions, monthly | `J4.1.2` / `P2.0.0` | [d390.md](d390.md) |
 | D394 | Informative return on domestic supplies/purchases — follows the VAT period | `J8.0.2` / `P4.0.0` | [d394.md](d394.md) |
-| D100 | Payment obligations to the state budget (withheld taxes, micro-enterprise tax, ...) — monthly/quarterly | `J21.0.6` / `P6.0.0` | [d100.md](d100.md) |
-| D112 | Payroll: wage income tax + social contributions, per-employee detail — monthly (quarterly for some employers) | `J26.0.3` / `P3.0.1` | [d112.md](d112.md) |
+| D100 | Payment obligations to the state budget (withheld taxes, micro-enterprise tax, ...) — monthly/quarterly | `J21.0.6` / `P6.0.0` | [d100.md](d100.md) + [nomenclatoare](d100-nomenclatoare.md) |
+| D112 | Payroll: wage income tax + social contributions, per-employee detail — monthly (quarterly for some employers) | `J26.0.3` / `P3.0.1` | [d112.md](d112.md) + [nomenclatoare](d112-nomenclatoare.md) |
 | D101 | Annual corporate profit tax return | `J11.0.3` / `P10.0.0` | [d101.md](d101.md) |
 
-## So-and-so (hands-on: quirk file per form)
+## So-and-so (hands-on: completion guide per form)
 
 Filed on specific events, specific taxpayer categories, or annually.
 
-| Form | Purpose | Validator (J/P) | Quirks |
+| Form | Purpose | Validator (J/P) | Guide |
 |---|---|---|---|
 | D700 | Fiscal registration / fiscal-vector changes, the electronic path | `J5.0.3` / `P4.0.3` | [d700.md](d700.md) |
 | D406 | SAF-T informative — monthly/quarterly by taxpayer category | `J2.2.18` / `P2.0.1` | [d406.md](d406.md) |
 | D205 | Annual informative on income tax withheld at source, per beneficiary | `J9.0.5` / `P5.0.1` | [d205.md](d205.md) |
 | D301 | Special VAT return — persons not VAT-registered who owe VAT (e.g. intra-EU acquisitions) | `J1.2.5` / `P1.1.0` | [d301.md](d301.md) |
-| D710 | Rectifying declaration — corrects D100/D112 and siblings | `J20.0.6` / `P4.0.0` | [d710.md](d710.md) |
+| D710 | Rectifying declaration — corrects D100 obligations (D112 uses its own rectificative) | `J20.0.6` / `P4.0.0` | [d710.md](d710.md) |
 | D212 | Individuals' unified declaration — income tax + CAS/CASS | `J13.0.1` / `P10.0.0` | [d212.md](d212.md) |
 
 ## Rarely (inventory only)

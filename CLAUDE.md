@@ -186,7 +186,9 @@ src/anafpy/
                          # + recipisa PDF via www.anaf.ro/StareD112 (index+CUI are
                          # the access key; empty-PDF answer = receipt unavailable);
                          # HTML extraction via parsel (core dep) — shape checks ours
-    nr_evid.py           # payment_evidence_number (pure: the 23-char D300 nr_evid)
+    nr_evid.py           # the 23-char nr_evid composers (pure): payment_evidence_number
+                         # (D300) + obligation_evidence_number (D100/D710) +
+                         # profit_tax_evidence_number (D101) + special_vat_evidence_number (D301)
     upload.py            # M2 portal upload (decl.anaf.mfinante.gov.ro/WAS6DUS):
                          # PortalCurlBootstrapper (cert login, discrete curl
                          # steps, over the _transport/curl.py base) +
@@ -252,9 +254,13 @@ docs/                    # MkDocs source tree for the docs site (mkdocs.yml at r
   anaf-reference/        # compiled ANAF API reference (oauth/efactura/etransport/public/spv;
                          # spv sources = vendored MfpAnaf/ClientSPV repo under _sources/clientspv/;
                          # declaratii/forms/ = e-guvernare form inventory (README = all 173
-                         # DUK-filable forms bucketed by SME usage) + per-declaration quirk
-                         # files dXXX.md organized by version: XSD URL, DUK-verified minimal
-                         # instance, gotchas — hands-on for the top two buckets);
+                         # DUK-filable forms bucketed by SME usage) + per-declaration
+                         # completion guides dXXX.md (hands-on for the top two buckets):
+                         # purpose & legal basis, who-files-&-when, row->XSD filling map,
+                         # DUK-validated example instances, researched gotchas, then the
+                         # technical XSD/DUK layer; big lookup tables split into dXXX-
+                         # nomenclatoare.md (D100, D112); METHOD.md = the playbook for
+                         # generating/updating them);
                          # ALSO served as MCP resources (ANAFPY_DOCS_DIR default) — don't move it
 tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-in live: test_public_live.py, test_oauth_live.py, test_spv_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST; test_declaratii_upload_live.py files D406T — sanctioned no-effect — to PROD, double-gated)
 ```
@@ -441,8 +447,10 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   M1: authoring + signing, no filing): `declaratie_validate` /
   `declaratie_render` run ANAF's DUKIntegrator (validation authority is ANAF's —
   we run its per-form validator jars, never re-implement rules; the `nr_evid`
-  helper is composition, not validation), `declaratie_nr_evid` composes the D300
-  payment number, `declaratie_duk_status` surfaces CLI-mode DUK's non-auto-update
+  helper is composition, not validation), `declaratie_nr_evid` composes the
+  payment-evidence number for the self-assessed forms (`form=` D300/D100/D710/
+  D101/D301 — each with its own code slot, prefix, and position-18 flag),
+  `declaratie_duk_status` surfaces CLI-mode DUK's non-auto-update
   staleness. `declaratie_sign` is the consequential one: gated on `confirm=true`
   (mirrors `spv_login` — failures return `signed=false` + guidance, not
   exceptions) because it fires the certificate's PIN/2FA, and **no MCP tool ever

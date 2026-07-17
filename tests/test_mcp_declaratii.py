@@ -94,6 +94,55 @@ async def test_nr_evid_bad_tip_raises(tmp_path: Path) -> None:
         await _call(server, "declaratie_nr_evid", tip_decont="X", month=6, year=2026)
 
 
+async def test_nr_evid_d100_obligation(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    result = await _call(
+        server,
+        "declaratie_nr_evid",
+        form="D100",
+        cod_oblig="604",
+        scadenta="25.07.2026",
+        month=6,
+        year=2026,
+    )
+    assert result["nr_evid"] == "10604010626250726000048"
+    assert result["form"] == "D100"
+    assert result["cod_oblig"] == "604"
+
+
+async def test_nr_evid_d301_new_transport(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    result = await _call(
+        server,
+        "declaratie_nr_evid",
+        form="D301",
+        mijl_trans=True,
+        month=6,
+        year=2026,
+    )
+    assert result["nr_evid"] == "10301010626250726100043"
+    assert result["nr_evid"][17] == "1"
+
+
+async def test_nr_evid_d100_missing_scadenta_raises(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    with pytest.raises(ToolError, match="scadenta"):
+        await _call(
+            server,
+            "declaratie_nr_evid",
+            form="D100",
+            cod_oblig="604",
+            month=6,
+            year=2026,
+        )
+
+
+async def test_nr_evid_unknown_form_raises(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    with pytest.raises(ToolError, match="unknown form"):
+        await _call(server, "declaratie_nr_evid", form="D999", month=6, year=2026)
+
+
 # --- validate ---------------------------------------------------------------------
 
 

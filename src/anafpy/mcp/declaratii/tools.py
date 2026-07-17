@@ -24,11 +24,17 @@ returned as base64.
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from ...declaratii import payment_evidence_number
+from ...declaratii import (
+    obligation_evidence_number,
+    payment_evidence_number,
+    profit_tax_evidence_number,
+    special_vat_evidence_number,
+)
 from ...declaratii.duk import fetch_feed_versions
 from ...declaratii.models import DeclarationStatusList
 from ...declaratii.signing import (
@@ -64,6 +70,35 @@ _FILE_IT = (
     "index the portal returns — declaratie_status tracks the processing with it, "
     "and declaratie_recipisa downloads the signed filing receipt"
 )
+
+
+def _require_code(cod_oblig: str | None, form: str) -> str:
+    if not cod_oblig:
+        raise AnafConfigError(f"form {form} requires cod_oblig (the 3-digit code)")
+    return cod_oblig
+
+
+def _require_scadenta(scadenta: str | None, form: str) -> date:
+    """Parse the scadență into a date, accepting `d.m.yyyy` or ISO `yyyy-mm-dd`."""
+    if not scadenta:
+        raise AnafConfigError(
+            f"form {form} requires scadenta (payment due date, e.g. 25.07.2026)"
+        )
+    text = scadenta.strip()
+    for day_first, sep in ((True, "."), (False, "-")):
+        if sep in text:
+            parts = text.split(sep)
+            if len(parts) == 3 and all(p.isdigit() for p in parts):
+                day, month, year_ = parts if day_first else parts[::-1]
+                try:
+                    return date(int(year_), int(month), int(day))
+                except ValueError as exc:
+                    raise AnafConfigError(
+                        f"invalid scadenta {scadenta!r}: {exc}"
+                    ) from exc
+    raise AnafConfigError(
+        f"scadenta {scadenta!r} must be d.m.yyyy (e.g. 25.07.2026) or yyyy-mm-dd"
+    )
 
 
 def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
@@ -255,21 +290,70 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="Declarations: payment-evidence number",
         annotations=READ_ONLY,
-        description="Compose the D300 `nr_evid` (numărul de evidență a plății), "
-        "the required 23-character payment-evidence number, from the settlement "
-        "type and reporting period. `tip_decont` is one of L (monthly), T "
-        "(quarterly), S, A; `month` is 1-12; `year` is four digits. Always "
-        "use this — never compute the number (its check digit) by hand.",
+        description="Compose the `nr_evid` (numărul de evidență a plății), the "
+        "required 23-character payment-evidence number, for a self-assessed "
+        "declaration. `month` is 1-12, `year` four digits. `form` selects the "
+        "layout and its required inputs: `D300` (default) needs `tip_decont` "
+        "(L monthly / T quarterly / S / A); `D100` and `D710` need the 3-digit "
+        "`cod_oblig` and the `scadenta` (payment due date, `d.m.yyyy` — e.g. "
+        "`25.07.2026`); `D101` needs `cod_oblig` (the obligation code) and "
+        "`scadenta`, and takes `in_liquidation` for a liquidation-period "
+        "return; `D301` needs neither and takes `mijl_trans` (set when the "
+        "return reports an intra-EU acquisition of new means of transport). "
+        "Always use this — never compute the number (its check digit) by hand.",
     )
-    def declaratie_nr_evid(tip_decont: str, month: int, year: int) -> NrEvidResult:
+    def declaratie_nr_evid(
+        month: int,
+        year: int,
+        form: str = "D300",
+        tip_decont: str | None = None,
+        cod_oblig: str | None = None,
+        scadenta: str | None = None,
+        mijl_trans: bool = False,
+        in_liquidation: bool = False,
+    ) -> NrEvidResult:
+        form = form.upper()
         try:
-            number = payment_evidence_number(
-                tip_decont=tip_decont, month=month, year=year
-            )
+            if form == "D300":
+                if tip_decont is None:
+                    raise AnafConfigError("form D300 requires tip_decont (L/T/S/A)")
+                number = payment_evidence_number(
+                    tip_decont=tip_decont, month=month, year=year
+                )
+            elif form in {"D100", "D710"}:
+                number = obligation_evidence_number(
+                    cod_oblig=_require_code(cod_oblig, form),
+                    month=month,
+                    year=year,
+                    due_date=_require_scadenta(scadenta, form),
+                )
+            elif form == "D101":
+                number = profit_tax_evidence_number(
+                    cod_obligatie=_require_code(cod_oblig, form),
+                    month=month,
+                    year=year,
+                    due_date=_require_scadenta(scadenta, form),
+                    in_liquidation=in_liquidation,
+                )
+            elif form == "D301":
+                number = special_vat_evidence_number(
+                    month=month, year=year, new_transport=mijl_trans
+                )
+            else:
+                raise AnafConfigError(
+                    f"unknown form {form!r}; expected one of: "
+                    "D300, D100, D710, D101, D301"
+                )
         except ValueError as exc:
             raise AnafConfigError(str(exc)) from exc
         return NrEvidResult(
-            nr_evid=number, tip_decont=tip_decont, month=month, year=year
+            nr_evid=number,
+            form=form,
+            month=month,
+            year=year,
+            tip_decont=tip_decont if form == "D300" else None,
+            cod_oblig=cod_oblig if form in {"D100", "D710", "D101"} else None,
+            scadenta=scadenta if form in {"D100", "D710", "D101"} else None,
         )
 
     @mcp.tool(
