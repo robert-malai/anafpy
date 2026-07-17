@@ -37,7 +37,7 @@ jobs:
       # cover SPV platform seams the ubuntu leg never executes. A Codecov outage
       # must not break the gates, hence fail_ci_if_error stays off.
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: ${{ matrix.os }}-py${{ matrix.python-version }}
