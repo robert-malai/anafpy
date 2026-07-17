@@ -81,6 +81,21 @@ def test_parse_unrecognised_page_raises() -> None:
         _parse_status_page("<html><body>mentenanta</body></html>", queried_cui="1")
 
 
+def test_parse_found_page_with_no_parseable_rows_raises() -> None:
+    # A matched pair returns at least the queried document's row, so a results
+    # header whose rows all fail the six-cell/numeric-index filter (a changed
+    # table layout) must raise, never return found=True with no documents.
+    page = (
+        "<html><body>Documente depuse pentru CUI: 99999909 in perioada "
+        "15.04.2026 / 16.07.2026"
+        "<table><tr><td>1100000001</td><td>F4109</td><td>Documentul este valid"
+        "</td><td>INTERNT-1100000001-2026</td><td>16.07.2026</td></tr></table>"
+        "</body></html>"
+    )  # five cells per row, not six
+    with pytest.raises(AnafResponseError, match="no result rows"):
+        _parse_status_page(page, queried_cui="99999909")
+
+
 @pytest.mark.parametrize(
     ("text", "state"),
     [
@@ -154,14 +169,23 @@ async def test_check_status_counter_filing_sets_ghiseu() -> None:
     assert sent["id"] == "REG-555/2026"
 
 
+async def test_injected_client_without_base_url_raises_config_error() -> None:
+    # An injected client is never mutated: an empty base_url is a
+    # misconfiguration, named loudly at construction.
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(AnafConfigError, match=r"www\.anaf\.ro"):
+            DeclarationStatusClient(http=http)
+
+
 @respx.mock
-async def test_injected_client_without_base_url_adopts_stared112_url() -> None:
+async def test_injected_client_with_base_url_is_used_and_not_closed() -> None:
     respx.post(STATUS_URL).mock(
         return_value=httpx.Response(200, text=_fixture("result-notfound.html"))
     )
-    http = httpx.AsyncClient()
+    http = httpx.AsyncClient(base_url="https://www.anaf.ro/")
     async with DeclarationStatusClient(http=http) as client:
         result = await client.check_status("1100000001", "99999909")
+    assert not http.is_closed
     await http.aclose()
     assert result.found is False
 

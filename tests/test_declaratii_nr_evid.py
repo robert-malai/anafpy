@@ -79,6 +79,14 @@ def test_out_of_range_month_rejected(month: int) -> None:
         payment_evidence_number(tip_decont="L", month=month, year=2026)
 
 
+@pytest.mark.parametrize("year", [0, 26, 260, 10000])
+def test_non_four_digit_year_rejected(year: int) -> None:
+    # A truncated year would yield a checksum-valid but wrong-period number
+    # (DUK checks length + checksum, not the period), so it must not compose.
+    with pytest.raises(ValueError, match="four-digit year"):
+        payment_evidence_number(tip_decont="L", month=6, year=year)
+
+
 # --- D100 / D710: the obligation code sits in the code slot (rule R16) ---
 
 
@@ -171,6 +179,23 @@ def test_special_vat_new_transport_sets_position_17() -> None:
 def test_siblings_reject_out_of_range_month(compose) -> None:  # type: ignore[no-untyped-def]
     with pytest.raises(ValueError, match="month must be"):
         compose(13)
+
+
+@pytest.mark.parametrize(
+    "compose",
+    [
+        lambda y: obligation_evidence_number(
+            cod_oblig="604", month=6, year=y, due_date=date(2026, 7, 25)
+        ),
+        lambda y: profit_tax_evidence_number(
+            cod_obligatie="103", month=12, year=y, due_date=date(2026, 6, 25)
+        ),
+        lambda y: special_vat_evidence_number(month=6, year=y),
+    ],
+)
+def test_siblings_reject_non_four_digit_year(compose) -> None:  # type: ignore[no-untyped-def]
+    with pytest.raises(ValueError, match="four-digit year"):
+        compose(260)
 
 
 def test_all_composers_are_23_digit_and_checksum_valid() -> None:

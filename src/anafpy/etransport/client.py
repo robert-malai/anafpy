@@ -96,8 +96,9 @@ class ETransportClient(HttpClientBase):
 
     Construct with an authenticated :class:`~anafpy.auth.provider.TokenProvider`; the
     client owns an ``httpx.AsyncClient`` (unless one is injected — it must then
-    carry :class:`~anafpy.auth.oauth.AnafAuth`; an empty injected ``base_url``
-    adopts this service's URL, while a non-empty one is preserved) and should
+    carry :class:`~anafpy.auth.oauth.AnafAuth` and a non-empty ``base_url``;
+    an empty one raises :class:`~anafpy.exceptions.AnafConfigError`, since
+    injected clients are never mutated) and should
     be used as an async context manager so it is closed cleanly.
     """
 

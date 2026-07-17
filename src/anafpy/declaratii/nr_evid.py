@@ -75,6 +75,14 @@ def _check_month(month: int) -> None:
         raise ValueError(f"month must be 1..12, got {month}")
 
 
+def _check_year(year: int) -> None:
+    # The number carries only the year's last two digits, so a mistyped year
+    # would otherwise yield a checksum-valid but wrong period (DUK enforces
+    # length + checksum, not the period).
+    if not 1000 <= year <= 9999:
+        raise ValueError(f"year must be a four-digit year, got {year}")
+
+
 def _check_code(code: str, *, name: str) -> None:
     if not (len(code) == 3 and code.isdigit()):
         raise ValueError(f"{name} must be a 3-digit obligation code, got {code!r}")
@@ -97,7 +105,8 @@ def payment_evidence_number(*, tip_decont: str, month: int, year: int) -> str:
         The 23-digit payment-evidence number.
 
     Raises:
-        ValueError: on an unknown ``tip_decont`` or an out-of-range month.
+        ValueError: on an unknown ``tip_decont``, an out-of-range month, or a
+            non-four-digit year.
     """
     if (cod_imp := _COD_IMP.get(tip_decont)) is None:
         valid = ", ".join(sorted(_COD_IMP))
@@ -108,6 +117,7 @@ def payment_evidence_number(*, tip_decont: str, month: int, year: int) -> str:
             )
         raise ValueError(f"unknown tip_decont {tip_decont!r}; expected one of: {valid}")
     _check_month(month)
+    _check_year(year)
     return _compose(
         prefix="10",
         code=cod_imp,
@@ -142,10 +152,12 @@ def obligation_evidence_number(
         The 23-digit payment-evidence number.
 
     Raises:
-        ValueError: on a non-3-digit ``cod_oblig`` or an out-of-range month.
+        ValueError: on a non-3-digit ``cod_oblig``, an out-of-range month, or
+            a non-four-digit year.
     """
     _check_code(cod_oblig, name="cod_oblig")
     _check_month(month)
+    _check_year(year)
     return _compose(
         prefix="10", code=cod_oblig, month=month, year=year, due=due_date, flag=0
     )
@@ -179,10 +191,12 @@ def profit_tax_evidence_number(
         The 23-digit payment-evidence number.
 
     Raises:
-        ValueError: on a non-3-digit ``cod_obligatie`` or an out-of-range month.
+        ValueError: on a non-3-digit ``cod_obligatie``, an out-of-range month,
+            or a non-four-digit year.
     """
     _check_code(cod_obligatie, name="cod_obligatie")
     _check_month(month)
+    _check_year(year)
     return _compose(
         prefix="11",
         code=cod_obligatie,
@@ -217,9 +231,10 @@ def special_vat_evidence_number(
         The 23-digit payment-evidence number.
 
     Raises:
-        ValueError: on an out-of-range month.
+        ValueError: on an out-of-range month or a non-four-digit year.
     """
     _check_month(month)
+    _check_year(year)
     return _compose(
         prefix="10",
         code="301",

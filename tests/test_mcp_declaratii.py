@@ -170,6 +170,25 @@ async def test_validate_reports_findings(
     assert "R25" in result["findings"][0]["message"]
 
 
+async def test_validate_unparseable_err_explains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A broken/mis-versioned dist leaves err output the parser cannot read; the
+    # fail-closed ok=false must carry a diagnostic, not empty findings + empty
+    # message (which would steer the model into rewriting possibly-valid XML).
+    monkeypatch.setattr(
+        DukIntegrator, "_run", _fake_run("java.lang.NoClassDefFoundError: D300")
+    )
+    server = create_server(_config(tmp_path))
+    result = await _call(
+        server, "declaratie_validate", document={"xml": "<x/>"}, form="D300"
+    )
+    assert result["ok"] is False
+    assert result["findings"] == []
+    assert "declaratie_duk_status" in result["message"]
+    assert "NoClassDefFoundError" in result["message"]
+
+
 async def test_validate_without_duk_configured(tmp_path: Path) -> None:
     server = create_server(_config(tmp_path, with_duk=False))
     with pytest.raises(ToolError, match="ANAFPY_DUK_DIR"):
@@ -214,6 +233,26 @@ async def test_render_validation_failure_writes_nothing(
     )
     assert result["ok"] is False
     assert result["findings"]
+    assert not out.exists()
+
+
+async def test_render_unparseable_err_explains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(DukIntegrator, "_run", _fake_run("unrecognized gibberish"))
+    server = create_server(_config(tmp_path))
+    out = tmp_path / "d300.pdf"
+    result = await _call(
+        server,
+        "declaratie_render",
+        document={"xml": "<x/>"},
+        form="D300",
+        save_pdf_as=str(out),
+    )
+    assert result["ok"] is False
+    assert result["findings"] == []
+    assert "declaratie_duk_status" in result["message"]
+    assert "no PDF was written" in result["message"]
     assert not out.exists()
 
 
@@ -286,6 +325,67 @@ async def test_sign_refuses_collision_before_constructing_signer(
     assert "overwrite" in result["guidance"]
     assert constructed is False
     assert target.read_bytes() == b"old"
+
+
+async def test_sign_missing_source_reports_read_failure(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    missing = tmp_path / "absent.pdf"
+    result = await _call(server, "declaratie_sign", pdf_path=str(missing), confirm=True)
+    assert result["signed"] is False
+    assert result["guidance"].startswith(f"cannot read {missing}")
+
+
+async def test_sign_write_failure_names_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A write-side OSError (after the 2FA signature was already produced) must
+    # name the target and the write, never "cannot read <source>".
+    class FakeSigned:
+        pdf = b"%PDF-1.7 signed"
+        warning: str | None = None
+        chain_complete = True
+
+    class FakePdfSign:
+        async def sign_pdf(self, data: bytes, signer: object) -> FakeSigned:
+            return FakeSigned()
+
+    def denied_write(*args: object, **kwargs: object) -> str:
+        raise PermissionError("Permission denied")
+
+    monkeypatch.setattr(
+        "anafpy.mcp.declaratii.tools.load_pdfsign", lambda: FakePdfSign()
+    )
+    monkeypatch.setattr(
+        "anafpy.mcp.declaratii.tools.resolve_signing_label",
+        lambda *args, **kwargs: "Test Identity",
+    )
+    monkeypatch.setattr(
+        "anafpy.mcp.declaratii.tools.KeychainRawSigner", lambda label: object()
+    )
+    monkeypatch.setattr("anafpy.mcp.declaratii.tools.write_artifact", denied_write)
+    server = create_server(_config(tmp_path))
+    source = tmp_path / "d300.pdf"
+    source.write_bytes(b"%PDF-1.7\n")
+    target = tmp_path / "d300-semnat.pdf"
+
+    result = await _call(server, "declaratie_sign", pdf_path=str(source), confirm=True)
+
+    assert result["signed"] is False
+    assert result["guidance"].startswith(f"cannot write {target}")
+    assert str(source) not in result["guidance"]
+
+
+# --- annotations ------------------------------------------------------------------
+
+
+async def test_nr_evid_annotations_are_local(tmp_path: Path) -> None:
+    # declaratie_nr_evid is pure local computation — no ANAF interaction, so it
+    # must not carry the network-backed reads' openWorldHint.
+    server = create_server(_config(tmp_path))
+    tool = next(t for t in await server.list_tools() if t.name == "declaratie_nr_evid")
+    assert tool.annotations is not None
+    assert tool.annotations.readOnlyHint is True
+    assert tool.annotations.openWorldHint is False
 
 
 # --- status / recipisa (StareD112 — needs no DUK) ----------------------------------
@@ -410,7 +510,7 @@ async def test_duk_status_unconfigured_still_reports_feed(tmp_path: Path) -> Non
         "<JURL>http://static.anaf.ro/static/10/Anaf/update5/D300/"
         "D300Validator.jar</JURL></D300></versiuni>"
     )
-    respx.get("http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
+    respx.get("https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
         return_value=httpx.Response(200, text=feed)
     )
     server = create_server(_config(tmp_path, with_duk=False))
@@ -421,18 +521,25 @@ async def test_duk_status_unconfigured_still_reports_feed(tmp_path: Path) -> Non
 
 
 @respx.mock
-async def test_duk_status_reports_staleness(tmp_path: Path) -> None:
+async def test_duk_status_reports_staleness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_java_version(self: DukIntegrator) -> str:
+        return 'openjdk version "21.0.1"'
+
+    monkeypatch.setattr(DukIntegrator, "java_version", fake_java_version)
     feed = (
         "<versiuni><D300><versiuneJ>J13.0.0</versiuneJ>"
         "<JURL>http://static.anaf.ro/static/10/Anaf/update5/D300/"
         "D300Validator.jar</JURL></D300></versiuni>"
     )
-    respx.get("http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
+    respx.get("https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
         return_value=httpx.Response(200, text=feed)
     )
     server = create_server(_config(tmp_path))
     result = await _call(server, "declaratie_duk_status")
     assert "installed_forms" in result
+    assert result["java"] == 'openjdk version "21.0.1"'
     forms = {entry["form"]: entry for entry in result["forms"]}
     # Installed version is "unknown" (no history file), feed says J13.0.0 -> stale.
     assert forms["D300"]["current"] == "J13.0.0"

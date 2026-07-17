@@ -91,7 +91,11 @@ ANAF's public, unauthenticated filing-status page (`https://www.anaf.ro/StareD11
 has **no official documentation** — these live captures (curl, plain HTTP; the
 service needs no session priming) are the only wire record, feeding
 `declaratii/stared112.md`. All retrieved 2026-07-16 against a real F4109 filing
-(index `1100000001`, CUI `99999909`).
+(values redacted: the real upload indexes, CUI, and session-cookie values were
+replaced with synthetic same-shape stand-ins — index `1100000001`,
+CUI `99999909`, `JSESSIONID=REDACTED`/`TS01f4a1fb=REDACTED` — because the
+(index, CUI) pair is the knowledge-based access key to a filing's recipisa;
+the captured page *structure* is verbatim).
 
 | File | What it captures |
 |---|---|
@@ -110,7 +114,12 @@ Live recon captures of `https://decl.anaf.mfinante.gov.ro/WAS6DUS/` (the
 choreography with plain curl, plus **one certificate login** (macOS
 SecureTransport curl + Keychain identity, vToken 2FA approved by the
 maintainer) — **no document was filed**. Session cookies visible in the
-captures were invalidated the same day (`/exit` + the 10-minute APM timeout).
+captures were invalidated the same day (`/exit` + the 10-minute APM timeout)
+and their values are additionally scrubbed to `REDACTED` in the vendored
+files. `decl-portal/upload-response-d406t.html` (captured 2026-07-17 by the
+live D406T filing) has its real upload index replaced with the synthetic
+`1100000005` — the (index, CUI) pair is a StareD112 access key; the page
+structure is verbatim.
 
 | File | What it captures |
 |---|---|

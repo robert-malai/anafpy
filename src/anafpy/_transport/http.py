@@ -7,17 +7,21 @@ from typing import Any, Self
 
 import httpx
 
-from ..exceptions import AnafTransportError
+from ..exceptions import AnafConfigError, AnafTransportError
 
 __all__ = ["HttpClientBase"]
 
 
 class HttpClientBase:
-    """Own or adopt one ``httpx.AsyncClient`` for an ANAF service.
+    """Own or accept one ``httpx.AsyncClient`` for an ANAF service.
 
     Service base URLs always end in ``/`` and callers use relative request
-    paths. An injected client with an empty ``base_url`` adopts the service
-    URL; a non-empty one is preserved as an intentional test/proxy seam.
+    paths. An owned client is constructed with the resolved service URL. An
+    injected client is never mutated: one with a non-empty ``base_url`` is
+    accepted as-is (the intentional test/proxy seam), while one with an
+    empty ``base_url`` raises :class:`~anafpy.exceptions.AnafConfigError`
+    at construction — silently stamping a service URL onto a caller-owned
+    object would mis-route a second client sharing it.
     """
 
     def __init__(
@@ -44,9 +48,14 @@ class HttpClientBase:
                 kwargs["limits"] = limits
             self._http = httpx.AsyncClient(**kwargs)
         else:
+            if not str(http.base_url):
+                raise AnafConfigError(
+                    "the injected httpx client must be constructed with a "
+                    f"base_url compatible with {resolved_base_url} — anafpy "
+                    "sends relative paths and will not adopt or modify an "
+                    "injected client's base_url"
+                )
             self._http = http
-            if not str(self._http.base_url):
-                self._http.base_url = httpx.URL(resolved_base_url)
 
     async def __aenter__(self) -> Self:
         return self

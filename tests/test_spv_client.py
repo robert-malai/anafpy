@@ -85,10 +85,19 @@ async def test_session_loads_from_the_store_per_request() -> None:
     assert listing.note == "Nu exista mesaje in ultimele 5 zile"
 
 
+async def test_injected_client_without_base_url_raises_config_error() -> None:
+    # An injected client is never mutated: an empty base_url is a
+    # misconfiguration, named loudly at construction.
+    provider = SpvSessionProvider(store=MemorySessionStore(_session()))
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(AnafConfigError, match=f"{BASE}/"):
+            SpvClient(provider, http=http)
+
+
 @respx.mock
-async def test_injected_client_without_base_url_adopts_spv_url() -> None:
+async def test_injected_client_with_base_url_is_used_and_not_closed() -> None:
     respx.get(f"{BASE}/listaMesaje").respond(json=NO_MESSAGES_BODY)
-    http = httpx.AsyncClient()
+    http = httpx.AsyncClient(base_url=f"{BASE}/")
     provider = SpvSessionProvider(store=MemorySessionStore(_session()))
     client = SpvClient(provider, http=http)
     listing = await client.list_messages(5)

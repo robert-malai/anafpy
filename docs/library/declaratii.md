@@ -67,6 +67,12 @@ payment_evidence_number(tip_decont="L", month=6, year=2026)
 # '10301010626250726000042'
 ```
 
+The self-assessed siblings have their own composers, exported alongside:
+`obligation_evidence_number` (D100/D710 — the obligation code in the code slot,
+an explicit due date), `profit_tax_evidence_number` (D101 — prefix `11`, a
+liquidation flag), and `special_vat_evidence_number` (D301 — the new-means-of-
+transport flag).
+
 ## Signing (macOS)
 
 anafpy never touches key material: the raw RSA signature is delegated to the OS,
@@ -88,11 +94,12 @@ Path("d300-semnat.pdf").write_bytes(result.pdf)
 
 `pdfsign.sign_pdf` embeds a standard `adbe.pkcs7.detached` CMS as an incremental update,
 so a rendered PDF's embedded XML (`/EmbeddedFiles`) survives and the signature
-covers the whole file. The issuer certificate is fetched best-effort from the
-leaf's AIA URL; DER, PEM, and PKCS#7 responses are validated and cached as DER
-only. If fetching or parsing fails the CMS is leaf-only and
-`result.chain_complete` is `False` (portal acceptance of a leaf-only chain is
-unverified). The identity defaults to the persisted SPV certificate selection
+covers the whole file. The leaf's **direct** issuer certificate is fetched
+best-effort from its AIA URL; DER, PEM, and PKCS#7 responses are validated and
+cached as DER only. `result.chain_complete` means exactly that this one issuer
+is embedded — deeper intermediates are not chased. If fetching or parsing fails
+the CMS is leaf-only and `result.chain_complete` is `False` (portal acceptance
+of a leaf-only chain is unverified). The identity defaults to the persisted SPV certificate selection
 (`anafpy spv select`) — the same qualified certificate — or set
 `ANAFPY_SIGN_IDENTITY`.
 

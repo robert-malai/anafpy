@@ -40,7 +40,7 @@ If the user already named the form (or it is unambiguous from their request),
 do **not** ask again — state which form you are preparing ("Working on D300,
 the VAT return for 06/2026") and move on. Otherwise infer it from the data and
 situation using the inventory resource
-`anafref://declaratii/forms/README.md` (173 forms, bucketed by SME usage) —
+`anafref://declaratii/forms/README` (173 forms, bucketed by SME usage) —
 e.g. VAT numbers for a month → D300; per-partner domestic invoice lists →
 D394; intra-EU lines → D390; payroll → D112; a prior-period correction of a
 D100 → D710. Only when two forms remain plausible, present the candidates with
@@ -53,12 +53,13 @@ configured → stop and point at the setup guide.
 
 ## Step 2 — read the form's completion guide
 
-Fetch `anafref://declaratii/forms/d<nnn>.md` **before authoring anything**. It
+Fetch `anafref://declaratii/forms/d<nnn>` **before authoring anything**. It
 is the map for the whole task: purpose and legal basis, who files and when
 (sanity-check the user's situation and deadline), the row-by-row → XSD
 attribute mapping, DUK-validated example instances to pattern-match against,
 and the researched gotchas (control-sum formulas, mirror rules, cross-form
-checks). Large code lists live in the linked `d<nnn>-nomenclatoare.md`.
+checks). Large code lists live in the sibling resource
+`anafref://declaratii/forms/d<nnn>-nomenclatoare` where the guide links one.
 
 Only if the form has no guide (outside the covered twelve): fall back to the
 raw XSD from the form's soft page and converge through the validate loop.

@@ -121,8 +121,10 @@ green and must stay green.
 src/anafpy/
   exceptions.py          # AnafError hierarchy (see "Error model")
   _transport/base.py     # Environment/Service + shared enums/CUI normalization/error raising
-  _transport/http.py     # HttpClientBase: six clients' owned/injected lifecycle,
-                         # base_url adoption + network-error translation
+  _transport/http.py     # HttpClientBase: six clients' owned/injected lifecycle
+                         # (owned gets the service base_url; injected is never
+                         # mutated — empty base_url raises AnafConfigError)
+                         # + network-error translation
   _transport/subprocess.py # bounded async subprocess runner; kills the process
                            # group on timeout (DUK JVM + platform curl)
   _transport/curl.py     # CurlBootstrapperBase — shared platform-curl machinery of

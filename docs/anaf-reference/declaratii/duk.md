@@ -23,7 +23,7 @@ sources:
     retrieved: 2026-07-17
 compiled: 2026-07-15
 compiled_by: claude-opus-4-8
-last_verified: 2026-07-15
+last_verified: 2026-07-17
 status: draft
 ---
 
@@ -151,11 +151,18 @@ java -jar DUKIntegrator.jar [-c configPath] -s <tip> <xml> [errFile] [valOption]
 ```
 
 - `tip` — the form name exactly as the validator jar prefix (`D300`, `D112`, …).
-- `errFile` — on success contains literally `ok`; on failure, lines prefixed
-  `E:` (errors) / `W:` (warnings) — the SAF-T validators (D406/D406T) also emit
-  `F:` (structure/fatal) — each followed by indented detail lines
-  (`eroare regula: R25: …`, `eroare atribut: …`). Success is **also** printed to
-  stdout as `Validare fara erori fisier: <path>`.
+- `errFile` — a clean run contains literally `ok`; otherwise, lines prefixed
+  `E:` (errors) / `W:` (warnings) / `A:` (atentionare — informational notices)
+  — the SAF-T validators (D406/D406T) also emit `F:` (structure/fatal) — each
+  followed by indented detail lines (`eroare regula: R25: …`,
+  `eroare atribut: …`). **Judgment**: `E:`/`F:` findings are blocking; a run
+  whose only findings are `W:`/`A:` is a **pass** — some forms never write a
+  bare `ok` (D700 always emits an `A:` "prelucrat la organul fiscal competent"
+  notice on a valid document), so warnings-only must not be read as failure.
+  An empty or unrecognized err file is a failure (a broken/mis-versioned dist
+  leaves one behind) — never infer success from output you cannot parse. A
+  clean-run success is **also** printed to stdout as
+  `Validare fara erori fisier: <path>`.
 - **The exit code is `0` either way** — judge success by the err-file content,
   never by the exit code, and never parse stdout except as debug info.
 - `valOption` defaults to `0`; it is form-specific.

@@ -42,12 +42,21 @@ def _make_key() -> rsa.RSAPrivateKey:
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
-def _self_signed(key: rsa.RSAPrivateKey, name: str, *, aia: bool = False) -> bytes:
+def _make_cert(
+    key: rsa.RSAPrivateKey,
+    name: str,
+    *,
+    issuer: tuple[str, rsa.RSAPrivateKey] | None = None,
+    aia: bool = False,
+) -> bytes:
+    """A test certificate — self-signed, or issued by ``issuer`` (name, key)."""
+    issuer_name, sign_key = issuer if issuer is not None else (name, key)
     who = cx509.Name([cx509.NameAttribute(NameOID.COMMON_NAME, name)])
+    by = cx509.Name([cx509.NameAttribute(NameOID.COMMON_NAME, issuer_name)])
     builder = (
         cx509.CertificateBuilder()
         .subject_name(who)
-        .issuer_name(who)
+        .issuer_name(by)
         .public_key(key.public_key())
         .serial_number(1)
         .not_valid_before(_EPOCH)
@@ -65,7 +74,9 @@ def _self_signed(key: rsa.RSAPrivateKey, name: str, *, aia: bool = False) -> byt
             ),
             critical=False,
         )
-    return builder.sign(key, hashes.SHA256()).public_bytes(serialization.Encoding.DER)
+    return builder.sign(sign_key, hashes.SHA256()).public_bytes(
+        serialization.Encoding.DER
+    )
 
 
 class FakeSigner:
@@ -122,7 +133,7 @@ def _has_embedded_files(signed: bytes) -> bool:
 
 async def test_sign_and_validate_round_trip() -> None:
     key = _make_key()
-    leaf = _self_signed(key, "TEST LEAF")
+    leaf = _make_cert(key, "TEST LEAF")
     base = _build_pdf_with_attachment()
 
     result = await sign_pdf(base, FakeSigner(key, leaf))
@@ -135,7 +146,7 @@ async def test_sign_and_validate_round_trip() -> None:
 
 async def test_leaf_only_chain_warns() -> None:
     key = _make_key()
-    leaf = _self_signed(key, "TEST LEAF")  # no AIA -> no issuer to fetch
+    leaf = _make_cert(key, "TEST LEAF")  # no AIA -> no issuer to fetch
     base = _build_pdf_with_attachment()
 
     result = await sign_pdf(base, FakeSigner(key, leaf))
@@ -150,9 +161,9 @@ async def test_chain_completed_from_aia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     key = _make_key()
-    leaf = _self_signed(key, "TEST LEAF", aia=True)
     issuer_key = _make_key()
-    issuer = _self_signed(issuer_key, "TEST CA")
+    issuer = _make_cert(issuer_key, "TEST CA")
+    leaf = _make_cert(key, "TEST LEAF", issuer=("TEST CA", issuer_key), aia=True)
     respx.get(_ISSUER_URL).mock(return_value=httpx.Response(200, content=issuer))
     base = _build_pdf_with_attachment()
 
@@ -172,9 +183,9 @@ async def test_pem_aia_body_is_normalized_to_cached_der(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     key = _make_key()
-    leaf = _self_signed(key, "TEST LEAF", aia=True)
     issuer_key = _make_key()
-    issuer_der = _self_signed(issuer_key, "TEST CA")
+    issuer_der = _make_cert(issuer_key, "TEST CA")
+    leaf = _make_cert(key, "TEST LEAF", issuer=("TEST CA", issuer_key), aia=True)
     issuer_pem = cx509.load_der_x509_certificate(issuer_der).public_bytes(
         serialization.Encoding.PEM
     )
@@ -194,7 +205,7 @@ async def test_invalid_aia_body_signs_leaf_only_without_poisoning_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     key = _make_key()
-    leaf = _self_signed(key, "TEST LEAF", aia=True)
+    leaf = _make_cert(key, "TEST LEAF", aia=True)
     respx.get(_ISSUER_URL).mock(
         return_value=httpx.Response(200, content=b"<html>gateway error</html>")
     )
@@ -213,12 +224,60 @@ async def test_corrupt_cached_issuer_is_deleted_and_refetched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     key = _make_key()
-    leaf = _self_signed(key, "TEST LEAF", aia=True)
-    issuer = _self_signed(_make_key(), "TEST CA")
+    issuer_key = _make_key()
+    issuer = _make_cert(issuer_key, "TEST CA")
+    leaf = _make_cert(key, "TEST LEAF", issuer=("TEST CA", issuer_key), aia=True)
     cache_dir = tmp_path / "ca-cache"
     cache_dir.mkdir()
     cache = cache_dir / f"{hashlib.sha256(_ISSUER_URL.encode()).hexdigest()[:16]}.crt"
     cache.write_bytes(b"not a certificate")
+    monkeypatch.setattr("anafpy.declaratii.pdfsign._CA_CACHE_DIR", cache_dir)
+    route = respx.get(_ISSUER_URL).mock(
+        return_value=httpx.Response(200, content=issuer)
+    )
+
+    result = await sign_pdf(_build_pdf_with_attachment(), FakeSigner(key, leaf))
+
+    assert result.chain_complete is True
+    assert route.called
+    assert cache.read_bytes() == issuer
+
+
+@respx.mock
+async def test_aia_body_that_is_not_the_leaf_issuer_is_rejected_and_not_cached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The AIA fetch may ride cleartext http://, so a well-formed certificate
+    # whose subject is NOT the leaf's issuer (a MITM-planted one) must neither
+    # enter the chain nor be cached.
+    key = _make_key()
+    leaf = _make_cert(key, "TEST LEAF", aia=True)  # self-issued: issuer is itself
+    unrelated = _make_cert(_make_key(), "UNRELATED CA")
+    respx.get(_ISSUER_URL).mock(return_value=httpx.Response(200, content=unrelated))
+    cache_dir = tmp_path / "ca-cache"
+    monkeypatch.setattr("anafpy.declaratii.pdfsign._CA_CACHE_DIR", cache_dir)
+
+    result = await sign_pdf(_build_pdf_with_attachment(), FakeSigner(key, leaf))
+
+    assert result.chain_complete is False
+    assert result.warning is not None
+    assert not cache_dir.exists() or list(cache_dir.iterdir()) == []
+
+
+@respx.mock
+async def test_cached_non_issuer_certificate_is_discarded_and_refetched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A previously poisoned cache entry (valid certificate, wrong subject) is
+    # dropped and the real issuer fetched in its place.
+    key = _make_key()
+    issuer_key = _make_key()
+    issuer = _make_cert(issuer_key, "TEST CA")
+    leaf = _make_cert(key, "TEST LEAF", issuer=("TEST CA", issuer_key), aia=True)
+    cache_dir = tmp_path / "ca-cache"
+    cache_dir.mkdir()
+    cache = cache_dir / f"{hashlib.sha256(_ISSUER_URL.encode()).hexdigest()[:16]}.crt"
+    cache.write_bytes(_make_cert(_make_key(), "UNRELATED CA"))
     monkeypatch.setattr("anafpy.declaratii.pdfsign._CA_CACHE_DIR", cache_dir)
     route = respx.get(_ISSUER_URL).mock(
         return_value=httpx.Response(200, content=issuer)

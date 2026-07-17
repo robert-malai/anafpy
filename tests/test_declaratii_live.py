@@ -20,7 +20,13 @@ import pytest
 
 from anafpy.declaratii import DukIntegrator
 
-pytestmark = pytest.mark.live
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
+        os.environ.get("ANAFPY_LIVE") != "1",
+        reason="live ANAF tests are opt-in (set ANAFPY_LIVE=1)",
+    ),
+]
 
 # The validated nil D300 (06/2026, XSD v12) — `Validare fara erori` 2026-07-15.
 _D300_NIL = b"""<?xml version="1.0" encoding="UTF-8"?>
@@ -53,25 +59,33 @@ async def test_live_render_nil_d300(tmp_path: Path) -> None:
     assert pdf.exists() and pdf.read_bytes().startswith(b"%PDF")
 
 
-# Real production index/CUI pair (the maintainer's own F4109 filings) — StareD112
-# is public, no-auth, read-only, so a prod query is within the live-testing
-# boundaries. Re-confirms the wire shapes captured 2026-07-16.
-_STARE_INDEX = "1100000001"
-_STARE_CUI = "99999909"
+# A real production index/CUI pair — StareD112 is public, no-auth, read-only,
+# so a prod query is within the live-testing boundaries. Re-confirms the wire
+# shapes captured 2026-07-16. The pair is a knowledge-based access key to the
+# filer's recipisa, so it is never committed: it comes from the environment
+# (the gitignored .env), and the test skips without it.
 
 
 async def test_live_stared112_status_and_recipisa(tmp_path: Path) -> None:
     from anafpy.declaratii import DeclarationStatusClient
 
+    index = os.environ.get("ANAFPY_LIVE_STARED112_INDEX")
+    cui = os.environ.get("ANAFPY_LIVE_STARED112_CUI")
+    if not index or not cui:
+        pytest.skip(
+            "set ANAFPY_LIVE_STARED112_INDEX + ANAFPY_LIVE_STARED112_CUI to a "
+            "real filed (upload index, CUI) pair"
+        )
+
     async with DeclarationStatusClient() as client:
-        result = await client.check_status(_STARE_INDEX, _STARE_CUI)
+        result = await client.check_status(index, cui)
         assert result.found, result.message
-        queried = result.document(_STARE_INDEX)
+        queried = result.document(index)
         assert queried is not None
         assert queried.form
         assert queried.upload_date is not None
         if queried.receipt_available:
-            pdf = await client.download_receipt(_STARE_INDEX)
+            pdf = await client.download_receipt(index)
             assert pdf is not None and pdf.startswith(b"%PDF")
         # The not-found business outcome (bogus pair) must be returned, not raised.
         missing = await client.check_status("9999999999", "9999999999")

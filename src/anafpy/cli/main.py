@@ -373,11 +373,33 @@ def _print_findings(findings: list[DukFinding]) -> None:
         print(f"{finding.severity.upper()}: {finding.message}")
 
 
+def _read_bytes(path: Path, what: str) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise AnafConfigError(f"cannot read {what} {str(path)!r}: {exc}") from exc
+
+
+def _write_bytes(path: Path, data: bytes, what: str) -> None:
+    # Overwrite-by-default is fine at a terminal (a human is watching), but a
+    # replacement must never be silent (mirrors the MCP layer's stricter guard).
+    replaced = path.exists()
+    try:
+        path.write_bytes(data)
+    except OSError as exc:
+        raise AnafConfigError(f"cannot write {what} {str(path)!r}: {exc}") from exc
+    if replaced:
+        print(f"replaced existing {path}")
+
+
 def _cmd_decl_validate(args: argparse.Namespace) -> int:
     duk = _duk(args)
-    xml = Path(args.xml).expanduser().read_bytes()
+    xml = _read_bytes(Path(args.xml).expanduser(), "declaration XML")
     result = asyncio.run(duk.validate(args.form, xml, option=args.option))
     if result.ok:
+        # A warning-only run passes, but DUK's notices are the user's to see
+        # (mirrors the MCP declaratie_validate `warnings` field).
+        _print_findings(result.warnings)
         print(f"✓ {args.form} is valid.")
         return 0
     _print_findings(result.findings)
@@ -386,13 +408,17 @@ def _cmd_decl_validate(args: argparse.Namespace) -> int:
 
 def _cmd_decl_render(args: argparse.Namespace) -> int:
     duk = _duk(args)
-    xml = Path(args.xml).expanduser().read_bytes()
+    xml = _read_bytes(Path(args.xml).expanduser(), "declaration XML")
     out = Path(args.output).expanduser()
+    replacing = out.exists()  # DUK itself writes the PDF — note a replacement.
     result = asyncio.run(duk.render(args.form, xml, out, option=args.option))
     if not result.ok:
         print("validation failed; no PDF written:", file=sys.stderr)
         _print_findings(result.findings)
         return 1
+    _print_findings(result.warnings)
+    if replacing:
+        print(f"replaced existing {out}")
     print(f"✓ Rendered {args.form} -> {out}")
     return 0
 
@@ -415,8 +441,17 @@ def _cmd_decl_status(args: argparse.Namespace) -> int:
         f"Documents filed by CUI {result.cui} "
         f"({result.period_start} → {result.period_end}):"
     )
+    queried = str(args.index).strip()
     for document in result.documents:
-        marker = " ←" if document.index == str(args.index).strip() else ""
+        # With --ghiseu the query key is the counter registration number, which
+        # lives in the registration column — the internet upload index in
+        # document.index can never match it.
+        matches_query = (
+            queried in document.registration
+            if args.ghiseu
+            else document.index == queried
+        )
+        marker = " ←" if matches_query else ""
         receipt = "recipisa available" if document.receipt_available else "no recipisa"
         # Print ANAF's preserved wording, including future unclassified states.
         print(
@@ -442,7 +477,7 @@ def _cmd_decl_recipisa(args: argparse.Namespace) -> int:
         )
         return 1
     out = Path(args.output).expanduser()
-    out.write_bytes(pdf)
+    _write_bytes(out, pdf, "recipisa PDF")
     print(f"✓ Recipisa {args.index} -> {out}")
     return 0
 
@@ -459,11 +494,16 @@ def _cmd_decl_sign(args: argparse.Namespace) -> int:
     label = resolve_signing_label(args.identity, identity_path=args.identity_file)
     source = Path(args.pdf).expanduser()
     out = Path(args.output).expanduser() if args.output else default_signed_path(source)
+    # Read the source and check the destination BEFORE the PIN/2FA prompt: a
+    # bad path must not fire (or worse, discard the result of) an approval.
+    pdf = _read_bytes(source, "PDF")
+    if not out.parent.is_dir():
+        raise AnafConfigError(f"output directory {str(out.parent)!r} does not exist")
     print(f"Signing with identity {label!r}.")
     print("Answer the certificate PIN / 2FA prompt when it appears.", flush=True)
     signer = KeychainRawSigner(label)
-    result = asyncio.run(pdfsign.sign_pdf(source.read_bytes(), signer))
-    out.write_bytes(result.pdf)
+    result = asyncio.run(pdfsign.sign_pdf(pdf, signer))
+    _write_bytes(out, result.pdf, "signed PDF")
     print(f"\n✓ Signed -> {out}")
     if not result.chain_complete and result.warning:
         print(f"  note: {result.warning}")
@@ -579,7 +619,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     decl_render.add_argument("form", help="form name, e.g. D300")
     decl_render.add_argument("xml", help="path to the declaration XML")
-    decl_render.add_argument("-o", "--output", required=True, help="output PDF path")
+    decl_render.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="output PDF path (an existing file is overwritten, with a notice)",
+    )
     _add_duk_args(decl_render)
     decl_render.set_defaults(func=_cmd_decl_render)
 
@@ -603,7 +648,12 @@ def build_parser() -> argparse.ArgumentParser:
         "recipisa", help="download the signed filing receipt PDF (public, no login)"
     )
     decl_recipisa.add_argument("index", help="upload index from the portal")
-    decl_recipisa.add_argument("-o", "--output", required=True, help="output PDF path")
+    decl_recipisa.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="output PDF path (an existing file is overwritten, with a notice)",
+    )
     decl_recipisa.set_defaults(func=_cmd_decl_recipisa)
 
     decl_sign = decl.add_parser(
@@ -611,7 +661,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     decl_sign.add_argument("pdf", help="path to the rendered PDF to sign")
     decl_sign.add_argument(
-        "-o", "--output", help="signed PDF path (default: <name>-semnat.pdf)"
+        "-o",
+        "--output",
+        help="signed PDF path (default: <name>-semnat.pdf); an existing file is "
+        "overwritten, with a notice",
     )
     decl_sign.add_argument(
         "--identity",

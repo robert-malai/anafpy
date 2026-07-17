@@ -41,6 +41,7 @@ from pathlib import Path
 import httpx
 from parsel import Selector
 
+from .._transport.base import raise_for_status
 from .._transport.subprocess import run_subprocess
 from ..exceptions import AnafConfigError, AnafTransportError
 from .models import DukFinding, DukResult
@@ -53,7 +54,7 @@ __all__ = [
 _DUK_DOWNLOAD_URL = (
     "https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip"
 )
-_VERSIONS_FEED_URL = "http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml"
+_VERSIONS_FEED_URL = "https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml"
 
 
 # DUK err-file section prefixes mapped to a finding severity. ``E:`` (error) and
@@ -62,6 +63,35 @@ _VERSIONS_FEED_URL = "http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml"
 # competent tax office" notice) are informational and do NOT fail validation on
 # their own.
 _SEVERITY_BY_PREFIX = {"E:": "error", "F:": "error", "W:": "warning", "A:": "warning"}
+
+# How much of each captured process stream a no-findings failure carries into
+# ``DukResult.raw`` — enough for the documented one-line clues (``cod
+# eroare=-5``), bounded so a chatty JVM cannot flood the result.
+_PROCESS_TAIL_CHARS = 2000
+
+
+def _with_process_tail(result: DukResult, stdout: bytes, stderr: bytes) -> DukResult:
+    """Fold a bounded process-output tail into a no-findings failure's ``raw``.
+
+    DUK's documented broken-dist failure modes (the old-core
+    ``NoClassDefFoundError`` run whose stdout only says ``cod eroare=-5``, the
+    missing-config silent exit) leave an empty/unparseable err file — the only
+    clue lives on stdout/stderr. Carry the tail of those streams so the
+    ``ok=False, findings=[]`` outcome is self-explaining (the MCP layer
+    surfaces ``raw`` exactly when there are no findings). Runs with parseable
+    findings — and successes — pass through untouched.
+    """
+    if result.ok or result.findings:
+        return result
+    tails = [
+        f"[{label}] {text[-_PROCESS_TAIL_CHARS:]}"
+        for label, data in (("stdout", stdout), ("stderr", stderr))
+        if (text := data.decode("utf-8", errors="replace").strip())
+    ]
+    if not tails:
+        return result
+    err_part = [result.raw.rstrip()] if result.raw.strip() else []
+    return result.model_copy(update={"raw": "\n".join(err_part + tails)})
 
 
 def _parse_err_file(text: str) -> DukResult:
@@ -149,14 +179,19 @@ class DukIntegrator:
         """Validate *xml* for *form* (e.g. ``"D300"``) via ``-v``.
 
         Returns a :class:`DukResult`; ``ok=True`` means the validator wrote
-        ``ok``. Findings are DUK's own messages, verbatim.
+        ``ok``. Findings are DUK's own messages, verbatim; a failure with no
+        parseable findings carries a bounded stdout/stderr tail in ``raw``.
         """
         with tempfile.TemporaryDirectory(prefix="anafpy-duk-") as tmp:
             xml_path = (Path(tmp) / "decl.xml").resolve()
             err_path = (Path(tmp) / "err.txt").resolve()
             xml_path.write_bytes(xml)
-            await self._run(["-v", form, str(xml_path), str(err_path), str(option)])
-            return _parse_err_file(_read_err(err_path))
+            _, stdout, stderr = await self._run(
+                ["-v", form, str(xml_path), str(err_path), str(option)]
+            )
+            return _with_process_tail(
+                _parse_err_file(_read_err(err_path)), stdout, stderr
+            )
 
     async def render(
         self, form: str, xml: bytes, pdf_path: Path, *, option: int = 0
@@ -174,7 +209,7 @@ class DukIntegrator:
             err_path = (Path(tmp) / "err.txt").resolve()
             xml_path.write_bytes(xml)
             # -p <form> <xml> <err> <option> <zipFile=0> <pdf>
-            await self._run(
+            _, stdout, stderr = await self._run(
                 [
                     "-p",
                     form,
@@ -185,7 +220,9 @@ class DukIntegrator:
                     str(pdf_path),
                 ]
             )
-            return _parse_err_file(_read_err(err_path))
+            return _with_process_tail(
+                _parse_err_file(_read_err(err_path)), stdout, stderr
+            )
 
     def installed_forms(self) -> dict[str, str]:
         """Installed per-form validators as ``{form: version}``.
@@ -252,17 +289,23 @@ class DukIntegrator:
 async def fetch_feed_versions(
     http: httpx.AsyncClient | None = None,
 ) -> dict[str, str]:
-    """Fetch current per-form validator versions without requiring a DUK install."""
+    """Fetch current per-form validator versions without requiring a DUK install.
+
+    Raises:
+        AnafTransportError: a network-level failure reaching the feed.
+        AnafResponseError: the feed answered a non-success HTTP status.
+    """
     owns_http = http is None
     client = http or httpx.AsyncClient(timeout=30.0)
     try:
-        response = await client.get(_VERSIONS_FEED_URL)
-        response.raise_for_status()
+        try:
+            response = await client.get(_VERSIONS_FEED_URL)
+        except httpx.HTTPError as exc:
+            raise AnafTransportError(
+                f"cannot fetch the DUK update feed {_VERSIONS_FEED_URL}: {exc}"
+            ) from exc
+        raise_for_status(response)
         return _parse_versions_feed(response.text)
-    except httpx.HTTPError as exc:
-        raise AnafTransportError(
-            f"cannot fetch the DUK update feed {_VERSIONS_FEED_URL}: {exc}"
-        ) from exc
     finally:
         if owns_http:
             await client.aclose()

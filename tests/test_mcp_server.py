@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import re
 import time
 import zipfile
 from collections.abc import Iterator
@@ -968,6 +969,12 @@ def _docs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     (docs / "efactura").mkdir(parents=True)
     (docs / "efactura" / "api.md").write_text("# e-Factura API", encoding="utf-8")
     (docs / "README.md").write_text("index", encoding="utf-8")
+    forms = docs / "declaratii" / "forms"
+    forms.mkdir(parents=True)
+    (forms / "README.md").write_text("# Form inventory", encoding="utf-8")
+    (forms / "d300.md").write_text("# D300 guide", encoding="utf-8")
+    (docs / "_sources").mkdir()
+    (docs / "_sources" / "captured.md").write_text("raw", encoding="utf-8")
     monkeypatch.setenv("ANAFPY_DOCS_DIR", str(docs))
     yield docs
 
@@ -977,8 +984,46 @@ async def test_reference_docs_exposed_as_resources(tmp_path: Path, _docs: Path) 
     resources = await server.list_resources()
     uris = {str(r.uri) for r in resources}
     assert "anafref://efactura/api" in uris
-    # README is excluded.
-    assert all("README" not in u for u in uris)
+    # Nested READMEs are content (the declaration-form inventory) and are served;
+    # only the tree's own root index and the raw _sources/ captures are excluded.
+    assert "anafref://declaratii/forms/README" in uris
+    assert "anafref://declaratii/forms/d300" in uris
+    assert "anafref://README" not in uris
+    assert all("_sources" not in u for u in uris)
+
+
+async def test_forms_guide_resolves_through_resource_layer(
+    tmp_path: Path, _docs: Path
+) -> None:
+    server = create_server(_config(tmp_path))
+    (content,) = await server.read_resource("anafref://declaratii/forms/d300")
+    assert content.content == "# D300 guide"
+    assert content.mime_type == "text/markdown"
+
+
+async def test_declaratie_prepare_skill_uris_are_served(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Drift tripwire: every anafref:// URI the declaratie-prepare skill tells the
+    # model to fetch must resolve against the repo's own reference tree (the
+    # ANAFPY_DOCS_DIR default). Placeholder segments (`d<nnn>`) match as patterns.
+    monkeypatch.delenv("ANAFPY_DOCS_DIR", raising=False)
+    skill = (
+        Path(__file__).resolve().parents[1]
+        / "skills"
+        / "declaratie-prepare"
+        / "SKILL.md"
+    )
+    mentioned = re.findall(r"anafref://[^`\s)]+", skill.read_text(encoding="utf-8"))
+    assert mentioned, "the skill no longer mentions anafref:// URIs"
+    server = create_server(_config(tmp_path))
+    served = {str(r.uri) for r in await server.list_resources()}
+    for uri in mentioned:
+        if "<" in uri:
+            regex = re.compile("^" + re.sub(r"<[^>]+>", "[^/]+", re.escape(uri)) + "$")
+            assert any(regex.match(s) for s in served), f"nothing served matches {uri}"
+        else:
+            assert uri in served, f"{uri} is not served"
 
 
 # --- prompts (workflow skills) --------------------------------------------------------

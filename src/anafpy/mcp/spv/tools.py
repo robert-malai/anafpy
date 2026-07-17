@@ -63,7 +63,7 @@ from ..artifacts import (
     MUTATING,
     READ_ONLY,
     REQUESTING,
-    ensure_writable,
+    check_writable,
     write_artifact,
 )
 from ..config import ServerConfig
@@ -435,8 +435,10 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         overwrite: bool = False,
     ) -> dict[str, object]:
         target = _save_target(save_as, dest_dir, f"spv-raport-{id_solicitare}.pdf")
-        # Fail the collision BEFORE committing to a poll that can take minutes.
-        ensure_writable(target, overwrite=overwrite)
+        # Fail the collision BEFORE committing to a poll that can take minutes —
+        # side-effect-free, so a poll that times out leaves no freshly-created
+        # directory tree behind (write_artifact makes the parents on success).
+        check_writable(target, overwrite=overwrite)
         timeout_s = min(timeout_s, 900.0)  # keep one tool call bounded
         try:
             document = await ctx.spv().wait_for_report(

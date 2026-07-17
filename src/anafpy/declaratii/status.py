@@ -116,6 +116,18 @@ def _parse_status_page(html: str, *, queried_cui: str) -> DeclarationStatusList:
             )
             is not None
         ]
+        if not documents:
+            # A matched (index, CUI) pair returns at least the queried
+            # document's row, so a results header with zero surviving rows can
+            # only mean the table layout changed — fail loudly rather than
+            # report an empty filing list as truth.
+            raise AnafResponseError(
+                "recognised a StareD112 results page but no result rows "
+                "matched the expected table shape — the page layout may have "
+                "changed",
+                status_code=200,
+                body=text[:500],
+            )
         return DeclarationStatusList(
             found=True,
             cui=match.group(1),
@@ -128,7 +140,10 @@ def _parse_status_page(html: str, *, queried_cui: str) -> DeclarationStatusList:
             found=False, cui=queried_cui, message=_NOT_FOUND_MESSAGE
         )
     if _INVALID_INPUT_MARKER in normalized:
-        # Inputs are validated client-side, so reaching this page is unexpected.
+        # The internet index and the CUI are validated client-side, so this
+        # page is unexpected on that leg; a counter registration number is
+        # passed through with only a non-empty check (its grammar is unproven),
+        # so for a ghiseu query this page is a possible service answer.
         raise AnafResponseError(
             "StareD112 rejected the query input ('Nu ati introdus un index valid')",
             status_code=200,
@@ -162,8 +177,9 @@ class DeclarationStatusClient(HttpClientBase):
 
     No credentials are needed (the service is public and unauthenticated); the
     client owns an ``httpx.AsyncClient`` unless one is injected. An injected
-    client with an empty ``base_url`` adopts the StareD112 host; a non-empty
-    one is preserved. Use it as an async context manager so owned clients close
+    client must carry a non-empty ``base_url`` (an empty one raises
+    :class:`~anafpy.exceptions.AnafConfigError`; injected clients are never
+    mutated). Use it as an async context manager so owned clients close
     cleanly. Like the other discrete client methods, it does **no transport
     retry** — one call, one result-or-raise.
     """

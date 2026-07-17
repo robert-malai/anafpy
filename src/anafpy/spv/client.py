@@ -79,8 +79,9 @@ class SpvClient(HttpClientBase):
     Construct with a :class:`~anafpy.spv.auth.SpvSessionProvider` over the
     session store an earlier :meth:`login` filled. The client owns an
     ``httpx.AsyncClient`` (unless one is injected — it must then carry
-    :class:`~anafpy.spv.auth.SpvAuth` itself; an empty injected ``base_url``
-    adopts SPV's URL, while a non-empty one is preserved) and should be used as
+    :class:`~anafpy.spv.auth.SpvAuth` itself and a non-empty ``base_url``;
+    an empty one raises :class:`~anafpy.exceptions.AnafConfigError`, since
+    injected clients are never mutated) and should be used as
     an async context manager. Cookie rotations are saved back to the store.
     """
 

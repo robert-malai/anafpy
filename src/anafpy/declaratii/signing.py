@@ -328,14 +328,28 @@ class KeychainRawSigner:
         array = result.value
         try:
             count = int(fw.cf.CFArrayGetCount(array))
+            matches: list[int] = []
             for index in range(count):
                 item = fw.cf.CFArrayGetValueAtIndex(array, index)
                 label_ref = fw.cf.CFDictionaryGetValue(item, fw.kSecAttrLabel)
                 if fw.cfstr_to_str(label_ref) == label:
                     ref = fw.cf.CFDictionaryGetValue(item, fw.kSecValueRef)
                     if ref:
-                        fw.cf.CFRetain(ref)
-                        return int(ref)
+                        matches.append(int(ref))
+            if len(matches) > 1:
+                # Mirrors spv.certs.identity_by_thumbprint: names collide after
+                # a certificate renewal, and picking one blindly could sign
+                # with the expired certificate.
+                raise AnafConfigError(
+                    f"the Keychain holds {len(matches)} identities named "
+                    f"{label!r} (e.g. a renewed certificate next to the old "
+                    "one) — an ambiguous name could silently sign with the "
+                    "wrong certificate, so remove or rename the stale one in "
+                    "Keychain Access before signing"
+                )
+            if matches:
+                fw.cf.CFRetain(matches[0])
+                return matches[0]
             raise AnafConfigError(
                 f"no Keychain identity named {label!r} — list the available "
                 "certificates with `anafpy spv certs` and select again"
@@ -376,6 +390,10 @@ class KeychainRawSigner:
             )
             if not signature:
                 detail = fw.error_description(error.value or 0)
+                if error.value:
+                    # The CFError arrived through a Create-Rule out-parameter,
+                    # so this side owns (and must release) it.
+                    fw.cf.CFRelease(error.value)
                 raise AnafConfigError(f"signing failed: {detail}")
             raw = fw.cfdata_to_bytes(signature)
             fw.cf.CFRelease(signature)

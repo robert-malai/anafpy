@@ -46,6 +46,7 @@ from ...declaratii.signing import (
 from ...exceptions import AnafConfigError, AnafError
 from ..artifacts import (
     ARTIFACT_SAVING,
+    LOCAL_READ_ONLY,
     MUTATING,
     READ_ONLY,
     ensure_writable,
@@ -70,6 +71,22 @@ _FILE_IT = (
     "index the portal returns — declaratie_status tracks the processing with it, "
     "and declaratie_recipisa downloads the signed filing receipt"
 )
+
+
+def _no_findings_message(raw: str) -> str:
+    """Explain a failed DUK run that yielded no parseable findings.
+
+    The parser fails closed on output it does not understand (e.g. the empty
+    err file a broken/mis-versioned dist leaves behind), so without this hint
+    the model would loop rewriting possibly-valid XML.
+    """
+    hint = (
+        "DUK reported failure but produced no parseable findings — the form's "
+        "validator may be missing or broken; check declaratie_duk_status"
+    )
+    if text := raw.strip():
+        return f"{hint} (raw DUK output: {text})"
+    return hint
 
 
 def _require_code(cod_oblig: str | None, form: str) -> str:
@@ -132,6 +149,9 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             form=form,
             findings=result.findings,
             warnings=result.warnings,
+            message=""
+            if result.ok or result.findings
+            else _no_findings_message(result.raw),
         )
 
     @mcp.tool(
@@ -164,7 +184,12 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
                     ok=False,
                     form=form,
                     findings=result.findings,
-                    message="validation failed; no PDF was written",
+                    message=(
+                        "validation failed"
+                        if result.findings
+                        else _no_findings_message(result.raw)
+                    )
+                    + "; no PDF was written",
                 )
         except AnafConfigError:
             raise
@@ -207,7 +232,12 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             # Fail before certificate discovery/2FA, including the natural retry
             # state where the default signed target already exists.
             target = ensure_writable(target, overwrite=overwrite)
-            pdf_bytes = await asyncio.to_thread(source.read_bytes)
+            try:
+                pdf_bytes = await asyncio.to_thread(source.read_bytes)
+            except OSError as exc:
+                return SignResult(
+                    signed=False, guidance=f"cannot read {pdf_path}: {exc}"
+                )
             pdfsign = load_pdfsign()
             label = resolve_signing_label(
                 config.sign_identity, identity_path=config.spv_identity_path
@@ -218,7 +248,12 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
                 write_artifact, target, signed.pdf, overwrite=overwrite
             )
         except OSError as exc:
-            return SignResult(signed=False, guidance=f"cannot read {pdf_path}: {exc}")
+            # The source read has its own handler above — an OSError here is
+            # write-side (target parent mkdir, or the final signed-PDF write
+            # after the 2FA approval was already spent): name the target, not
+            # the source, so the guided retry fixes the destination instead of
+            # re-firing 2FA against a perfectly readable PDF.
+            return SignResult(signed=False, guidance=f"cannot write {target}: {exc}")
         except AnafError as exc:
             return SignResult(signed=False, guidance=str(exc))
         guidance = _FILE_IT
@@ -289,7 +324,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
 
     @mcp.tool(
         title="Declarations: payment-evidence number",
-        annotations=READ_ONLY,
+        annotations=LOCAL_READ_ONLY,
         description="Compose the `nr_evid` (numărul de evidență a plății), the "
         "required 23-character payment-evidence number, for a self-assessed "
         "declaration. `month` is 1-12, `year` four digits. `form` selects the "

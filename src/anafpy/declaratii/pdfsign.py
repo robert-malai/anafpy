@@ -65,11 +65,16 @@ async def sign_pdf(
 ) -> PdfSignResult:
     """Sign *pdf* with *signer*, returning the signed bytes and chain status.
 
-    The leaf certificate comes from the signer; its issuer is fetched
-    best-effort from the leaf's AIA (``ca_issuers``) URL and cached under
-    ``~/.anafpy/ca-cache/``. If the fetch fails the CMS is leaf-only and
-    ``chain_complete`` is ``False`` with a ``warning`` — portal acceptance of a
-    leaf-only signature is unverified.
+    The leaf certificate comes from the signer; its **direct** issuer is
+    fetched best-effort from the leaf's AIA (``ca_issuers``) URL and cached
+    under ``~/.anafpy/ca-cache/``. Only a certificate whose subject is the
+    leaf's issuer name is embedded (AIA URLs are commonly plain ``http://``, so
+    an unchecked body must never enter the chain). ``chain_complete=True``
+    means exactly that this one issuer is embedded — the issuer's own AIA is
+    never followed, so deeper intermediates (leaf → subCA₂ → subCA₁ → root)
+    are not chased. If the fetch fails or the body is not the issuer, the CMS
+    is leaf-only and ``chain_complete`` is ``False`` with a ``warning`` —
+    portal acceptance of a leaf-only signature is unverified.
     """
     leaf_der = signer.certificate()
     leaf = x509.Certificate.load(leaf_der)
@@ -101,8 +106,10 @@ async def _fetch_issuer(leaf: x509.Certificate) -> bytes | None:
     """Fetch and validate the issuer certificate DER, best-effort.
 
     AIA endpoints commonly serve DER, PEM, or a PKCS#7 certificate bundle.
-    Only a successfully extracted certificate is cached; corrupt legacy cache
-    entries are removed and fetched once more.
+    A certificate is accepted only when its subject is the leaf's issuer name —
+    the AIA fetch may ride cleartext ``http://``, so an arbitrary answer must
+    not be embedded or cached. Only an accepted certificate is cached; corrupt
+    or non-issuer cache entries are removed and fetched once more.
     """
     url = _ca_issuers_url(leaf)
     if not url:
@@ -113,7 +120,9 @@ async def _fetch_issuer(leaf: x509.Certificate) -> bytes | None:
             cached = cache.read_bytes()
         except OSError:
             cached = b""
-        if issuer_der := _certificate_der(cached):
+        if (issuer_der := _certificate_der(cached)) is not None and _is_leaf_issuer(
+            issuer_der, leaf
+        ):
             return issuer_der
         with contextlib.suppress(OSError):
             cache.unlink()
@@ -124,7 +133,7 @@ async def _fetch_issuer(leaf: x509.Certificate) -> bytes | None:
             issuer_der = _certificate_der(response.content)
     except httpx.HTTPError:
         return None
-    if issuer_der is None:
+    if issuer_der is None or not _is_leaf_issuer(issuer_der, leaf):
         return None
     try:
         _CA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -132,6 +141,16 @@ async def _fetch_issuer(leaf: x509.Certificate) -> bytes | None:
     except OSError:
         pass  # caching is an optimisation, not required
     return issuer_der
+
+
+def _is_leaf_issuer(issuer_der: bytes, leaf: x509.Certificate) -> bool:
+    """Whether the candidate certificate's subject is the leaf's issuer name.
+
+    Compared via asn1crypto's normalized ``Name.hashable`` form (the idiom the
+    validators use), so case/whitespace differences don't defeat the match.
+    """
+    candidate = x509.Certificate.load(issuer_der)
+    return bool(candidate.subject.hashable == leaf.issuer.hashable)
 
 
 def _certificate_der(data: bytes) -> bytes | None:

@@ -115,8 +115,12 @@ docs/anaf-reference/   # agent-compiled local reference (+ _sources/)
 
 The six network clients share only a small `_transport.HttpClientBase`
 chassis: owned-versus-injected `httpx.AsyncClient` lifecycle, trailing-slash
-base-URL convention, adoption of a service URL by an injected client whose
-`base_url` is empty, and network-error translation. Request semantics and
+base-URL convention, and network-error translation. An owned client is
+constructed with the resolved service URL; an injected client is **never
+mutated** — one with a non-empty `base_url` is accepted as-is (the test/proxy
+seam), while an empty `base_url` raises `AnafConfigError` at construction,
+naming the service URL the caller must configure (silently stamping a URL onto
+a caller-owned client would mis-route a second anafpy client sharing it). Request semantics and
 response/business-outcome parsing remain in each service client. Package-level
 `models.py` modules are the value-type homes; in particular,
 `declaratii/models.py` owns the DUK, signing, portal-upload, and StareD112
@@ -638,10 +642,11 @@ platform raw-signer** (qualified signature) → signed PDF on disk.
    dependency) and over `pyobjc` (a heavy runtime dependency; kept as the
    documented fallback).
 2. **Validation authority is ANAF's.** DUK's per-form validator jars *are* ANAF's
-   code; anafpy runs them and never re-implements a rule. The one composed value,
-   the D300 `nr_evid` payment-evidence number, is a pure function (decoded from
-   the validator bytecode, confirmed against the annex example and a live `-v`) —
-   composition, not validation. Success is judged by the err-file content, never
+   code; anafpy runs them and never re-implements a rule. The composed values —
+   the `nr_evid` payment-evidence numbers of the self-assessed forms
+   (D300/D100/D710/D101/D301, four composers in `declaratii/nr_evid.py`) — are
+   pure functions (decoded from the validator bytecode, confirmed against the
+   annex examples and live `-v` runs) — composition, not validation. Success is judged by the err-file content, never
    by DUK's exit code (`0` even on failure).
 3. **Signing is consequential.** `declaratie_sign` is gated on `confirm=true`
    (the model must relay the user's explicit ask), one attempt per call, failures

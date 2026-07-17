@@ -291,7 +291,9 @@ def _duk_dir(tmp_path: Path) -> Path:
 def _fake_duk_run(err: str) -> Any:
     async def run(self: object, args: list[str]) -> tuple[int, bytes, bytes]:
         Path(args[3]).write_text(err, encoding="utf-8")
-        if "-p" in args and err.strip() == "ok":
+        # Like real DUK, a clean OR warning-only run still renders the PDF.
+        has_error = any(line.startswith(("E:", "F:")) for line in err.splitlines())
+        if "-p" in args and not has_error:
             Path(args[-1]).write_bytes(b"%PDF-1.7\n")
         return 0, b"", b""
 
@@ -373,6 +375,89 @@ def test_declaratii_render_writes_pdf(
     assert out.read_bytes().startswith(b"%PDF")
 
 
+def test_declaratii_validate_prints_warnings_on_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A warning-only run passes but must still surface DUK's notices."""
+    from anafpy.declaratii.duk import DukIntegrator
+
+    monkeypatch.setattr(
+        DukIntegrator,
+        "_run",
+        _fake_duk_run("A: formularul se prelucreaza la organul fiscal competent"),
+    )
+    xml = tmp_path / "d700.xml"
+    xml.write_text("<x/>")
+    code = main(
+        [
+            "declaratii",
+            "validate",
+            "D700",
+            str(xml),
+            "--duk-dir",
+            str(_duk_dir(tmp_path)),
+            "--java",
+            "java",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "WARNING: formularul se prelucreaza" in out
+    assert "valid" in out
+
+
+def test_declaratii_render_prints_warnings_on_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from anafpy.declaratii.duk import DukIntegrator
+
+    monkeypatch.setattr(DukIntegrator, "_run", _fake_duk_run("A: atentionare"))
+    xml = tmp_path / "d700.xml"
+    xml.write_text("<x/>")
+    out = tmp_path / "d700.pdf"
+    code = main(
+        [
+            "declaratii",
+            "render",
+            "D700",
+            str(xml),
+            "-o",
+            str(out),
+            "--duk-dir",
+            str(_duk_dir(tmp_path)),
+            "--java",
+            "java",
+        ]
+    )
+    assert code == 0
+    assert out.read_bytes().startswith(b"%PDF")
+    captured = capsys.readouterr().out
+    assert "WARNING: atentionare" in captured
+    assert "Rendered" in captured
+
+
+def test_declaratii_validate_missing_xml_reports_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bad path exits via the `error: ...` convention, not a traceback."""
+    code = main(
+        [
+            "declaratii",
+            "validate",
+            "D300",
+            str(tmp_path / "nope.xml"),
+            "--duk-dir",
+            str(_duk_dir(tmp_path)),
+            "--java",
+            "java",
+        ]
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error: cannot read declaration XML")
+    assert "nope.xml" in err
+
+
 def test_declaratii_validate_without_duk_dir_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -422,3 +507,130 @@ def test_declaratii_status_prints_unclassified_wire_wording(
     output = capsys.readouterr().out
     assert "Document în verificare manuală" in output
     assert " unknown " not in output
+
+
+def test_declaratii_status_ghiseu_marks_the_queried_registration(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With --ghiseu the queried-row marker matches the registration number.
+
+    The query key is the counter registration number — the internet upload
+    index in the Index column can never equal it.
+    """
+    from anafpy.declaratii import DeclarationStatusClient
+    from anafpy.declaratii.models import (
+        DeclarationDocument,
+        DeclarationState,
+        DeclarationStatusList,
+    )
+
+    def row(index: str, registration: str) -> DeclarationDocument:
+        return DeclarationDocument(
+            index=index,
+            form="D300",
+            state=DeclarationState.VALID,
+            state_text="Documentul este valid",
+            registration=registration,
+            upload_date=datetime.date(2026, 7, 16),
+            receipt_available=True,
+        )
+
+    async def status(
+        _self: DeclarationStatusClient,
+        _index: int | str,
+        _cui: int | str,
+        *,
+        filed_at_counter: bool = False,
+    ) -> DeclarationStatusList:
+        assert filed_at_counter is True
+        return DeclarationStatusList(
+            found=True,
+            cui="99999909",
+            documents=[
+                row("1100000001", "INTERNT-1100000001-2026 din 10.07.2026"),
+                row("1100000002", "REG-555/2026 din 16.07.2026"),
+            ],
+        )
+
+    monkeypatch.setattr(DeclarationStatusClient, "check_status", status)
+    assert main(["declaratii", "status", "REG-555/2026", "99999909", "--ghiseu"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    marked = [line for line in lines if line.endswith("←")]
+    assert len(marked) == 1
+    assert "1100000002" in marked[0]
+
+
+def test_declaratii_render_notes_replaced_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Overwrite-by-default stands, but replacing a file is never silent."""
+    from anafpy.declaratii.duk import DukIntegrator
+
+    monkeypatch.setattr(DukIntegrator, "_run", _fake_duk_run("ok"))
+    xml = tmp_path / "d300.xml"
+    xml.write_text("<x/>")
+    out = tmp_path / "d300.pdf"
+    out.write_bytes(b"an earlier render")
+    code = main(
+        [
+            "declaratii",
+            "render",
+            "D300",
+            str(xml),
+            "-o",
+            str(out),
+            "--duk-dir",
+            str(_duk_dir(tmp_path)),
+            "--java",
+            "java",
+        ]
+    )
+    assert code == 0
+    output = capsys.readouterr().out
+    assert f"replaced existing {out}" in output
+    assert "Rendered" in output
+    assert out.read_bytes().startswith(b"%PDF")
+
+
+def test_declaratii_render_fresh_file_prints_no_replacement_notice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from anafpy.declaratii.duk import DukIntegrator
+
+    monkeypatch.setattr(DukIntegrator, "_run", _fake_duk_run("ok"))
+    xml = tmp_path / "d300.xml"
+    xml.write_text("<x/>")
+    out = tmp_path / "fresh.pdf"
+    code = main(
+        [
+            "declaratii",
+            "render",
+            "D300",
+            str(xml),
+            "-o",
+            str(out),
+            "--duk-dir",
+            str(_duk_dir(tmp_path)),
+            "--java",
+            "java",
+        ]
+    )
+    assert code == 0
+    assert "replaced existing" not in capsys.readouterr().out
+
+
+def test_declaratii_recipisa_notes_replaced_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from anafpy.declaratii import DeclarationStatusClient
+
+    async def download(_self: DeclarationStatusClient, _index: int | str) -> bytes:
+        return b"%PDF-1.7 recipisa"
+
+    monkeypatch.setattr(DeclarationStatusClient, "download_receipt", download)
+    out = tmp_path / "recipisa.pdf"
+    out.write_bytes(b"old receipt")
+    assert main(["declaratii", "recipisa", "1100000001", "-o", str(out)]) == 0
+    output = capsys.readouterr().out
+    assert f"replaced existing {out}" in output
+    assert out.read_bytes() == b"%PDF-1.7 recipisa"

@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import contextlib
 import re
-from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
 import httpx
@@ -176,8 +175,10 @@ class DeclarationUploadClient(HttpClientBase):
         bootstrapper: the certificate login step (a
             :class:`PortalCurlBootstrapper` in production; fakes in tests).
             Optional when an *http* client with a live cookie set is injected.
-        http: injected ``httpx.AsyncClient`` (tests). An empty ``base_url``
-            adopts :data:`PORTAL_BASE_URL`; a non-empty one is preserved.
+        http: injected ``httpx.AsyncClient`` (tests). Must carry a non-empty
+            ``base_url`` (an empty one raises
+            :class:`~anafpy.exceptions.AnafConfigError`; injected clients are
+            never mutated).
         timeout: HTTP timeout for the upload POST (the PDF is small, but the
             portal can be slow).
     """
@@ -196,7 +197,6 @@ class DeclarationUploadClient(HttpClientBase):
             timeout=timeout,
             follow_redirects=True,
         )
-        self._session_established_at: datetime | None = None
 
     async def login(self) -> None:
         """Run the certificate bootstrap and install its cookies.
@@ -214,10 +214,13 @@ class DeclarationUploadClient(HttpClientBase):
                 "PortalCurlBootstrapper(identity) to log in"
             )
         cookies = await self._bootstrapper.bootstrap()
+        # Scope the bearer-cookie set to the portal host: httpx's default
+        # empty domain would attach MRHSession to a request to ANY host, so
+        # an off-portal redirect must never carry the session with it.
+        host = self._http.base_url.host
         self._http.cookies.clear()
         for name, value in cookies.items():
-            self._http.cookies.set(name, value)
-        self._session_established_at = datetime.now(tz=UTC)
+            self._http.cookies.set(name, value, domain=host)
 
     async def upload(self, pdf: bytes, *, filename: str) -> PortalUploadResult:
         """POST the signed declaration PDF to ``displayFile.do``.
@@ -236,22 +239,34 @@ class DeclarationUploadClient(HttpClientBase):
             ``accepted=None`` with the raw HTML.
 
         Raises:
-            AnafAuthError: the portal bounced to its login wall (session
-                expired — sessions die after ~10 idle minutes; log in again).
+            AnafAuthError: the portal answered the POST with a redirect —
+                an APM login wall / ``/my.policy_nonce`` revalidation bounce
+                (the session expired; sessions die after ~10 idle minutes;
+                log in again).
             AnafTransportError: network failure.
             AnafResponseError: non-success HTTP status.
         """
         if not self._http.cookies:
             raise AnafConfigError("no portal session — call login() first")
+        # Redirects are NOT followed on this POST: httpx would re-issue a 3xx
+        # as a body-less GET (silently dropping the multipart file) and the
+        # resulting error page would misread as a business rejection. A
+        # redirect here is always an APM session event — the login wall or a
+        # /my.policy_nonce revalidation hop — never part of the happy path
+        # (the live D406T filing answered 200 directly).
         response = await self._request_http(
             "POST",
             _UPLOAD_PATH,
             files={"linkdoc": (filename, pdf, "application/pdf")},
+            follow_redirects=False,
         )
-        if "my.policy" in response.url.path:
+        if response.is_redirect:
+            target = response.headers.get("Location", "")
             raise AnafAuthError(
-                "the portal bounced the upload to its login wall — the session "
-                "expired (10-minute inactivity timeout); call login() again"
+                "the portal answered the upload POST with a redirect to "
+                f"{target!r} — an APM login-wall / session-revalidation "
+                "bounce, so the session expired or went stale (10-minute "
+                "inactivity timeout); call login() again and retry the upload"
             )
         raise_for_status(response)
         return _parse_upload_page(response.text)
@@ -261,4 +276,3 @@ class DeclarationUploadClient(HttpClientBase):
         with contextlib.suppress(httpx.HTTPError):
             await self._http.get("exit")
         self._http.cookies.clear()
-        self._session_established_at = None

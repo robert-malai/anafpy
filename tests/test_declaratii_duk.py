@@ -15,7 +15,7 @@ import respx
 
 from anafpy.declaratii import DukIntegrator
 from anafpy.declaratii.duk import _parse_err_file, _parse_versions_feed
-from anafpy.exceptions import AnafConfigError, AnafTransportError
+from anafpy.exceptions import AnafConfigError, AnafResponseError, AnafTransportError
 
 
 @pytest.fixture
@@ -29,9 +29,18 @@ def duk_dir(tmp_path: Path) -> Path:
 class FakeDuk(DukIntegrator):
     """A DukIntegrator whose ``_run`` writes a canned err file instead of Java."""
 
-    def __init__(self, *args: object, err: str = "ok", **kwargs: object) -> None:
+    def __init__(
+        self,
+        *args: object,
+        err: str = "ok",
+        stdout: bytes = b"stdout",
+        stderr: bytes = b"",
+        **kwargs: object,
+    ) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self.err = err
+        self.stdout = stdout
+        self.stderr = stderr
         self.calls: list[list[str]] = []
         self.pdf_on_success = False
 
@@ -40,7 +49,7 @@ class FakeDuk(DukIntegrator):
         Path(args[3]).write_text(self.err, encoding="utf-8")
         if self.pdf_on_success and self.err.strip() == "ok" and "-p" in args:
             Path(args[-1]).write_bytes(b"%PDF-1.7\n")
-        return 0, b"stdout", b""
+        return 0, self.stdout, self.stderr
 
 
 # -- construction ------------------------------------------------------------------
@@ -200,6 +209,44 @@ def test_parse_empty_err_file_is_failure() -> None:
     assert not _parse_err_file("   \n").ok
 
 
+async def test_empty_err_failure_carries_process_output_tail(duk_dir: Path) -> None:
+    # The documented broken-dist modes leave an empty err file with the only
+    # clue on stdout ("cod eroare=-5") — the result must carry it.
+    duk = FakeDuk(duk_dir, java="java", err="", stdout=b"cod eroare=-5", stderr=b"boom")
+    result = await duk.validate("D300", b"<x/>")
+    assert not result.ok
+    assert result.findings == []
+    assert "[stdout] cod eroare=-5" in result.raw
+    assert "[stderr] boom" in result.raw
+
+
+async def test_empty_err_failure_process_tail_is_bounded(duk_dir: Path) -> None:
+    duk = FakeDuk(duk_dir, java="java", err="", stdout=b"x" * 10_000)
+    result = await duk.validate("D300", b"<x/>")
+    assert not result.ok
+    assert len(result.raw) < 2_100  # last ~2000 chars, plus the [stdout] label
+
+
+async def test_parseable_failure_keeps_raw_as_the_err_file(duk_dir: Path) -> None:
+    # With findings the err file explains itself — raw stays verbatim.
+    err = "E: eroare regula: R25: campul X"
+    duk = FakeDuk(duk_dir, java="java", err=err, stdout=b"cod eroare=-5")
+    result = await duk.validate("D300", b"<x/>")
+    assert not result.ok
+    assert result.findings
+    assert result.raw == err
+    assert "[stdout]" not in result.raw
+
+
+async def test_render_empty_err_failure_carries_process_output_tail(
+    duk_dir: Path, tmp_path: Path
+) -> None:
+    duk = FakeDuk(duk_dir, java="java", err="", stdout=b"cod eroare=-5")
+    result = await duk.render("D300", b"<x/>", tmp_path / "out.pdf")
+    assert not result.ok
+    assert "[stdout] cod eroare=-5" in result.raw
+
+
 def test_parse_cp1250_bytes(tmp_path: Path) -> None:
     # A cp1250-encoded Romanian message decoded through _read_err.
     from anafpy.declaratii.duk import _read_err
@@ -262,9 +309,9 @@ def test_parse_versions_feed_garbage_is_empty() -> None:
 
 
 @respx.mock
-async def test_feed_versions_over_http(duk_dir: Path) -> None:
+async def test_feed_versions_over_https(duk_dir: Path) -> None:
     xml = _feed(("D300", "J12.0.1"))
-    respx.get("http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
+    respx.get("https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
         return_value=httpx.Response(200, text=xml)
     )
     duk = DukIntegrator(duk_dir, java="java")
@@ -272,13 +319,29 @@ async def test_feed_versions_over_http(duk_dir: Path) -> None:
 
 
 @respx.mock
-async def test_feed_versions_http_error_raises(duk_dir: Path) -> None:
-    respx.get("http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
+async def test_feed_versions_http_status_raises_response_error(duk_dir: Path) -> None:
+    # A received non-success answer is AnafResponseError (with the status code),
+    # per the transport/response error split — not a bare AnafTransportError.
+    respx.get("https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
         return_value=httpx.Response(503)
     )
     duk = DukIntegrator(duk_dir, java="java")
-    with pytest.raises(AnafTransportError):
+    with pytest.raises(AnafResponseError) as excinfo:
         await duk.feed_versions()
+    assert excinfo.value.status_code == 503
+
+
+@respx.mock
+async def test_feed_versions_network_failure_raises_transport_error(
+    duk_dir: Path,
+) -> None:
+    respx.get("https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
+        side_effect=httpx.ConnectError("boom")
+    )
+    duk = DukIntegrator(duk_dir, java="java")
+    with pytest.raises(AnafTransportError) as excinfo:
+        await duk.feed_versions()
+    assert not isinstance(excinfo.value, AnafResponseError)
 
 
 async def test_run_timeout_raises(

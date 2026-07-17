@@ -40,7 +40,11 @@ class DukResult(BaseModel):
     ``ok`` is ``True`` on a clean run and on a **warning-only** run (findings
     present but none of ``severity == "error"`` — e.g. D700, which always emits
     an ``A:`` atentionare). Warnings still ride ``findings`` so a caller can act
-    on them; check :attr:`warnings` / :attr:`errors` to split them.
+    on them; check :attr:`warnings` / :attr:`errors` to split them. ``raw`` is
+    the err file verbatim; on a failure with **no parseable findings** (the
+    empty err file a broken/mis-versioned dist leaves behind) it also carries a
+    bounded tail of the process stdout/stderr — the only diagnostics DUK leaves
+    in those modes.
     """
 
     ok: bool
@@ -68,7 +72,13 @@ class PortalUploadResult(BaseModel):
 
 
 class PdfSignResult(BaseModel):
-    """A signed PDF plus whether the issuer chain could be completed."""
+    """A signed PDF plus whether the leaf's direct issuer was embedded.
+
+    ``chain_complete=True`` means exactly that the leaf's **direct** issuer
+    certificate was resolved (via the AIA URL) and embedded in the CMS. Deeper
+    intermediates are never chased, so on a hierarchy with more than one
+    intermediate the embedded chain still stops at the direct issuer.
+    """
 
     pdf: bytes
     chain_complete: bool

@@ -189,8 +189,9 @@ class PublicClient(HttpClientBase):
     """Talks to ANAF's unauthenticated public services (``webservicesp.anaf.ro``).
 
     No credentials are needed; the client owns an ``httpx.AsyncClient`` unless
-    one is injected. An injected client with an empty ``base_url`` adopts
-    :data:`PUBLIC_HOST`; a non-empty one is preserved. Use it as an async
+    one is injected. An injected client must carry a non-empty ``base_url``
+    (an empty one raises :class:`~anafpy.exceptions.AnafConfigError`; injected
+    clients are never mutated). Use it as an async
     context manager so owned clients close cleanly. Requests are paced at
     ``min_request_interval`` seconds (default 1.0, ANAF's stated limit); pass
     ``0`` to disable pacing and bring your own.

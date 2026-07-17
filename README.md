@@ -192,10 +192,12 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   local authoring/validation/signing of tax declarations (D300 first): a
   DUKIntegrator wrapper (`-v`/`-p`), the `nr_evid` composer, and a pyHanko
   qualified-signature path where the raw op is delegated to the OS token
-  (macOS Keychain / CryptoTokenKit; no key material in-process). Filing is a
-  later milestone — but filing **status** and the signed recipisa are already
-  covered (`DeclarationStatusClient` over ANAF's public no-auth StareD112
-  service).
+  (macOS Keychain / CryptoTokenKit; no key material in-process). Filing works
+  two ways: manually on the portal, or through `DeclarationUploadClient`
+  (certificate login + upload on ANAF's declaration portal — live-verified
+  end to end on 2026-07-17); exposing filing as an MCP tool is what remains.
+  Filing **status** and the signed recipisa are covered too
+  (`DeclarationStatusClient` over ANAF's public no-auth StareD112 service).
 
 A sync facade was dropped as a goal — the clients are async-only.
 

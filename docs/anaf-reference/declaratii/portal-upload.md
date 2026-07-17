@@ -24,12 +24,14 @@ The portal behind **anaf.ro → Depunere declarații → Transmitere declarații
 where the signed declaration PDF is actually filed. There is no official API
 documentation; this reference is compiled from live recon (2026-07-16, raw
 captures under `_sources/decl-portal/`) — the unauthenticated choreography plus
-**one real certificate login** that captured the authenticated app surface.
-**No document was filed**; the successful-upload response (the page carrying
-the upload index) is deliberately still unobserved — see §4.
+**one real certificate login** that captured the authenticated app surface —
+and from **one real filing** (2026-07-17): a **D406T**, ANAF's sanctioned
+no-fiscal-effect SAF-T test declaration, which captured the successful-upload
+response (the page carrying the upload index) — see §4.
 
-This page records the **M2 recon facts**; the upload client itself is not
-implemented yet.
+This page records the **M2 wire facts**; the upload client
+(`anafpy.declaratii.upload`) is implemented and **live-verified** against
+them — see §5.
 
 ## 1. Access model — F5 APM certificate wall (SPV's, with one extra step)
 
@@ -163,7 +165,8 @@ the §4 success page yielding the upload index. The live test
 render → sign → file → StareD112) on a committed minimal D406T
 (`tests/fixtures/declaratii/d406t-minimal.xml`, validates `ok` under both
 D406T and D406), gated on `ANAFPY_LIVE_FILE_D406T=1` because it fires the
-certificate 2FA twice. Its first run (2026-07-17, upload index 1100000005)
+certificate 2FA twice. Its first run (2026-07-17; the real upload index is
+redacted to `1100000005` here and in the vendored capture)
 settled all three open questions in one pass:
 
 - the **successful-upload response** is captured and documented (§4);

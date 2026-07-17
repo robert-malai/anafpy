@@ -193,17 +193,13 @@ async def test_upload_success_page_yields_index() -> None:
     assert result.upload_index == "1100000005"
 
 
-@respx.mock
-async def test_injected_client_without_base_url_adopts_portal_url() -> None:
-    respx.post(f"{PORTAL_BASE_URL}/WAS6DUS/displayFile.do").mock(
-        return_value=httpx.Response(200, text=_SUCCESS_PAGE)
-    )
-    http = httpx.AsyncClient()
-    http.cookies.set("MRHSession", "abc123")
-    async with DeclarationUploadClient(http=http) as client:
-        result = await client.upload(b"%PDF-1.7", filename="d406t.pdf")
-    await http.aclose()
-    assert result.upload_index == "1100000005"
+async def test_injected_client_without_base_url_raises_config_error() -> None:
+    # An injected client is never mutated: an empty base_url is a
+    # misconfiguration, named loudly at construction.
+    async with httpx.AsyncClient() as http:
+        http.cookies.set("MRHSession", "abc123")
+        with pytest.raises(AnafConfigError, match=PORTAL_BASE_URL):
+            DeclarationUploadClient(http=http)
 
 
 @respx.mock
@@ -219,16 +215,32 @@ async def test_upload_unknown_page_carries_html() -> None:
 
 @respx.mock
 async def test_upload_login_wall_bounce_raises() -> None:
-    respx.post(f"{PORTAL_BASE_URL}/WAS6DUS/displayFile.do").mock(
+    # The 302 must NOT be followed (httpx would re-issue a body-less GET):
+    # the redirect itself raises, and no request ever hits /my.policy.
+    route = respx.post(f"{PORTAL_BASE_URL}/WAS6DUS/displayFile.do").mock(
         return_value=httpx.Response(
             302, headers={"Location": f"{PORTAL_BASE_URL}/my.policy"}
         )
     )
-    respx.get(f"{PORTAL_BASE_URL}/my.policy").mock(
-        return_value=httpx.Response(200, text=_LOGON_PAGE)
-    )
     async with _client() as client:
         with pytest.raises(AnafAuthError, match="session expired"):
+            await client.upload(b"%PDF-1.7", filename="d406t.pdf")
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_upload_revalidation_hop_raises_not_misreports() -> None:
+    # An APM /my.policy_nonce revalidation 302 on the POST is a session event
+    # (raised), never followed into a body-less GET whose "no file selected"
+    # error page would misread as a business rejection.
+    respx.post(f"{PORTAL_BASE_URL}/WAS6DUS/displayFile.do").mock(
+        return_value=httpx.Response(
+            302,
+            headers={"Location": f"{PORTAL_BASE_URL}/my.policy_nonce?nonce=x"},
+        )
+    )
+    async with _client() as client:
+        with pytest.raises(AnafAuthError, match=r"my\.policy_nonce"):
             await client.upload(b"%PDF-1.7", filename="d406t.pdf")
 
 
@@ -263,6 +275,16 @@ async def test_login_installs_cookies() -> None:
     async with DeclarationUploadClient(bootstrapper=boot) as client:
         await client.login()
         assert client._http.cookies["MRHSession"] == "abc123"
+
+
+async def test_login_scopes_cookies_to_portal_host() -> None:
+    # The bearer cookies must be domain-scoped: httpx's default empty domain
+    # would send MRHSession to ANY host an off-portal redirect lands on.
+    boot = FakeBootstrapper(*_ok_steps(), cookies=_JAR)
+    async with DeclarationUploadClient(bootstrapper=boot) as client:
+        await client.login()
+        domains = {cookie.domain for cookie in client._http.cookies.jar}
+        assert domains == {"decl.anaf.mfinante.gov.ro"}
 
 
 # -- page parsing ------------------------------------------------------------------

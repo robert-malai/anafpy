@@ -46,14 +46,15 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "declaratii" / "d406t-minimal.xm
 def _d406t_xml() -> bytes:
     """The minimal valid D406T, with the filer CUI from the environment.
 
-    The committed fixture carries the CUI it was validated with; a different
-    ``ANAFPY_CIF`` is substituted so the filing belongs to the certificate
-    holder's company (StareD112 keys on the (index, CUI) pair).
+    The committed fixture carries a synthetic filer CUI (``RO88888808``), so
+    ``ANAFPY_CIF`` is required: the substituted value makes the filing belong
+    to the certificate holder's company (StareD112 keys on the (index, CUI)
+    pair).
     """
-    xml = _FIXTURE.read_bytes()
-    if cif := os.environ.get("ANAFPY_CIF"):
-        xml = xml.replace(b"RO88888808", b"RO" + cif.encode())
-    return xml
+    cif = os.environ.get("ANAFPY_CIF")
+    if not cif:
+        pytest.skip("set ANAFPY_CIF to the certificate holder's CUI")
+    return _FIXTURE.read_bytes().replace(b"RO88888808", b"RO" + cif.encode())
 
 
 def _duk() -> DukIntegrator:
@@ -118,23 +119,23 @@ async def test_live_file_d406t_on_portal(tmp_path: Path) -> None:
         result = await client.upload(signed.pdf, filename="d406t.pdf")
         await client.logout()
 
-    # Persist the raw response — the whole point of this filing is to finally
-    # observe the success page (reference §4); commit the capture after review.
-    capture = (
-        Path(__file__).parent.parent
-        / "docs/anaf-reference/_sources/decl-portal/upload-response-d406t.html"
-    )
-    capture.write_text(result.html, encoding="utf-8")
-    print(f"\nportal response captured to {capture}")
-    print(f"accepted={result.accepted} index={result.upload_index}")
-
+    print(f"\naccepted={result.accepted} index={result.upload_index}")
     assert result.accepted is not False, (
         f"the portal REJECTED the upload: {result.reason!r} — if the reason "
         "points at the signature, the pyHanko CMS shape is the suspect"
     )
 
-    if result.upload_index:
-        cif = os.environ.get("ANAFPY_CIF", "88888808")
+    # Persist the raw response — the point of this filing is to observe the
+    # success page (reference §4); only AFTER the outcome assertions pass, so a
+    # rejected/unexpected re-run never clobbers the committed success capture.
+    capture = (
+        Path(__file__).parent.parent
+        / "docs/anaf-reference/_sources/decl-portal/upload-response-d406t.html"
+    )
+    capture.write_text(result.html, encoding="utf-8")
+    print(f"portal response captured to {capture}")
+
+    if result.upload_index and (cif := os.environ.get("ANAFPY_CIF")):
         async with DeclarationStatusClient() as status:
             listing = await status.check_status(result.upload_index, cif)
         print(f"StareD112: found={listing.found}")
