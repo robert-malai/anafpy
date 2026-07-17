@@ -14,7 +14,7 @@ sources:
     retrieved: 2026-07-16
 compiled: 2026-07-16
 compiled_by: claude-fable-5
-last_verified: 2026-07-16
+last_verified: 2026-07-17
 status: draft
 ---
 
@@ -30,7 +30,10 @@ captures under `_sources/stared112/`).
 
 Despite the `D112` in the path, the service covers **all declaration forms**
 (live-observed with `F4109` documents; the page's own copy speaks of
-"documente depuse" generally).
+"documente depuse" generally) — **including `D406T` test filings**: a D406T
+filed on the upload portal appeared here within a minute, form `D406T`, state
+`In prelucrare` (live-observed 2026-07-17; the upload portal's success page
+itself points recipisa tracking at this service).
 
 ## 1. Access model — public, unauthenticated
 

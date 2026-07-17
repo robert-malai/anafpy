@@ -3,9 +3,11 @@
 `anafpy.declaratii` prepares Romanian tax declarations (D300 VAT return first;
 the design is per-form generic) entirely **locally**: it validates with ANAF's
 own DUKIntegrator, renders the official PDF, and signs it with the taxpayer's
-qualified certificate. Filing the signed PDF with ANAF (portal upload) is a
-later milestone; for now you file the signed PDF manually on the portal — and
-then **track it from here**: [`DeclarationStatusClient`](#filing-status-and-recipisa)
+qualified certificate. Filing the signed PDF works two ways: manually on the
+portal, or through the
+[upload client](#filing-on-the-portal) — live-verified end to end on
+2026-07-17. Afterwards you **track it from here**:
+[`DeclarationStatusClient`](#filing-status-and-recipisa)
 checks the processing status and downloads the signed recipisa over ANAF's
 public StareD112 service, with no login of any kind.
 
@@ -94,6 +96,40 @@ unverified). The identity defaults to the persisted SPV certificate selection
 
 **Windows signing is not in this release**; the `RawSigner` protocol is the seam
 a `CngRawSigner` will slot into.
+
+## Filing on the portal
+
+`DeclarationUploadClient` automates the "Depunere declarații" portal
+(`decl.anaf.mfinante.gov.ro/WAS6DUS`): a certificate login — same
+platform-keystore model as the [SPV client](../anaf-reference/spv/api.md),
+**fires the token PIN / 2FA** — followed by the one multipart POST of the
+signed PDF. Live-verified end to end (2026-07-17, a D406T filing): the success
+page yields the **upload index**, the portal's known rejection page comes back
+as `accepted=False` with the reason, and an unrecognised page returns
+`accepted=None` with the raw `html` carried. Mind the portal's own caveat: the
+success page is **not** the registration confirmation — that is the recipisa,
+which you poll via StareD112 with the returned index. Sessions are disposable
+(the portal enforces a ~10-minute inactivity timeout): log in, upload, done.
+
+```python
+from anafpy.declaratii import DeclarationUploadClient, PortalCurlBootstrapper
+
+async with DeclarationUploadClient(
+    bootstrapper=PortalCurlBootstrapper("MY CERT IDENTITY")  # Keychain name
+) as client:
+    await client.login()                      # fires the certificate 2FA
+    result = await client.upload(signed_pdf, filename="d300.pdf")
+    if result.accepted:
+        print("upload index:", result.upload_index)   # feed it to StareD112
+    elif result.accepted is False:
+        print("rejected:", result.reason)
+```
+
+There is **no TEST environment** for declaration filing — every upload is a
+production filing. The one sanctioned no-effect exercise is **D406T**, the
+SAF-T voluntary-testing declaration (no legal or fiscal effect; see the
+[portal-upload reference](../anaf-reference/declaratii/portal-upload.md)) —
+which is exactly what anafpy's own gated live test files.
 
 ## Filing status and recipisa
 

@@ -46,7 +46,11 @@ upload API yet) — but **status tracking already landed** (2026-07-16):
 `DeclarationStatusClient` checks a filed declaration's processing state and
 downloads the signed recipisa over ANAF's **public, no-auth** StareD112 service
 (upload index + CUI are the access key), so the post-manual-filing confirmation
-loop is automated. Distribution is **free and
+loop is automated — and the **first M2 slice landed recon-grade** (2026-07-17):
+`DeclarationUploadClient` (`declaratii/upload.py`) does the WAS6DUS portal
+certificate login + multipart filing POST, live-verified by filing **D406T**,
+ANAF's sanctioned no-fiscal-effect SAF-T test declaration (the only permitted
+production filing; DESIGN.md §12). Distribution is **free and
 as-is**: the library is for anyone to use; the MCP server is **best-effort**, and
 configuring it — including provisioning the OAuth application on ANAF's portal —
 is the user's responsibility (DESIGN.md §11).
@@ -89,9 +93,11 @@ CLI honours the same variable and `--store-backend`),
 `skills/`), `ANAFPY_SPV_SESSION` (SPV cookie-session store, default
 `~/.anafpy/spv-session.json`), `ANAFPY_SPV_IDENTITY_FILE` (persisted SPV
 certificate selection, default `~/.anafpy/spv-identity.json`),
-`ANAFPY_SPV_CURL` (override the SPV bootstrap's curl binary — read by
-`CurlBootstrapper` itself, so it covers CLI and MCP alike; needed on
-Windows-on-ARM, where x64-only vendor KSPs — certSIGN vToken — require an
+`ANAFPY_CURL` (override the curl binary of **both** certificate
+bootstraps — SPV and the declaration upload portal; read at the shared
+`_transport/curl.py` base, so it covers CLI and MCP alike; renamed from
+`ANAFPY_SPV_CURL` 2026-07-17, no compat alias; needed
+on Windows-on-ARM, where x64-only vendor KSPs — certSIGN vToken — require an
 x64 Schannel curl such as Git for Windows', see the SPV reference §1.1),
 `ANAFPY_DUK_DIR` (the extracted DUKIntegrator `dist/` folder — enables the
 `declaratie_*` tools; no default), `ANAFPY_DUK_JAVA` (the java binary; optional),
@@ -115,6 +121,11 @@ green and must stay green.
 src/anafpy/
   exceptions.py          # AnafError hierarchy (see "Error model")
   _transport/base.py     # Environment, Service, service_base_url + shared error raising
+  _transport/curl.py     # CurlBootstrapperBase — shared platform-curl machinery of
+                         # the two APM certificate bootstraps (SPV + declaration
+                         # portal): curl resolution (ANAFPY_CURL), cert
+                         # selectors, TLS-backend pin, runner, failure taxonomy;
+                         # subclasses own choreography + success judgment
   auth/                  # OAuth2 layer: models, store, oauth, provider, callback
   cli/main.py            # `anafpy auth login|status|logout` +
                          # `anafpy spv certs|select|login|status|logout` +
@@ -141,9 +152,10 @@ src/anafpy/
     models.py            # lookup value types (TaxpayerRecord, RegistryLookup[...], ...)
                          # + TransformStandard, RemoteValidationResult
   spv/                   # SPV (Spațiul Privat Virtual) read-only client — cert mTLS
-    bootstrap.py         # SessionBootstrapper protocol + CurlBootstrapper (OS curl
-                         # subprocess: macOS SecureTransport / Windows Schannel) —
-                         # the ONLY step that touches the certificate (APM login)
+    bootstrap.py         # SessionBootstrapper protocol + CurlBootstrapper (over the
+                         # _transport/curl.py base) — the ONLY step that touches
+                         # the certificate (APM login); owns the SPV choreography
+                         # (one --location probe) + the SPV-JSON success judgment
     session.py           # SpvSession (APM cookie set = bearer credential) +
                          # SessionStore protocol, FileSessionStore (0600)
     auth.py              # SpvSessionProvider (mirrors TokenProvider; owns login)
@@ -172,6 +184,13 @@ src/anafpy/
                          # the access key; empty-PDF answer = receipt unavailable);
                          # HTML extraction via parsel (core dep) — shape checks ours
     nr_evid.py           # payment_evidence_number (pure: the 23-char D300 nr_evid)
+    upload.py            # M2 portal upload (decl.anaf.mfinante.gov.ro/WAS6DUS):
+                         # PortalCurlBootstrapper (cert login, discrete curl
+                         # steps, over the _transport/curl.py base) +
+                         # DeclarationUploadClient (cookie multipart POST;
+                         # rejection page = returned business outcome; success
+                         # page -> upload index — LIVE-VERIFIED 2026-07-17 by
+                         # filing a D406T, pyHanko CMS accepted)
     signing.py           # RawSigner protocol + KeychainRawSigner (ctypes ->
                          # Security.framework: SecKeyCreateSignature; no key material,
                          # 2FA is the human gate) + resolve_signing_label
@@ -229,7 +248,7 @@ docs/                    # MkDocs source tree for the docs site (mkdocs.yml at r
   anaf-reference/        # compiled ANAF API reference (oauth/efactura/etransport/public/spv;
                          # spv sources = vendored MfpAnaf/ClientSPV repo under _sources/clientspv/);
                          # ALSO served as MCP resources (ANAFPY_DOCS_DIR default) — don't move it
-tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-in live: test_public_live.py, test_oauth_live.py, test_spv_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST)
+tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-in live: test_public_live.py, test_oauth_live.py, test_spv_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST; test_declaratii_upload_live.py files D406T — sanctioned no-effect — to PROD, double-gated)
 ```
 
 ## Architecture & conventions
@@ -583,8 +602,8 @@ results.
   [tests/test_oauth_live.py](tests/test_oauth_live.py) — authenticated TEST, read-only,
   credentials from the gitignored repo-root `.env` loaded by `tests/conftest.py`) exist
   only to re-confirm wire shapes on demand (`ANAFPY_LIVE=1`) and are skipped by
-  default — don't move behavioural assertions there, and keep them read-only. The **two
-  deliberate exceptions** are the roundtrip files —
+  default — don't move behavioural assertions there, and keep them read-only. The **three
+  deliberate exceptions** are the filing files —
   [tests/test_etransport_roundtrip_live.py](tests/test_etransport_roundtrip_live.py)
   **files** a domestic declaration composed via the flat authoring models — also
   keeping anafpy's own rendered XML honest — (upload → `stareMesaj` → `lista` →
@@ -593,8 +612,14 @@ results.
   **files** a minimal CIUS-RO invoice composed via the authoring models and
   filed with `upload_invoice` (upload → `stareMesaj` → `descarcare` → list),
   also proving the strict `DownloadedMessage.view` on ANAF's returned XML —
-  **TEST only, never prod** — to keep the filing wire shapes honest; don't add uploads
-  to any other live file. The same file's `test_validare_agrees_with_local_rules`
+  **TEST only, never prod** — to keep the filing wire shapes honest — and
+  [tests/test_declaratii_upload_live.py](tests/test_declaratii_upload_live.py),
+  which **files a D406T on the production portal**: D406T is ANAF's sanctioned
+  no-fiscal-effect SAF-T test declaration (there is no TEST environment for
+  declaration filing — DESIGN.md §12), and the test is double-gated
+  (`ANAFPY_LIVE_FILE_D406T=1`) because it fires the certificate 2FA twice.
+  Don't add uploads to any other live file, and never file anything but D406T
+  in that one. The same file's `test_validare_agrees_with_local_rules`
   is the **drift tripwire**: it asserts local `authoring.validate()` verdicts
   track ANAF's `validare` both ways (clean passes clean; a BR-CO-16 break is
   flagged by both with the same rule id) — when a CIUS-RO revision lands, this

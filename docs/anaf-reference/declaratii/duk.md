@@ -15,6 +15,12 @@ sources:
   - url: https://github.com/nokeect/duk-integrator-macos
     title: "Community macOS DUKIntegrator setup (AXIOM ADVISORY): offLine=Y silent-exit fix, Java-8 pin, SafeNet PKCS#11 signing config"
     retrieved: 2026-07-16
+  - url: https://static.anaf.ro/static/10/Anaf/Informatii_R/duk_SAFT_20230216.zip
+    title: "Dedicated SAF-T DUKIntegrator distribution — the only source of the D406T jars (D406TValidator.jar / D406TPdf.jar)"
+    retrieved: 2026-07-17
+  - url: https://static.anaf.ro/static/10/Anaf/Informatii_R/RO_SAFT_SchemaDefCod_16.02.2026.xlsx
+    title: "RO SAF-T schema definition & codes workbook (current element tables, ID-type prefixes, nomenclatures)"
+    retrieved: 2026-07-17
 compiled: 2026-07-15
 compiled_by: claude-opus-4-8
 last_verified: 2026-07-15
@@ -73,6 +79,54 @@ certSIGN Paperless vToken).
   installed `<form>IstoriaVersiunilor.txt` (what `DURL` points at) leads with the
   same `J…` string, which is what makes installed-vs-feed comparison possible.
 
+### The SAF-T module (D406/D406T) — jar sourcing and compatibility
+
+Live-proven 2026-07-17 (macOS, Oracle Java 26); this is the module behind the
+D406T no-effect test filing (portal-upload reference §5).
+
+- **The 2018/2020-era core jars cannot run the D406 validators**: they fail
+  with `NoClassDefFoundError: dec/DECTagStruct` (written to `validator.log`,
+  stdout only says `cod eroare=-5` with an **empty err file**). Fix: update
+  `DUKIntegrator.jar` (feed path `zz9/`) **and** `lib/DecValidation.jar`
+  (feed path `ss8/`) to the feed's current versions.
+- A dist without its `config/` folder makes the updated `DUKIntegrator.jar`
+  **exit silently** (no output, exit 0) — carry `config/` over when assembling
+  a fresh dist.
+- **`D406` is in the update feed** (`D406_35/`, `J2.2.18`); **`D406T` is
+  not** — its jars (`D406TValidator.jar`, `D406TPdf.jar`) ship only inside the
+  dedicated `duk_SAFT` distribution
+  (`duk_SAFT_20230216.zip` is the newest observed; jars dated 2023,
+  `J2.0.6`), dropped into `lib/` like any per-form pair. Consequence: the
+  staleness comparison (`feed_versions`) will never show D406T.
+- **Form names and namespaces**: `-v D406` expects
+  `mfp:anaf:dgti:d406:declaratie:v1`, `-v D406T` expects
+  `mfp:anaf:dgti:d406t:declaratie:v1` (the T validator errors with the exact
+  expected namespace). The same document content validates under both — only
+  the namespace differs; the 2023 T-validator additionally requires an
+  (empty) `AnalysisTypeTable` the current D406 no longer asks for.
+- **SAF-T validators emit `F:`** (structure/fatal) finding lines besides
+  `E:`/`W:`; parameters are **period-versioned** inside the jar (version table
+  2019-01 → 2023-01 → 2024-01 → 2025-07), so structure rules shift with the
+  reporting period, and several sections are vestigial in the current version:
+  `MovementTypeTable` and `MovementOfGoods` must be **present but empty**
+  (their children answer `maxOccurs=0`), `Products`/`Owners`/`Assets` may be
+  empty, `SalesInvoices`/`PurchaseInvoices`/`Payments` may be omitted (a
+  present `SalesInvoices` demands a full `Invoice`).
+- **Structure gotchas** (from converging the minimal file, committed at
+  `tests/fixtures/declaratii/d406t-minimal.xml`): partner identifiers
+  (`CustomerID`/`SupplierID`/partner `RegistrationNumber`) need the 2-char
+  **ID-type prefix** from the SAF-T nomenclature (`00` + CUI for Romanian
+  companies, check-digit-verified; `080000000000000` is the generic
+  no-ID person code); `Transaction` **and** each `TransactionLine` require
+  both `CustomerID` and `SupplierID`; every `AmountStructure` requires
+  `Amount` + `CurrencyCode` + `CurrencyAmount`; each line requires
+  `TaxInformation`; `BaseRate` is a fraction (`1.00`, not `100.00`). A
+  misplaced-but-known element is reported as *"ar fi trebuit sa apara de
+  minimum 1 ori"* — check ordering before existence. The schema-definition
+  workbook (`RO_SAFT_SchemaDefCod_*.xlsx`) is the current element table, but
+  its `Line` naming is the newer schema's — the v1 wire element is
+  `TransactionLine`.
+
 ### Silent-exit-on-update escape hatch (`offLine=Y`)
 
 anafpy's `-v`/`-p` runs did not hit this, but it is worth knowing: DUK's startup
@@ -98,7 +152,8 @@ java -jar DUKIntegrator.jar [-c configPath] -s <tip> <xml> [errFile] [valOption]
 
 - `tip` — the form name exactly as the validator jar prefix (`D300`, `D112`, …).
 - `errFile` — on success contains literally `ok`; on failure, lines prefixed
-  `E:` (errors) / `W:` (warnings) each followed by indented detail lines
+  `E:` (errors) / `W:` (warnings) — the SAF-T validators (D406/D406T) also emit
+  `F:` (structure/fatal) — each followed by indented detail lines
   (`eroare regula: R25: …`, `eroare atribut: …`). Success is **also** printed to
   stdout as `Validare fara erori fisier: <path>`.
 - **The exit code is `0` either way** — judge success by the err-file content,
@@ -188,6 +243,11 @@ helper.
 - Certificate chain: leaf via `SecIdentityCopyCertificate`; the intermediate via
   the leaf's AIA URL (live:
   `http://crl.certsign.ro/certsign-qualifiedca2023rsa.crt`).
+- **The portal accepts this signature** (confirmed 2026-07-17): a D406T signed
+  through this exact pipeline was filed on the WAS6DUS upload portal and
+  answered with the success page + upload index — see the
+  [portal-upload reference](portal-upload.md) §4/§5. (Acceptance of a
+  **leaf-only** CMS — the AIA-fetch-failed fallback — remains unverified.)
 - Windows follows in a later milestone (a `CngRawSigner` via CNG, or DUK `-s`
   with `mscapi`), over the same raw-signer seam.
 - **Why not DUK's own `-s` on macOS?** The community setup

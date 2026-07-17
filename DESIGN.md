@@ -676,3 +676,29 @@ documents older than StareD112's windows. MCP: `declaratie_status` (read-only)
 + `declaratie_recipisa` (artifact-saving); both work with zero configuration.
 Wire reference:
 [docs/anaf-reference/declaratii/stared112.md](docs/anaf-reference/declaratii/stared112.md).
+
+**M2 live-verification vehicle: D406T — and the recon-grade upload client.**
+There is no separate TEST environment for declaration filing, but ANAF's SAF-T
+voluntary-testing programme (a permanent assistance service, verified
+2026-07-17) accepts the **D406T** test declaration on the **production** portal
+with **no legal or fiscal effect** — the data is excluded from risk analyses
+and deleted after the verification report. D406T is its own DUK form (namespace
+`mfp:anaf:dgti:d406t:declaratie:v1`; jars only in ANAF's dedicated `duk_SAFT`
+distribution — sourcing and structure gotchas in the
+[DUK reference](docs/anaf-reference/declaratii/duk.md)). On that basis the
+first M2 slice landed the same day: `declaratii/upload.py` —
+`PortalCurlBootstrapper` (the WAS6DUS certificate choreography, discrete curl
+steps, SPV's platform-keystore model) + `DeclarationUploadClient` (cookie-borne
+multipart POST; the known rejection page is a returned business outcome). The
+live test (`tests/test_declaratii_upload_live.py`, gated
+`ANAFPY_LIVE_FILE_D406T=1` since it fires the certificate 2FA twice) files the
+committed minimal D406T (`tests/fixtures/declaratii/d406t-minimal.xml`) end to
+end; its **first run (2026-07-17) verified the whole chain in one pass** —
+the success page was captured (upload index in "Indexul este …"; the parse is
+hardened on the real shape), the **pyHanko CMS signature was accepted** by the
+portal, and **StareD112 listed the D406T** (`In prelucrare`) within a minute.
+Note the portal's own caveat: the success page is not the registration
+confirmation — the recipisa is. What remains for M2 proper is the MCP
+exposure: a gated `declaratie_prepare`/`_submit` pair over `mcp/gate.py`
+(two-step confirmation like the e-Factura/e-Transport filings). See the
+[portal-upload reference](docs/anaf-reference/declaratii/portal-upload.md) §4-§5.

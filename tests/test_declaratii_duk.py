@@ -124,6 +124,19 @@ def test_parse_single_error() -> None:
     assert "detaliu suplimentar" in result.findings[0].message
 
 
+def test_parse_saft_fatal_prefix() -> None:
+    # The D406/D406T (SAF-T) validators emit F: structure findings.
+    text = (
+        "F: Header (1) sectiune Company (1)\n"
+        " eroare structura: elementul 'Address' ar fi trebuit sa apara de "
+        "minimum 1 ori, dar apare efectiv de 0 ori\n"
+    )
+    result = _parse_err_file(text)
+    assert not result.ok
+    assert result.findings[0].severity == "error"
+    assert "Address" in result.findings[0].message
+
+
 def test_parse_multi_finding() -> None:
     text = "E: eroare atribut: cui\nW: avertisment: pro_rata\n    valoare neobisnuita\n"
     result = _parse_err_file(text)

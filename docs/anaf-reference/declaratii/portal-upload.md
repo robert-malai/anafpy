@@ -4,11 +4,17 @@ service: declaratii
 language: en
 sources:
   - url: https://decl.anaf.mfinante.gov.ro/WAS6DUS/
-    title: "Depunere declarații upload app (live recon: unauthenticated choreography + one certificate login; no document was filed)"
-    retrieved: 2026-07-16
+    title: "Depunere declarații upload app (live recon 2026-07-16: unauthenticated choreography + one certificate login; live filing 2026-07-17: one D406T — the sanctioned no-effect test declaration — captured the success page)"
+    retrieved: 2026-07-17
+  - url: https://static.anaf.ro/static/10/Anaf/Informatii_R/SAF_T_Ghidul_D406_1712021.pdf
+    title: "Ghidul contribuabilului D406 — the D406T voluntary-testing programme (test filing with no legal/fiscal effect)"
+    retrieved: 2026-07-17
+  - url: https://static.anaf.ro/static/10/Anaf/Informatii_R/saf_t.htm
+    title: "ANAF SAF-T page (D406T references, validator support)"
+    retrieved: 2026-07-17
 compiled: 2026-07-16
 compiled_by: claude-fable-5
-last_verified: 2026-07-16
+last_verified: 2026-07-17
 status: draft
 ---
 
@@ -104,11 +110,64 @@ with the reason in the red `span` (here: `Nu ati selectat fisierul ce urmeaza a
 fi transmis`) and a link back to `/WAS6DUS/welcome.do`. Expect upload
 rejections (wrong signature, malformed PDF) to ride this same shape.
 
-## 4. Deliberately unobserved
+## 4. Success page (live-captured 2026-07-17)
 
-The **successful-upload response** — the page that returns the upload index
-(the number `StareD112` and the recipisa are keyed by). Observing it requires
-actually filing a declaration, and there is **no TEST environment for
-declaration filing** — so it stays unknown until M2's live verification files
-a real (nil/rectifiable) declaration. Everything else needed to build the M2
-client is above.
+The successful-upload response — long deliberately unobserved, finally
+captured by filing a **D406T** (§5; raw capture
+`_sources/decl-portal/upload-response-d406t.html`). HTTP 200, the same
+IBM-sample-markup style as the rest of the app:
+
+- Header: *"Agentia Nationala de Administrare Fiscala — **Succes depunere**"*,
+  plus the "depune o nouă declarație" link back to `/WAS6DUS/welcome.do`.
+- The payload sentence, filename echoed and the **upload index** in a `<b>`:
+
+  > Fişierul dumneavoastră cu numele "d406t.pdf" a fost depus cu succes.
+  > Indexul este **1100000005**.
+
+- An explicit caveat that this page is **not** the registration confirmation:
+  *"Acest mesaj nu constituie confirmarea inregistrării documentului.
+  Confirmarea depunerii va fi afisată in recipisă."* — followed by a pointer
+  to `https://www.anaf.ro/StareD112/` ("Vizualizare stare"), hidden by an
+  inline script on the `extranet` hostname.
+
+**StareD112 tracks the filing immediately**: a status query with the returned
+index listed the document (form `D406T`, state `In prelucrare`) within a
+minute of the upload — see [stared112.md](stared112.md).
+
+There is still **no separate TEST environment for declaration filing** — the
+D406T on the production portal (§5) is the sanctioned no-effect exercise.
+
+## 5. D406T — the sanctioned no-effect test filing
+
+ANAF's SAF-T **voluntary testing programme** (verified online 2026-07-17)
+accepts **D406T**, the test variant of the D406 informative declaration,
+through the **normal production filing channel** — signed smart-PDF with the
+SAF-T XML attached, qualified certificate, uploaded via "Depunere declarații"
+— explicitly **without legal or fiscal effect**: the transmitted data is not
+processed, stored, or used in ANAF's risk analyses, and is deleted from
+ANAF's systems after the verification report is issued. ANAF states the
+programme is a **permanent** assistance service (it continued past
+2022-01-01) and is open to taxpayers **and** software vendors (ERP /
+financial-accounting application suppliers) alike. `D406T` **is its own DUK
+form** (proven locally 2026-07-17): namespace
+`mfp:anaf:dgti:d406t:declaratie:v1`, jars only in the dedicated `duk_SAFT`
+distribution — sourcing, compatibility, and the minimal-file structure
+gotchas are in the [DUK reference](duk.md) §1 ("The SAF-T module").
+
+M2 status: the upload client **landed and is live-verified** —
+`anafpy.declaratii.upload.DeclarationUploadClient` +
+`PortalCurlBootstrapper` implement §1's choreography and §2's multipart
+POST, with the known §3 rejection page returned as a business outcome and
+the §4 success page yielding the upload index. The live test
+`tests/test_declaratii_upload_live.py` runs the full pipeline (validate →
+render → sign → file → StareD112) on a committed minimal D406T
+(`tests/fixtures/declaratii/d406t-minimal.xml`, validates `ok` under both
+D406T and D406), gated on `ANAFPY_LIVE_FILE_D406T=1` because it fires the
+certificate 2FA twice. Its first run (2026-07-17, upload index 1100000005)
+settled all three open questions in one pass:
+
+- the **successful-upload response** is captured and documented (§4);
+- the portal **accepts the pyHanko CMS signature** (the open question from
+  the [DUK reference](duk.md) §5 — the AIA-completed chain was accepted);
+- **StareD112 tracks a D406T upload index** (form `D406T`,
+  `In prelucrare` within a minute of filing).

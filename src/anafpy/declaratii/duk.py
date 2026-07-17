@@ -21,8 +21,9 @@ CLI contract facts baked in below (proven 2026-07-15, Oracle Java 26, macOS):
 
 * positional args; success of ``-v`` writes literally ``ok`` to the err file
   and prints ``Validare fara erori fisier: <path>`` to stdout; failure writes
-  ``E:``/``W:``-prefixed lines with indented detail. **Exit code is 0 either
-  way** — judge by err-file content, never by the exit code.
+  ``E:``/``W:``-prefixed lines with indented detail — the D406/D406T (SAF-T)
+  validators additionally emit ``F:`` (structure/fatal) lines. **Exit code is
+  0 either way** — judge by err-file content, never by the exit code.
 * ``-p`` writes the official multi-page PDF with the XML as an embedded file.
 * the ``zipFile`` positional is ``0`` for forms with no attachment (D300).
 """
@@ -50,7 +51,11 @@ _VERSIONS_FEED_URL = "http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml"
 
 
 class DukFinding(BaseModel):
-    """One validator finding — an ``E:`` (error) or ``W:`` (warning) line."""
+    """One validator finding — an ``E:``/``F:`` (error) or ``W:`` (warning) line.
+
+    ``F:`` is the SAF-T validators' structure/fatal prefix (D406/D406T); it maps
+    to ``severity="error"`` like ``E:``.
+    """
 
     severity: str  # "error" | "warning"
     message: str  # the header line plus its indented detail lines, joined
@@ -72,7 +77,7 @@ def _parse_err_file(text: str) -> DukResult:
     """Parse a DUKIntegrator err file into a :class:`DukResult`.
 
     ``ok`` (exact, stripped) means success. Otherwise every line starting
-    ``E:``/``W:`` opens a finding; following indented lines attach to it.
+    ``E:``/``F:``/``W:`` opens a finding; following indented lines attach to it.
     """
     if text.strip() == "ok":
         return DukResult(ok=True, findings=[], raw=text)
@@ -88,9 +93,9 @@ def _parse_err_file(text: str) -> DukResult:
             )
 
     for line in text.splitlines():
-        if line.startswith("E:") or line.startswith("W:"):
+        if line.startswith(("E:", "F:", "W:")):
             flush()
-            severity = "error" if line.startswith("E:") else "warning"
+            severity = "warning" if line.startswith("W:") else "error"
             current = [line[2:].strip()]
         elif severity and line.strip():
             current.append(line.strip())
