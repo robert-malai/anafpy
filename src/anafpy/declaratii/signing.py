@@ -132,6 +132,11 @@ class _Frameworks:
     only constructing a :class:`KeychainRawSigner` touches the frameworks.
     """
 
+    # Annotated at class level: on non-darwin platforms mypy treats the
+    # assignments below as unreachable and cannot infer the attribute types.
+    sec: ctypes.CDLL
+    cf: ctypes.CDLL
+
     def __init__(self) -> None:
         if sys.platform != "darwin":
             raise AnafConfigError(
