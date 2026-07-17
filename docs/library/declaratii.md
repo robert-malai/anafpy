@@ -190,7 +190,7 @@ persisted SPV selection.
 
 The same operations are MCP tools (`declaratie_validate`, `declaratie_render`,
 `declaratie_sign`, `declaratie_nr_evid`, `declaratie_duk_status`,
-`declaratie_status`, `declaratie_recipisa`) and a `declaratie-compose` skill —
+`declaratie_status`, `declaratie_recipisa`) and a `declaratie-prepare` skill —
 see the [MCP tools](../mcp/tools.md) and [setup](../mcp/setup.md) pages.
 Missing DUK/Java configuration is a tool error for validate/render, distinct
 from a real DUK verdict with `ok=false`. Status/config/network failures use the

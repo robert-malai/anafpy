@@ -233,8 +233,11 @@ src/anafpy/
 skills/                  # workflow skills, served by the MCP server as same-name
                          # prompts (etransport-declare: source data -> FlatTransport
                          # -> prepare -> approval -> submit -> status;
-                         # declaratie-compose: author XML -> validate loop ->
-                         # render -> approval -> sign)
+                         # declaratie-prepare: unstructured data -> form selection
+                         # -> completion-guide read -> CUI-lookup inference + ask
+                         # -> author XML -> validate loop -> render -> approval ->
+                         # sign -> manual filing -> status/recipisa; replaced
+                         # declaratie-compose 2026-07-18)
 schemas/                 # vendored XSDs + EN16931 Schematron sources (git-tracked,
                          # NOT shipped in the wheel; the .sch feed the codelist codegen)
 scripts/                 # codegen scripts

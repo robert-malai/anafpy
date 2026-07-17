@@ -60,30 +60,46 @@ Because it only uses the read-only `spv_*` tools, there is no filing gate — th
 human gate here is the SPV login (certificate PIN / 2FA), described in the
 [setup walkthrough](setup.md) step 7.
 
-## `declaratie-compose`
+## `declaratie-prepare`
 
-Composes, validates, renders, and signs a Romanian tax declaration (D300 VAT
-return first; the flow is per-form generic) from unstructured information. It
-drives the local `declaratie_*` tools — nothing is filed with ANAF here; you file
-the signed PDF on the portal. The playbook walks Claude through:
+Builds, validates, renders, signs, and tracks a Romanian tax declaration
+starting from **unstructured source data** — an accountant's email, a
+spreadsheet, pasted numbers, or just "file my VAT return for March". It drives
+the local `declaratie_*` tools plus the public `anaf_*` lookups — nothing is
+filed with ANAF here; you file the signed PDF on the portal. The playbook walks
+Claude through:
 
-1. **Orient** — `declaratie_duk_status` confirms DUKIntegrator is configured and
+1. **Identify the form** — named by you it is simply echoed; otherwise inferred
+   from the data against the form inventory, asking only when two forms remain
+   plausible. `declaratie_duk_status` confirms DUKIntegrator is configured and
    flags a stale validator.
-2. **Fetch the form's XSD** as the authoring template (DUKIntegrator generates no
-   templates) and author the XML from it.
-3. **Compute `nr_evid`** with `declaratie_nr_evid`, never by hand.
-4. **Validate in a loop** — `declaratie_validate`; the findings are ANAF's own
-   messages, so fix the XML and retry until `ok`.
-5. **Render and review** — `declaratie_render` writes the official PDF for you to
-   check.
-6. **Sign on your explicit go** — `declaratie_sign` with `confirm=true`, after a
-   warning that the certificate PIN/2FA prompt is about to fire.
-7. **Hand off** — the signed PDF path, to file at anaf.ro → Depunere declarații,
-   noting the upload index the portal returns.
-8. **Confirm the filing** — once you have uploaded, `declaratie_status` checks
-   whether ANAF accepted the declaration (no login needed) and
-   `declaratie_recipisa` saves the signed filing receipt — available only
-   ~60 days, so it's archived promptly.
+2. **Read the form's completion guide** (served as an `anafref://` resource) —
+   who files and when, the row-by-row → XSD attribute map, validated example
+   instances, and the known gotchas.
+3. **Infer identity via lookup, not questions** — `anaf_lookup_taxpayers` fills
+   the company name/address from the CUI and cross-checks eligibility (VAT
+   registration, cash accounting, inactive flags); partner CUIs are validated
+   the same way.
+4. **Ask for the rest in one batch** — period, settlement type, amounts, and
+   the form's must-ask fields; amounts are never guessed or extrapolated.
+5. **Author the XML** from the guide's mapping, computing derived rows and the
+   control sum per its formulas, and `nr_evid` with `declaratie_nr_evid`
+   (form-aware), never by hand.
+6. **Validate in a loop** — `declaratie_validate`; the findings are ANAF's own
+   messages, so fix the XML and retry until `ok` (warning-only forms like D700
+   pass with the notice relayed).
+7. **Pre-filing reconciliation** — states what ANAF will cross-check this
+   filing against (D300 ↔ D394 ↔ D390, e-Factura, SAF-T) so mismatches surface
+   before filing, not as conformity notifications after.
+8. **Render and review** — `declaratie_render` writes the official PDF for you
+   to check.
+9. **Sign on your explicit go** — `declaratie_sign` with `confirm=true`, after
+   a warning that the certificate PIN/2FA prompt is about to fire.
+10. **File and confirm** — you file at anaf.ro → Depunere declarații and note
+    the upload index; `declaratie_status` then checks acceptance (no login
+    needed) and `declaratie_recipisa` saves the signed filing receipt —
+    available only ~60 days, so it's archived promptly.
 
-The human gate here is the signature approval (certificate PIN / 2FA); the skill
-never signs without your explicit go-ahead relayed as `confirm=true`.
+The human gates are the batched questions, the PDF review, and the signature
+approval (certificate PIN / 2FA); the skill never signs without your explicit
+go-ahead relayed as `confirm=true`.
