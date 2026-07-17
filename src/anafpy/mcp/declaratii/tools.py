@@ -73,9 +73,13 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         description="Validate a tax declaration with ANAF's own DUKIntegrator "
         "validator (authoritative). `form` is the form name exactly as ANAF "
         "spells the validator (e.g. 'D300', 'D112'); pass the document as "
-        '{"xml": ...} or {"path": ...}. Returns {ok, findings}: on ok=false, '
-        "`findings` are DUK's own error/warning messages verbatim — fix the XML "
-        "and call again (typical convergence is under 6 rounds). This is the "
+        '{"xml": ...} or {"path": ...}. Returns {ok, findings, warnings}: '
+        "ok=false means DUK reported errors — `findings` are its own messages "
+        "verbatim, fix the XML and call again (typical convergence is under 6 "
+        "rounds). ok=true means the document is valid; `warnings` may still be "
+        "non-empty (DUK's informational notices — e.g. D700's 'the form will be "
+        "processed at the competent tax office' — which are NOT errors: relay "
+        "them to the user but do not treat them as a failure). This is the "
         "authoring loop; nothing is filed.",
     )
     async def declaratie_validate(
@@ -88,7 +92,12 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             raise
         except AnafError as exc:
             return ValidationResult(ok=False, form=form, message=str(exc))
-        return ValidationResult(ok=result.ok, form=form, findings=result.findings)
+        return ValidationResult(
+            ok=result.ok,
+            form=form,
+            findings=result.findings,
+            warnings=result.warnings,
+        )
 
     @mcp.tool(
         title="Declarations: render PDF",
@@ -97,7 +106,9 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         "the XML embedded) to disk via DUKIntegrator `-p`, and return the saved "
         "path. `form` and the document input are as for declaratie_validate; the "
         "document is validated first, so a validation failure writes NO PDF and "
-        "returns the findings (ok=false). Name the file with `save_pdf_as` (a "
+        "returns the findings (ok=false), while a valid document with DUK "
+        "warnings still renders (ok=true, `warnings` set — relay them). Name the "
+        "file with `save_pdf_as` (a "
         "full path); an existing file is never replaced unless overwrite=true. "
         "The binary never enters the context — sign it next with declaratie_sign.",
     )
@@ -124,7 +135,9 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             raise
         except AnafError as exc:
             return RenderResult(ok=False, form=form, message=str(exc))
-        return RenderResult(ok=True, form=form, pdf_path=str(target))
+        return RenderResult(
+            ok=True, form=form, pdf_path=str(target), warnings=result.warnings
+        )
 
     @mcp.tool(
         title="Declarations: sign",

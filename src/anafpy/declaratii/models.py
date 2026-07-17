@@ -24,18 +24,38 @@ __all__ = [
 
 
 class DukFinding(BaseModel):
-    """One DUK ``E:``/``F:`` error or ``W:`` warning."""
+    """One DUK finding: an ``E:``/``F:`` error, or a ``W:``/``A:`` warning.
+
+    ``severity`` is ``"error"`` (``E:``/``F:`` — blocking) or ``"warning"``
+    (``W:`` warning / ``A:`` atentionare — informational).
+    """
 
     severity: str
     message: str
 
 
 class DukResult(BaseModel):
-    """Outcome of a DUK validation/render run, judged by its err file."""
+    """Outcome of a DUK validation/render run, judged by its err file.
+
+    ``ok`` is ``True`` on a clean run and on a **warning-only** run (findings
+    present but none of ``severity == "error"`` — e.g. D700, which always emits
+    an ``A:`` atentionare). Warnings still ride ``findings`` so a caller can act
+    on them; check :attr:`warnings` / :attr:`errors` to split them.
+    """
 
     ok: bool
     findings: list[DukFinding]
     raw: str
+
+    @property
+    def errors(self) -> list[DukFinding]:
+        """The blocking findings (``severity == "error"``)."""
+        return [f for f in self.findings if f.severity == "error"]
+
+    @property
+    def warnings(self) -> list[DukFinding]:
+        """The informational findings (``severity == "warning"``)."""
+        return [f for f in self.findings if f.severity == "warning"]
 
 
 class PortalUploadResult(BaseModel):

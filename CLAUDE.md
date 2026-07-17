@@ -250,7 +250,11 @@ docs/                    # MkDocs source tree for the docs site (mkdocs.yml at r
   library/               # quickstart, auth, efactura, etransport, public, errors guides
   api/                   # mkdocstrings pages over the hand-written public modules
   anaf-reference/        # compiled ANAF API reference (oauth/efactura/etransport/public/spv;
-                         # spv sources = vendored MfpAnaf/ClientSPV repo under _sources/clientspv/);
+                         # spv sources = vendored MfpAnaf/ClientSPV repo under _sources/clientspv/;
+                         # declaratii/forms/ = e-guvernare form inventory (README = all 173
+                         # DUK-filable forms bucketed by SME usage) + per-declaration quirk
+                         # files dXXX.md organized by version: XSD URL, DUK-verified minimal
+                         # instance, gotchas — hands-on for the top two buckets);
                          # ALSO served as MCP resources (ANAFPY_DOCS_DIR default) — don't move it
 tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-in live: test_public_live.py, test_oauth_live.py, test_spv_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST; test_declaratii_upload_live.py files D406T — sanctioned no-effect — to PROD, double-gated)
 ```

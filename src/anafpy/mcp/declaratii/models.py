@@ -34,20 +34,32 @@ class DeclarationXmlInput(XmlInput):
 
 
 class ValidationResult(BaseModel):
-    """Outcome of ``declaratie_validate`` — DUKIntegrator's verdict, verbatim."""
+    """Outcome of ``declaratie_validate`` — DUKIntegrator's verdict, verbatim.
+
+    ``ok=false`` carries the blocking errors in ``findings``. ``ok=true`` means
+    valid, but ``warnings`` may still hold DUK's informational notices (e.g.
+    D700's "will be processed at the tax office" atentionare) — relay them, do
+    not treat them as failure.
+    """
 
     ok: bool
     form: str
     findings: list[DukFinding] = []
+    warnings: list[DukFinding] = []
     message: str = ""
 
 
 class RenderResult(BaseModel):
-    """Outcome of ``declaratie_render``. ``pdf_path`` is set only when ``ok``."""
+    """Outcome of ``declaratie_render``. ``pdf_path`` is set only when ``ok``.
+
+    On success ``warnings`` may still hold DUK's informational notices (the
+    document is validated before rendering).
+    """
 
     ok: bool
     form: str
     findings: list[DukFinding] = []
+    warnings: list[DukFinding] = []
     pdf_path: str | None = None
     message: str = ""
 

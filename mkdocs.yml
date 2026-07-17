@@ -94,6 +94,7 @@ nav:
       - e-Transport: anaf-reference/etransport/api.md
       - Public services: anaf-reference/public/api.md
       - SPV: anaf-reference/spv/api.md
+      - Declarations (forms inventory): anaf-reference/declaratii/forms/README.md
       - Declarations (DUKIntegrator): anaf-reference/declaratii/duk.md
       - Declarations (StareD112 status): anaf-reference/declaratii/stared112.md
       - Declarations (portal upload recon): anaf-reference/declaratii/portal-upload.md

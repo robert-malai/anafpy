@@ -154,8 +154,50 @@ def test_parse_saft_fatal_prefix() -> None:
 def test_parse_multi_finding() -> None:
     text = "E: eroare atribut: cui\nW: avertisment: pro_rata\n    valoare neobisnuita\n"
     result = _parse_err_file(text)
+    assert not result.ok  # an error is present, warning notwithstanding
     assert [f.severity for f in result.findings] == ["error", "warning"]
     assert "pro_rata" in result.findings[1].message
+
+
+def test_parse_warning_only_passes() -> None:
+    # D700 (and the SAF-T W: notices) never write a bare "ok"; a run whose only
+    # findings are warnings is a PASS, and the warnings still ride the result.
+    text = (
+        "A: validari globale\n"
+        " atentionare regula: ATENTIONARE: Formularul urmeaza sa fie prelucrat "
+        "la organul fiscal competent\n"
+    )
+    result = _parse_err_file(text)
+    assert result.ok
+    assert [f.severity for f in result.findings] == ["warning"]
+    assert result.warnings == result.findings
+    assert result.errors == []
+    assert "organul fiscal competent" in result.warnings[0].message
+
+
+def test_parse_w_prefix_warning_only_passes() -> None:
+    result = _parse_err_file("W: avertisment: valoare neobisnuita\n")
+    assert result.ok
+    assert result.warnings and not result.errors
+
+
+def test_parse_mixed_error_and_atentionare_fails_and_splits() -> None:
+    # A real D300 shape: an E: control-sum error and an A: VAT-rate atentionare
+    # must split into two findings, and the error makes the run fail.
+    text = (
+        "E: validari globale\n eroare regula: R26: totalPlata_A\n"
+        "A: validari globale\n atentionare regula: R47: TVA marja\n"
+    )
+    result = _parse_err_file(text)
+    assert not result.ok
+    assert [f.severity for f in result.findings] == ["error", "warning"]
+    assert result.errors and len(result.warnings) == 1
+
+
+def test_parse_empty_err_file_is_failure() -> None:
+    # A broken/mis-versioned dist leaves an empty err file — never a pass.
+    assert not _parse_err_file("").ok
+    assert not _parse_err_file("   \n").ok
 
 
 def test_parse_cp1250_bytes(tmp_path: Path) -> None:

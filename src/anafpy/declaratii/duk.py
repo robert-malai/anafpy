@@ -20,10 +20,13 @@ drop the per-form validator jars from the update feed into ``dist/lib/``.
 CLI contract facts baked in below (proven 2026-07-15, Oracle Java 26, macOS):
 
 * positional args; success of ``-v`` writes literally ``ok`` to the err file
-  and prints ``Validare fara erori fisier: <path>`` to stdout; failure writes
-  ``E:``/``W:``-prefixed lines with indented detail — the D406/D406T (SAF-T)
-  validators additionally emit ``F:`` (structure/fatal) lines. **Exit code is
-  0 either way** — judge by err-file content, never by the exit code.
+  and prints ``Validare fara erori fisier: <path>`` to stdout; problems write
+  ``E:``/``W:``/``A:``-prefixed lines with indented detail — the D406/D406T
+  (SAF-T) validators additionally emit ``F:`` (structure/fatal) lines.
+  ``E:``/``F:`` are errors; ``W:`` (warning) and ``A:`` (atentionare, e.g. D700
+  always emits one and never a bare ``ok``) are informational and do not fail
+  the run. **Exit code is 0 either way** — judge by err-file content, never by
+  the exit code.
 * ``-p`` writes the official multi-page PDF with the XML as an embedded file.
 * the ``zipFile`` positional is ``0`` for forms with no attachment (D300).
 """
@@ -53,11 +56,26 @@ _DUK_DOWNLOAD_URL = (
 _VERSIONS_FEED_URL = "http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml"
 
 
+# DUK err-file section prefixes mapped to a finding severity. ``E:`` (error) and
+# ``F:`` (fatal/structure — the SAF-T validators) are blocking; ``W:`` (warning)
+# and ``A:`` (atentionare — e.g. D700's "the form will be processed at the
+# competent tax office" notice) are informational and do NOT fail validation on
+# their own.
+_SEVERITY_BY_PREFIX = {"E:": "error", "F:": "error", "W:": "warning", "A:": "warning"}
+
+
 def _parse_err_file(text: str) -> DukResult:
     """Parse a DUKIntegrator err file into a :class:`DukResult`.
 
-    ``ok`` (exact, stripped) means success. Otherwise every line starting
-    ``E:``/``F:``/``W:`` opens a finding; following indented lines attach to it.
+    A literal ``ok`` is success. Otherwise each line opening with a known
+    section prefix (:data:`_SEVERITY_BY_PREFIX`) starts a finding and the
+    following indented lines attach to it. The run is ``ok`` when DUK produced
+    findings but none are errors — a **warning-only** run passes (D700 always
+    emits an ``A:`` atentionare and never a bare ``ok``, so a valid D700 would
+    otherwise read as a failure). An ``E:``/``F:`` finding fails; so does
+    unrecognized non-``ok`` output with no parseable finding (e.g. the empty
+    err file a broken/mis-versioned dist leaves behind) — success is never
+    inferred from output we do not understand.
     """
     if text.strip() == "ok":
         return DukResult(ok=True, findings=[], raw=text)
@@ -73,16 +91,15 @@ def _parse_err_file(text: str) -> DukResult:
             )
 
     for line in text.splitlines():
-        if line.startswith(("E:", "F:", "W:")):
+        if (mapped := _SEVERITY_BY_PREFIX.get(line[:2])) is not None:
             flush()
-            severity = "warning" if line.startswith("W:") else "error"
+            severity = mapped
             current = [line[2:].strip()]
         elif severity and line.strip():
             current.append(line.strip())
     flush()
-    # A non-"ok" err file with no parseable finding still means failure; keep the
-    # raw text so the caller can see what DUK actually wrote.
-    return DukResult(ok=False, findings=findings, raw=text)
+    has_error = any(finding.severity == "error" for finding in findings)
+    return DukResult(ok=bool(findings) and not has_error, findings=findings, raw=text)
 
 
 class DukIntegrator:
