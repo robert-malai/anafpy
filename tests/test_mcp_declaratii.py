@@ -310,7 +310,11 @@ async def test_duk_status_unconfigured_raises(tmp_path: Path) -> None:
 
 @respx.mock
 async def test_duk_status_reports_staleness(tmp_path: Path) -> None:
-    feed = '<versiuni><element nume="D300Validator.jar" versiune="J13.0.0"/></versiuni>'
+    feed = (
+        "<versiuni><D300><versiuneJ>J13.0.0</versiuneJ>"
+        "<JURL>http://static.anaf.ro/static/10/Anaf/update5/D300/"
+        "D300Validator.jar</JURL></D300></versiuni>"
+    )
     respx.get("http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
         return_value=httpx.Response(200, text=feed)
     )

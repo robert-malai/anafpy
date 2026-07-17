@@ -8,7 +8,7 @@ sources:
     retrieved: 2026-07-15
   - url: http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml
     title: "DUKIntegrator update feed (current core + per-form jar versions)"
-    retrieved: 2026-07-15
+    retrieved: 2026-07-17
   - url: https://static.anaf.ro/static/10/Anaf/Declaratii_R/AplicatiiDec/d300_v12_11022026.xml
     title: "D300 v12 XSD (the .xml extension notwithstanding, it is the schema)"
     retrieved: 2026-07-15
@@ -46,6 +46,32 @@ certSIGN Paperless vToken).
   go into `dist/lib/`. **The GUI mode auto-updates; the CLI mode does not** —
   staleness must be surfaced (anafpy's `declaratie_duk_status` /
   `DukIntegrator.feed_versions` compare installed against the feed).
+
+  **Feed shape** (live-fetched 2026-07-17; no XML namespace): one `<integrator>`
+  element for the core (its `<versiune>` is the DUKIntegrator core version, with
+  `iJars`/`sJars`/`zJars` lists of bare `jarURL`s), then **one container element
+  per form, named after the form**:
+
+  ```xml
+  <versiuni>
+    <integrator>
+      <versiune>1.4.18.3.3</versiune>
+      ...
+    </integrator>
+    <D300>
+      <versiuneJ>J12.0.1</versiuneJ>
+      <versiuneP>P9.0.0</versiuneP>
+      <JURL>http://static.anaf.ro/static/10/Anaf/update5/D300/D300Validator.jar</JURL>
+      <PURL>http://static.anaf.ro/static/10/Anaf/update5/D300/D300Pdf.jar</PURL>
+      <DURL>http://static.anaf.ro/static/10/Anaf/update5/D300/D300IstoriaVersiunilor.txt</DURL>
+    </D300>
+    ...
+  </versiuni>
+  ```
+
+  `versiuneJ` is the validator jar's version and `versiuneP` the PDF jar's; the
+  installed `<form>IstoriaVersiunilor.txt` (what `DURL` points at) leads with the
+  same `J…` string, which is what makes installed-vs-feed comparison possible.
 
 ### Silent-exit-on-update escape hatch (`offLine=Y`)
 

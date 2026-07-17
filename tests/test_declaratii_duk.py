@@ -162,22 +162,42 @@ def test_installed_forms(duk_dir: Path) -> None:
 # -- feed_versions -----------------------------------------------------------------
 
 
-def test_parse_versions_feed_attributes() -> None:
-    xml = (
-        '<versiuni><element nume="D300Validator.jar" versiune="J12.0.1"/>'
-        '<element nume="D112Validator.jar" versiune="J5.0.0"/>'
-        '<element nume="DecPdf.jar" versiune="P9.0.0"/></versiuni>'
+_FEED_ENTRY = (
+    "<{form}>"
+    "<versiuneJ>{version}</versiuneJ>"
+    "<versiuneP>P9.0.0</versiuneP>"
+    "<JURL>http://static.anaf.ro/static/10/Anaf/update5/{form}/"
+    "{form}Validator.jar</JURL>"
+    "<PURL>http://static.anaf.ro/static/10/Anaf/update5/{form}/"
+    "{form}Pdf.jar</PURL>"
+    "</{form}>"
+)
+
+
+def _feed(*forms: tuple[str, str]) -> str:
+    """A ``versiuni.xml`` body in the live per-form container shape."""
+    entries = "".join(_FEED_ENTRY.format(form=f, version=v) for f, v in forms)
+    return (
+        "<versiuni><integrator><versiune>1.4.18.3.3</versiune>"
+        "<sJars><jarURL>http://static.anaf.ro/static/10/Anaf/update5/ss8/"
+        "Validator.jar</jarURL></sJars>"
+        f"</integrator>{entries}</versiuni>"
     )
+
+
+def test_parse_versions_feed() -> None:
+    xml = _feed(("D300", "J12.0.1"), ("D112", "J5.0.0"))
     assert _parse_versions_feed(xml) == {"D300": "J12.0.1", "D112": "J5.0.0"}
 
 
 def test_parse_versions_feed_garbage_is_empty() -> None:
     assert _parse_versions_feed("not xml <<<") == {}
+    assert _parse_versions_feed("") == {}
 
 
 @respx.mock
 async def test_feed_versions_over_http(duk_dir: Path) -> None:
-    xml = '<versiuni><element nume="D300Validator.jar" versiune="J12.0.1"/></versiuni>'
+    xml = _feed(("D300", "J12.0.1"))
     respx.get("http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
         return_value=httpx.Response(200, text=xml)
     )

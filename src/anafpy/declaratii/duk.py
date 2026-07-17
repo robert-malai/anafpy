@@ -34,9 +34,9 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from xml.etree import ElementTree
 
 import httpx
+from parsel import Selector
 from pydantic import BaseModel
 
 from ..exceptions import AnafConfigError, AnafTransportError
@@ -306,20 +306,21 @@ def _form_version(lib: Path, form: str) -> str:
 def _parse_versions_feed(text: str) -> dict[str, str]:
     """Extract ``{form: version}`` from ANAF's ``versiuni.xml`` feed.
 
-    The feed lists ``<element>`` entries whose ``nume`` ends ``Validator.jar``
-    and whose ``versiune`` is the current version; the form is the jar's prefix.
-    Unparseable content yields an empty mapping (best-effort).
+    The feed holds one container per form (``<D300>``, ``<D112>``, ...) whose
+    ``JURL`` child points at the ``<form>Validator.jar`` and whose ``versiuneJ``
+    child is that jar's current version — the same ``J…`` string the installed
+    ``<form>IstoriaVersiunilor.txt`` leads with (live shape, 2026-07-17; see the
+    DUK reference §1). Unparseable content yields an empty mapping (best-effort
+    — parsel's recovering XML mode simply matches nothing).
     """
     versions: dict[str, str] = {}
-    try:
-        root = ElementTree.fromstring(text)
-    except ElementTree.ParseError:
+    if not text.strip():  # Selector rejects empty input with an exception
         return versions
-    for element in root.iter():
-        name = element.get("nume") or element.findtext("nume") or ""
-        version = element.get("versiune") or element.findtext("versiune") or ""
-        if name.endswith("Validator.jar") and version:
-            form = Path(name).name.removesuffix("Validator.jar")
-            if form and form not in versions:
-                versions[form] = version
+    for entry in Selector(text=text, type="xml").xpath("//*[JURL and versiuneJ]"):
+        jar = entry.xpath("JURL/text()").get("")
+        version = entry.xpath("versiuneJ/text()").get("")
+        if jar.endswith("Validator.jar") and version:
+            form = Path(jar).name.removesuffix("Validator.jar")
+            if form:
+                versions.setdefault(form, version)
     return versions
