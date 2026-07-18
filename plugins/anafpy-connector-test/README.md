@@ -4,31 +4,40 @@ A **temporary** plugin that answers one question: can a plugin-declared stdio MC
 server run under Cowork **and read the local anafpy login** (the OAuth token store
 that `anafpy auth login` writes to the OS keychain)?
 
-If yes, the connector could ship as a plugin — install one plugin, get prompted for
-credentials, done — and the `anafpy-setup` skill would no longer need to hand-write
-`claude_desktop_config.json`. If the server launches but can't see the token store
-(because Cowork runs it in an isolated/remote sandbox rather than on the local
-machine), the setup-writes-config path stays.
+## Round 2 — isolate launch from credentials
 
-## How it works
+Round 1 surfaced two problems: `command: "uvx"` didn't resolve (the Desktop plugin
+launcher doesn't inherit the shell PATH, so `~/.local/bin` isn't seen), and the
+`userConfig` credential prompt never appeared (that flow is a Claude Code feature,
+not wired into the Desktop/Cowork plugins UI). This round removes both variables:
 
-- `.mcp.json` declares a server named `anafpy-test` (deliberately not `anafpy`, so it
-  can't collide with a real connector) launched via `uvx --from anafpy[mcp] anafpy-mcp`
-  — path-independent, pulls from PyPI.
-- `userConfig` (in `plugin.json`) prompts for the Client ID / Secret / CUI at enable
-  time; the secret is `sensitive` (secure storage). The values substitute into the
-  server's `env` as `${user_config.*}`.
+- `command` is the **absolute** `uvx` path so the server actually launches.
+- No `env` / `userConfig` — the server runs **credential-less**, which is enough to
+  answer the architectural question. anafpy starts without credentials: it serves the
+  public `anaf_*` lookups plus `auth_status` (which reads the local token store).
 
-## Running the test
+The absolute path is machine-specific (fine for a throwaway); a shipped plugin would
+need a bundled launcher script that discovers `uvx` itself.
 
-1. Ensure you have logged in on this machine: `uv run anafpy auth status` shows a
-   valid token, and `uv`/`uvx` is on your PATH.
-2. In Cowork, install this plugin and fill in the three prompted values.
-3. Ask: **"What ANAF tools do you have?"** — confirms the plugin launched the server.
-4. Ask: **"What's my ANAF authentication status?"** — the decisive check: a valid
-   token means the plugin-launched server read your **local** login.
+## Running the test (Cowork)
+
+1. `/plugin marketplace update` then update/reinstall this plugin; restart the app so
+   the connector re-launches.
+2. Ask: **"Look up CUI 14399840 in the ANAF registry."** — a public, no-auth lookup.
+   A real answer proves the plugin **launched the server under Cowork**.
+3. Ask: **"What's my ANAF authentication status?"** — if it reports your token, the
+   plugin-launched server read your **local** login (the decisive check).
+
+## Interpreting
+
+- Public lookup works → plugin connectors DO run in Cowork. Credential injection is
+  then the only remaining problem to solve.
+- `auth_status` sees your token → the server runs where your local credentials live —
+  the connector could ship as a plugin.
+- Still no tools → the server isn't launching even with the absolute path (Cowork may
+  not start plugin stdio servers, or runs them in a sandbox); the
+  `claude_desktop_config.json` path stays.
 
 ## Remove after testing
 
-This plugin is not part of the shipped product. Once the question is answered, delete
-`plugins/anafpy-connector-test/` and its marketplace entry.
+Delete `plugins/anafpy-connector-test/` and its marketplace entry once done.

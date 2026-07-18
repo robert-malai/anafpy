@@ -1,13 +1,8 @@
 {
   "mcpServers": {
     "anafpy-test": {
-      "command": "uvx",
-      "args": ["--from", "anafpy[mcp]", "anafpy-mcp"],
-      "env": {
-        "ANAFPY_CLIENT_ID": "${user_config.client_id}",
-        "ANAFPY_CLIENT_SECRET": "${user_config.client_secret}",
-        "ANAFPY_CIF": "${user_config.cif}"
-      }
+      "command": "/Users/robert.malai/.local/bin/uvx",
+      "args": ["--from", "anafpy[mcp]", "anafpy-mcp"]
     }
   }
 }
