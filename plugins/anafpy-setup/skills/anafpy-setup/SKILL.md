@@ -3,7 +3,8 @@ name: anafpy-setup
 description: >
   Install, configure, verify, or repair anafpy on this computer — the local MCP
   server that lets Claude talk to Romania's ANAF (e-Factura, e-Transport, SPV,
-  registry lookups). Use when the user wants to set up / install / configure
+  registry lookups, and local tax-declaration authoring/signing). Use when the
+  user wants to set up / install / configure
   anafpy, connect ANAF to Claude, or when the anafpy tools have stopped working
   ("Claude can't see my ANAF tools", "e-Factura tools are missing", "it says run
   anafpy auth login"). Probes what is already in place, installs only what is
@@ -265,9 +266,43 @@ install; from then on they can just say *"log me in to SPV"* in Cowork.
 On **Windows on ARM** (e.g. Parallels), or with curl 8.13–8.15, `spv login` fails
 with `SEC_E_UNKNOWN_CREDENTIALS` or `SEC_E_CONTEXT_EXPIRED`. Both are fixed by
 pointing at Git for Windows' curl — add
-`"ANAFPY_SPV_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` to the `env`
+`"ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` to the `env`
 block from step 6. Since the Code tab already required Git for Windows, it is
 almost certainly installed; check before making them install anything.
+
+## Step 9 (optional) — Declaration tools
+
+Only offer this if they want Claude to fill in, validate, render, and **sign** a
+tax declaration (D300 VAT return first) on this computer. Nothing is filed with
+ANAF through these tools — Claude produces a signed PDF they then upload on the
+portal manually. **Signing is macOS-only** right now; on Windows, offer only the
+validate/render half and say signing isn't available yet.
+
+These tools drive ANAF's own desktop validator, **DUKIntegrator**, which you can
+install for them:
+
+1. Download and extract
+   [`dist_javaInclus20200203.zip`](https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip)
+   — it yields a `dist/` folder, which is what the server points at.
+2. For each form they file, drop that form's `…Validator.jar` and `…Pdf.jar` (from
+   ANAF's declaration page, e.g. the D300 page under `static.anaf.ro/.../Declaratii_R/`)
+   into `dist/lib/`. Ask which forms they need before fetching anything.
+3. Confirm **Java** is present (`java -version`, JRE/JDK 8+). anafpy only runs DUK's
+   *validate*/*render*, which work on any modern JVM.
+
+Then add one line to the `env` block from step 6, pointing at the extracted folder:
+
+```json
+        "ANAFPY_DUK_DIR": "/Users/you/DUKIntegrator/dist"
+```
+
+After they restart Claude, verify by asking Cowork *"check the declaration setup"*
+— it runs `declaratie_duk_status`, which confirms the install and flags an
+out-of-date validator (command-line DUK does not auto-update). Signing reuses the
+**same qualified certificate** as SPV (step 8): if they selected one there, the
+signer picks it up; otherwise set `"ANAFPY_SIGN_IDENTITY"` to the certificate's
+Keychain name. Signing fires the PIN/2FA on their device — the same human gate as
+everywhere else; you never handle the PIN.
 
 ## When something fails
 
