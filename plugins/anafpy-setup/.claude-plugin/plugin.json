@@ -2,7 +2,7 @@
   "name": "anafpy-setup",
   "displayName": "anafpy setup",
   "description": "Install and configure anafpy on this computer, then connect it to Claude. Probes what is already in place, installs what is missing, and repairs a broken setup.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Robert Malai"
   },
