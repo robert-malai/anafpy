@@ -1,0 +1,33 @@
+{
+  "name": "anafpy-connector-test",
+  "displayName": "anafpy connector (TEST)",
+  "description": "THROWAWAY TEST plugin: declares the anafpy MCP server as a plugin-provided connector to check whether a plugin-launched stdio server (a) reaches Cowork and (b) can read the LOCAL anafpy auth token store. Prompts for credentials at enable time and injects them into the server's env. Remove after the test concludes.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Robert Malai"
+  },
+  "repository": "https://github.com/robert-malai/anafpy",
+  "license": "Apache-2.0",
+  "keywords": ["anaf", "mcp", "test"],
+  "userConfig": {
+    "client_id": {
+      "type": "string",
+      "title": "ANAF Client ID",
+      "description": "The Client ID from your ANAF OAuth application (Profil Oauth).",
+      "required": true
+    },
+    "client_secret": {
+      "type": "string",
+      "title": "ANAF Client Secret",
+      "description": "The Client Secret from your ANAF OAuth application. Stored in secure storage, never in plaintext settings.",
+      "sensitive": true,
+      "required": true
+    },
+    "cif": {
+      "type": "string",
+      "title": "Firm CUI",
+      "description": "The firm's fiscal code (digits only) used as the default CIF.",
+      "required": true
+    }
+  }
+}
