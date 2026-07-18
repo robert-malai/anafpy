@@ -12,6 +12,14 @@
       "description": "Install and configure anafpy on this computer, then connect it to Claude. Probes what is already in place, installs what is missing, and repairs a broken setup.",
       "category": "setup",
       "tags": ["anaf", "e-factura", "e-transport", "romania", "mcp", "setup"]
+    },
+    {
+      "name": "anafpy-workflows",
+      "source": "./plugins/anafpy-workflows",
+      "displayName": "anafpy workflows",
+      "description": "ANAF workflow skills for Cowork: file e-Transport declarations, author/sign tax declarations, and summarize personal income. Drives the anafpy MCP tools (configure the connector via the anafpy-setup plugin).",
+      "category": "workflow",
+      "tags": ["anaf", "e-factura", "e-transport", "spv", "declaratii", "romania", "cowork"]
     }
   ]
 }

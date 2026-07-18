@@ -47,8 +47,8 @@ class ServerConfig(BaseSettings):
             (``ANAFPY_DOCS_DIR``); defaults to the repo's ``docs/anaf-reference/``
             when present.
         skills_dir: directory of workflow skills exposed as MCP prompts
-            (``ANAFPY_SKILLS_DIR``); defaults to the repo's ``skills/`` when
-            present.
+            (``ANAFPY_SKILLS_DIR``); defaults to the ``anafpy-workflows`` plugin's
+            ``plugins/anafpy-workflows/skills/`` when present.
         spv_session_path: the SPV cookie-session store written by
             ``anafpy spv login`` (``ANAFPY_SPV_SESSION``).
         spv_identity_path: the persisted certificate selection written by

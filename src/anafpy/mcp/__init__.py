@@ -29,9 +29,11 @@ stdio, so its filesystem is the user's), and the PDF is also a resource template
 (``anafmsg://{message_id}/pdf``) for hosts with resource UX — as is an SPV
 message's document (``spvmsg://{mesaj_id}/pdf``). The compiled ANAF reference is
 surfaced as read-only MCP resources so the model can ground BR-RO explanations and
-code lists. The workflow skills (``skills/*/SKILL.md``) are served as MCP
-**prompts** of the same name, so prompt-capable clients (Claude Desktop,
-``claude mcp add``) get the playbooks as a user-invoked entry point.
+code lists. The workflow skills (the ``anafpy-workflows`` plugin's
+``skills/*/SKILL.md``) are served as MCP **prompts** of the same name, so
+prompt-capable clients (Claude Desktop, ``claude mcp add``) get the playbooks as a
+user-invoked entry point — the same tree the plugin ships to Cowork as Agent
+Skills.
 
 The package splits **by service**: each service package owns its tools plus its
 own models and helpers — :mod:`.efactura` (tools, gate shapes, XML projections),

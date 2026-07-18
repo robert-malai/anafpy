@@ -1,12 +1,15 @@
-"""The workflow skills (``skills/*/SKILL.md``) as user-invoked MCP prompts.
+"""The workflow skills (``anafpy-workflows`` plugin) as user-invoked MCP prompts.
 
-The repo's ``skills/`` directory holds workflow skills — Markdown playbooks with
-YAML frontmatter (``skills/<name>/SKILL.md``). Every prompt-capable MCP consumer
-(``claude mcp add``, Claude Desktop, ...) gets them as user-invoked MCP **prompts**
-of the same name, carrying the same Markdown — prompts are the closest MCP
-primitive to a skill, invoked by the *user* (a slash command in Claude Code, the
-"+" attachment menu in Claude Desktop). The SKILL.md files are the single source
-of truth: this module reads them, it never duplicates them.
+The ``anafpy-workflows`` plugin's ``skills/`` directory
+(``plugins/anafpy-workflows/skills/<name>/SKILL.md``) is the single home of the
+workflow playbooks — Markdown with YAML frontmatter. It is the same tree the
+plugin ships to Cowork as Agent Skills; this module re-serves it so every
+prompt-capable MCP consumer (``claude mcp add``, Claude Desktop, ...) also gets
+them as user-invoked MCP **prompts** of the same name, carrying the same Markdown —
+prompts are the closest MCP primitive to a skill, invoked by the *user* (a slash
+command in Claude Code, the "+" attachment menu in Claude Desktop). The SKILL.md
+files are the single source of truth: this module reads them, it never
+duplicates them.
 
 Parsing is ``python-frontmatter``'s job (PyYAML underneath); this module only
 checks that the fields the prompt listing needs — ``name`` and ``description`` —
@@ -48,8 +51,8 @@ def load_skills(skills_dir: Path) -> list[SkillDocument]:
     """Parse every ``<skills_dir>/*/SKILL.md`` into a :class:`SkillDocument`.
 
     Args:
-        skills_dir: the skills root (the repo's ``skills/`` or
-            ``ANAFPY_SKILLS_DIR``).
+        skills_dir: the skills root (the ``anafpy-workflows`` plugin's
+            ``skills/`` or ``ANAFPY_SKILLS_DIR``).
 
     Returns:
         The parsed skills, sorted by path for a stable prompt order.
@@ -88,7 +91,12 @@ def _required_field(post: frontmatter.Post, key: str, path: Path) -> str:
 
 
 def _skills_dir(cfg: ServerConfig) -> Path | None:
-    default = Path(__file__).resolve().parents[3] / "skills"
+    default = (
+        Path(__file__).resolve().parents[3]
+        / "plugins"
+        / "anafpy-workflows"
+        / "skills"
+    )
     skills = cfg.skills_dir or default
     return skills if skills.is_dir() else None
 

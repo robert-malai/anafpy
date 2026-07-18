@@ -1,13 +1,19 @@
 # Workflow skills
 
-Beyond individual tools, the server ships **workflow playbooks as MCP prompts** —
-a user-invoked entry point for multi-step flows. Each `skills/*/SKILL.md` in the
-repository is served as a same-name prompt, so prompt-capable clients surface
-them directly: Claude Desktop's "+" menu, or `/mcp__anafpy__<name>` in Claude
-Code. An optional `source` argument seeds the workflow with where the data lives.
+Beyond individual tools, these multi-step flows ship as **workflow playbooks**,
+delivered two ways from one source. Their home is the **`anafpy-workflows`
+plugin** (`plugins/anafpy-workflows/skills/*/SKILL.md`): installed from the
+`anafpy` marketplace (`/plugin marketplace add robert-malai/anafpy`) they surface
+in **Cowork** (and chat) as Agent Skills, invoked in plain language or picked from
+the sidebar. The MCP server **also** re-serves the same files as same-name MCP
+**prompts**, so other prompt-capable clients get them too: Claude Desktop's "+"
+menu, or `/mcp__anafpy__<name>` in Claude Code. An optional `source` argument
+seeds the workflow with where the data lives.
 
-The SKILL.md files are the single source of truth — they travel with the
-checkout, whichever way the server is connected.
+There is one source of truth — the plugin's SKILL.md files — with two consumers.
+A skill drives the anafpy tools, so a Cowork user needs both the plugin (the
+playbooks) and the anafpy connector (the tools; see the
+[setup walkthrough](setup.md)).
 
 ## `etransport-declare`
 

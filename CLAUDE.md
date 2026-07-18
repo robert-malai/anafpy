@@ -89,8 +89,9 @@ the OS credential store via `KeyringTokenStore` (`keyring` is a core dependency)
 CLI honours the same variable and `--store-backend`),
 `ANAFPY_ENV` (`test`/`prod`, default `prod`), `ANAFPY_CIF` (default fiscal code), `ANAFPY_DOCS_DIR`
 (reference resources, defaults to the repo `docs/anaf-reference/`),
-`ANAFPY_SKILLS_DIR` (workflow skills re-served as MCP prompts, defaults to the repo
-`skills/`), `ANAFPY_SPV_SESSION` (SPV cookie-session store, default
+`ANAFPY_SKILLS_DIR` (workflow skills re-served as MCP prompts, defaults to the
+`anafpy-workflows` plugin's `plugins/anafpy-workflows/skills/`),
+`ANAFPY_SPV_SESSION` (SPV cookie-session store, default
 `~/.anafpy/spv-session.json`), `ANAFPY_SPV_IDENTITY_FILE` (persisted SPV
 certificate selection, default `~/.anafpy/spv-identity.json`),
 `ANAFPY_CURL` (override the curl binary of **both** certificate
@@ -218,7 +219,8 @@ src/anafpy/
                          # run_submit (the STEP-2 skeleton with its two orderings)
     artifacts.py         # tool annotations + shared ensure_writable/write_artifact
     reference.py         # docs/anaf-reference/ as anafref:// resources
-    prompts.py           # skills/*/SKILL.md loader + same-name MCP prompts
+    prompts.py           # anafpy-workflows plugin's skills/*/SKILL.md loader +
+                         # same-name MCP prompts (one source, two consumers)
     efactura/            # tools.py (tools + anafmsg:// resource), models.py
                          # (UblXmlInput, PreparedInvoice), documents.py (previews,
                          # upload standards, transformare PDF rendering)
@@ -232,25 +234,32 @@ src/anafpy/
                          # duk_status — LOCAL, no filing (M1) — + declaratie_status/
                          # recipisa over the public StareD112), models.py
     __main__.py          # `python -m anafpy.mcp` (stdio)
-skills/                  # workflow skills, served by the MCP server as same-name
-                         # prompts (etransport-declare: source data -> FlatTransport
-                         # -> prepare -> approval -> submit -> status;
-                         # declaratie-prepare: unstructured data -> form selection
-                         # -> completion-guide read -> CUI-lookup inference + ask
-                         # -> author XML -> validate loop -> render -> approval ->
-                         # sign -> manual filing -> status/recipisa; replaced
-                         # declaratie-compose 2026-07-18)
-.claude-plugin/          # marketplace.json — the Claude Code plugin marketplace
+.claude-plugin/          # marketplace.json — the `anafpy` plugin marketplace
                          # published from this repo (`/plugin marketplace add
-                         # robert-malai/anafpy`)
-plugins/anafpy-setup/    # the ONE plugin: an `anafpy-setup` skill that installs +
-                         # configures anafpy on an end user's computer. Deliberately
-                         # NOT in skills/ — those are MCP-served prompts, and this
-                         # skill has to run BEFORE the MCP server exists. It runs in
-                         # Claude Desktop's Code tab (local sessions only) and its
-                         # job is to write claude_desktop_config.json for the Cowork
-                         # tab; a plugin's own MCP servers are a Claude Code scope
-                         # and never reach Cowork.
+                         # robert-malai/anafpy`); lists the two plugins below
+plugins/anafpy-setup/    # plugin: an `anafpy-setup` skill that installs + configures
+                         # anafpy on an end user's computer and connects it to Claude
+                         # (writes claude_desktop_config.json, which the Cowork tab
+                         # reads). Runs in a LOCAL session (needs a shell) — refuses
+                         # cloud/remote. Separate from the MCP server because it must
+                         # run BEFORE that server exists.
+plugins/anafpy-workflows/ # plugin: the workflow SKILLS themselves. Its skills/ is
+  skills/                #   the SINGLE home of the playbooks (etransport-declare:
+                         #   source data -> FlatTransport -> prepare -> approval ->
+                         #   submit -> status; declaratie-prepare: unstructured data
+                         #   -> form selection -> completion-guide read -> CUI-lookup
+                         #   inference + ask -> author XML -> validate loop -> render
+                         #   -> approval -> sign -> manual filing -> status/recipisa;
+                         #   personal-income-summary; declaratie-compose replaced
+                         #   2026-07-18). Installed from the marketplace these
+                         #   surface in Cowork as Agent Skills — the claude.ai plugin
+                         #   ecosystem DOES bring bundled skills into chat + Cowork
+                         #   (verified 2026-07-18), distinct from Claude Code
+                         #   marketplace plugins which are Code-tab-only. The MCP
+                         #   server re-serves this SAME tree as MCP prompts
+                         #   (ANAFPY_SKILLS_DIR default points here) — one source,
+                         #   two consumers. Skills drive the MCP tools, so the anafpy
+                         #   connector (anafpy-setup) must also be configured.
 schemas/                 # vendored XSDs + EN16931 Schematron sources (git-tracked,
                          # NOT shipped in the wheel; the .sch feed the codelist codegen)
 scripts/                 # codegen scripts
@@ -371,15 +380,21 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   returns a `FastMCP`; `AppContext` owns one `TokenProvider` + lazily-built clients and
   closes them in the server lifespan. The server reads the existing token store and
   refreshes headlessly — it never drives the cert/browser step (that stays the CLI).
-- **Workflow skills are served as MCP prompts** (2026-07-03). Each
-  `skills/*/SKILL.md` is served as a same-name prompt (`anafpy.mcp.skills` reads
-  frontmatter + body; optional `source` argument seeds the workflow), giving
-  prompt-capable clients (Claude Desktop, `claude mcp add`) the playbooks as a
-  user-invoked entry point. The SKILL.md files are the single source of
-  truth — never duplicate their content into the server; parsing is
-  `python-frontmatter`'s (the `mcp` extra), with `mcp/prompts.py` only enforcing
-  that `name`/`description` are present (missing fields fail loudly at server
-  start).
+- **Workflow skills live in the `anafpy-workflows` plugin, and are ALSO served as
+  MCP prompts** (skills-as-prompts 2026-07-03; plugin-as-source 2026-07-18). The
+  playbooks' single home is `plugins/anafpy-workflows/skills/*/SKILL.md`: installed
+  from the marketplace they surface in Cowork as Agent Skills (the claude.ai plugin
+  ecosystem brings bundled skills into chat + Cowork — verified 2026-07-18 — unlike
+  Claude Code marketplace plugins, which are Code-tab-only), and the MCP server
+  re-serves that same tree as same-name prompts (`ANAFPY_SKILLS_DIR` defaults there;
+  `anafpy.mcp.prompts` reads frontmatter + body; optional `source` argument seeds
+  the workflow) for prompt-capable clients (Claude Desktop, `claude mcp add`). One
+  source, two consumers — the server reads the plugin's SKILL.md files, never
+  duplicating them; parsing is `python-frontmatter`'s (the `mcp` extra), with
+  `mcp/prompts.py` only enforcing that `name`/`description` are present (missing
+  fields fail loudly at server start). A skill drives the MCP tools, so the Cowork
+  user needs both the plugin (skills) and the anafpy connector (tools, via
+  `anafpy-setup`).
 - **e-Factura filing tools.** Two STEP-1 shapes feed one gate: `efactura_prepare`
   takes complete UBL XML (`UblXmlInput {xml|path}`) verbatim — the strongly
   recommended path when upstream invoicing software produced the document

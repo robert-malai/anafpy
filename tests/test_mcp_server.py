@@ -1010,6 +1010,8 @@ async def test_declaratie_prepare_skill_uris_are_served(
     monkeypatch.delenv("ANAFPY_DOCS_DIR", raising=False)
     skill = (
         Path(__file__).resolve().parents[1]
+        / "plugins"
+        / "anafpy-workflows"
         / "skills"
         / "declaratie-prepare"
         / "SKILL.md"
@@ -1090,8 +1092,8 @@ async def test_prompt_source_argument_is_appended(
 async def test_repo_skills_parse_and_list(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Default resolution serves the repo's own skills/ — keeps the real SKILL.md
-    # frontmatter parseable by the loader.
+    # Default resolution serves the anafpy-workflows plugin's skills/ — keeps the
+    # real SKILL.md frontmatter parseable by the loader.
     monkeypatch.delenv("ANAFPY_SKILLS_DIR", raising=False)
     server = create_server(_config(tmp_path))
     names = {p.name for p in await server.list_prompts()}

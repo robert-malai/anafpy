@@ -1,0 +1,13 @@
+{
+  "name": "anafpy-workflows",
+  "displayName": "anafpy workflows",
+  "description": "ANAF workflow skills for Claude Cowork: file an e-Transport declaration and get a UIT, author/validate/sign a tax declaration, and summarize personal income from the SPV mailbox. These skills drive the anafpy MCP server's tools, so the anafpy connector must also be configured (see the anafpy-setup plugin).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Robert Malai"
+  },
+  "homepage": "https://anafpy.readthedocs.io/en/latest/mcp/skills/",
+  "repository": "https://github.com/robert-malai/anafpy",
+  "license": "Apache-2.0",
+  "keywords": ["anaf", "e-factura", "e-transport", "spv", "declaratii", "romania", "cowork"]
+}

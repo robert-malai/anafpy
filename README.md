@@ -222,9 +222,9 @@ The distribution offers two extras: `anafpy[mcp]` (the MCP server) and
 For the MCP server, prefer running from a **checkout** (as the setup walkthrough
 does): the
 compiled ANAF reference (`docs/anaf-reference/`, served as MCP resources) and the
-workflow skills (`skills/`, served as MCP prompts) live in the repo, not in the
-wheel. A PyPI-installed server runs fine but serves neither unless
-`ANAFPY_DOCS_DIR` / `ANAFPY_SKILLS_DIR` point at copies. From source:
+workflow skills (`plugins/anafpy-workflows/skills/`, served as MCP prompts) live in
+the repo, not in the wheel. A PyPI-installed server runs fine but serves neither
+unless `ANAFPY_DOCS_DIR` / `ANAFPY_SKILLS_DIR` point at copies. From source:
 
 ```bash
 git clone https://github.com/robert-malai/anafpy && cd anafpy
