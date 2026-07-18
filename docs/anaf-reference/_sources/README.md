@@ -85,6 +85,51 @@ pin), retrieved 2026-07-12.
 | `clientspv/src/CertificateChooser.java` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/src/main/java/sqw/certificat/CertificateChooser.java |
 | `clientspv/src/Sign.java` | https://github.com/MfpAnaf/ClientSPV/blob/949ea92c2b4abe99d531a5a094af288e6f662c26/src/main/java/sqw/certificat/Sign.java |
 
+## StareD112 (filing status + recipisa) — `stared112/`
+
+ANAF's public, unauthenticated filing-status page (`https://www.anaf.ro/StareD112/`)
+has **no official documentation** — these live captures (curl, plain HTTP; the
+service needs no session priming) are the only wire record, feeding
+`declaratii/stared112.md`. All retrieved 2026-07-16 against a real F4109 filing
+(values redacted: the real upload indexes, CUI, and session-cookie values were
+replaced with synthetic same-shape stand-ins — index `1100000001`,
+CUI `99999909`, `JSESSIONID=REDACTED`/`TS01f4a1fb=REDACTED` — because the
+(index, CUI) pair is the knowledge-based access key to a filing's recipisa;
+the captured page *structure* is verbatim).
+
+| File | What it captures |
+|---|---|
+| `stared112/form-page.html` (+ `.headers.txt`) | the query form (`GET /StareD112/`): field names `ghiseu`/`id`/`cui`, the 200-declaration warning |
+| `stared112/result-found.html` (+ `.headers.txt`) | `POST vizualizareStare.do`, matching pair: header line, six-column table (incl. a >60-day row with no recipisa link), the four documented states |
+| `stared112/result-notfound.html` (+ `.headers.txt`) | same POST, valid shape but no match (also returned for a mismatched pair) |
+| `stared112/result-invalid-input.html` | same POST, non-numeric input → "Nu ati introdus un index valid" |
+| `stared112/recipisa-found.headers.txt` | `GET ObtineRecipisa?numefisier=<index>.pdf`, known index: 200 `application/pdf`, 9 078 bytes (PDF body itself not vendored — it is a real signed receipt) |
+| `stared112/recipisa-empty.headers.txt` | same GET, unknown index `9999999999`: 200 `application/pdf`, `Content-Length: 0` |
+
+## Declaration portal upload (WAS6DUS) — `decl-portal/`
+
+Live recon captures of `https://decl.anaf.mfinante.gov.ro/WAS6DUS/` (the
+"Transmitere declarații" upload app; no official documentation exists), feeding
+`declaratii/portal-upload.md`. Retrieved 2026-07-16: the unauthenticated
+choreography with plain curl, plus **one certificate login** (macOS
+SecureTransport curl + Keychain identity, vToken 2FA approved by the
+maintainer) — **no document was filed**. Session cookies visible in the
+captures were invalidated the same day (`/exit` + the 10-minute APM timeout)
+and their values are additionally scrubbed to `REDACTED` in the vendored
+files. `decl-portal/upload-response-d406t.html` (captured 2026-07-17 by the
+live D406T filing) has its real upload index replaced with the synthetic
+`1100000005` — the (index, CUI) pair is a StareD112 access key; the page
+structure is verbatim.
+
+| File | What it captures |
+|---|---|
+| `decl-portal/root-redirect.headers.txt` | `GET /WAS6DUS/` cold: 302 `/my.policy`, BigIP, MRHSession cookies |
+| `decl-portal/logon-page.html` | the APM logon page: certificate-only form ("Prezentare certificat", `vhost=standard` → POST `/my.policy`) |
+| `decl-portal/login-choreography-verbose.txt` | curl verbose of the full cert login: form POST → cert GET → `/my.policy_nonce` → 302 `/WAS6DUS/` → 200 (ends in the benign `SSLRead -9806`) |
+| `decl-portal/app-welcome.html` | the authenticated upload app: multipart form `POST /WAS6DUS/displayFile.do`, file field `linkdoc`; links StareD112 for recipisa checks |
+| `decl-portal/replay-plain-get.headers.txt` | the same page re-fetched by a plain certificate-less curl riding the cookies (200 — bearer-cookie session confirmed) |
+| `decl-portal/upload-error-nofile.html` | the app's generic error page (`GET displayFile.do` with no file): reason in a red span + link to `/WAS6DUS/welcome.do` |
+
 ## Related ANAF artifacts, deliberately not vendored here
 
 - **CIUS-RO validation artifacts** — `ro16931-ubl-1.0.9.zip` (Schematron + XSD):

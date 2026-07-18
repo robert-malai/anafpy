@@ -28,8 +28,6 @@ deliberately a caller concern — the MCP layer guards agent loops.
 from __future__ import annotations
 
 import json
-from types import TracebackType
-from typing import Self
 
 import httpx
 from pydantic import ValidationError
@@ -45,6 +43,7 @@ from tenacity import (
 )
 
 from .._transport.base import as_text, is_empty_result_message, raise_for_status
+from .._transport.http import HttpClientBase
 from ..exceptions import (
     AnafConfigError,
     AnafResponseError,
@@ -74,15 +73,16 @@ def _business_error(operation: str, eroare: str, body: bytes) -> AnafResponseErr
     return AnafResponseError(message, status_code=200, body=as_text(body))
 
 
-class SpvClient:
+class SpvClient(HttpClientBase):
     """Talks to a taxpayer's SPV over an established APM cookie session.
 
     Construct with a :class:`~anafpy.spv.auth.SpvSessionProvider` over the
     session store an earlier :meth:`login` filled. The client owns an
     ``httpx.AsyncClient`` (unless one is injected — it must then carry
-    :class:`~anafpy.spv.auth.SpvAuth` itself) and should be used as an async
-    context manager. Cookie rotations are saved back to the store
-    transparently.
+    :class:`~anafpy.spv.auth.SpvAuth` itself and a non-empty ``base_url``;
+    an empty one raises :class:`~anafpy.exceptions.AnafConfigError`, since
+    injected clients are never mutated) and should be used as
+    an async context manager. Cookie rotations are saved back to the store.
     """
 
     def __init__(
@@ -93,23 +93,12 @@ class SpvClient:
         timeout: float = 60.0,
     ) -> None:
         self._provider = provider
-        self._owns_http = http is None
-        self._http = http or httpx.AsyncClient(auth=SpvAuth(provider), timeout=timeout)
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        await self.aclose()
-
-    async def aclose(self) -> None:
-        if self._owns_http:
-            await self._http.aclose()
+        super().__init__(
+            http=http,
+            base_url=SPV_BASE_URL,
+            timeout=timeout,
+            auth=SpvAuth(provider),
+        )
 
     # -- session -----------------------------------------------------------------------
 
@@ -137,12 +126,9 @@ class SpvClient:
         ``follow_redirects=False`` is essential: the auth flow must see the raw
         302s to tell a revalidation hop from the login wall.
         """
-        try:
-            response = await self._http.get(
-                f"{SPV_BASE_URL}/{path}", params=params, follow_redirects=False
-            )
-        except httpx.HTTPError as exc:  # connect/read/timeout/etc.
-            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        response = await self._request_http(
+            "GET", path, params=params, follow_redirects=False
+        )
         raise_for_status(response)
         return response
 

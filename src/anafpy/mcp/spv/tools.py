@@ -58,7 +58,14 @@ from ...spv import (
     load_selected_identity,
     save_selected_identity,
 )
-from ..artifacts import ARTIFACT_SAVING, MUTATING, READ_ONLY, REQUESTING, write_artifact
+from ..artifacts import (
+    ARTIFACT_SAVING,
+    MUTATING,
+    READ_ONLY,
+    REQUESTING,
+    check_writable,
+    write_artifact,
+)
 from ..config import ServerConfig
 from ..context import AppContext
 from .nomenclature import REPORT_TYPES_NOTE, report_type_entries, resolve_report_type
@@ -428,12 +435,10 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         overwrite: bool = False,
     ) -> dict[str, object]:
         target = _save_target(save_as, dest_dir, f"spv-raport-{id_solicitare}.pdf")
-        # Fail the collision BEFORE committing to a poll that can take minutes.
-        if Path(target).expanduser().exists() and not overwrite:
-            raise AnafConfigError(
-                f"refusing to overwrite existing file {target} — pick another "
-                "name, or pass overwrite=true to replace it deliberately"
-            )
+        # Fail the collision BEFORE committing to a poll that can take minutes —
+        # side-effect-free, so a poll that times out leaves no freshly-created
+        # directory tree behind (write_artifact makes the parents on success).
+        check_writable(target, overwrite=overwrite)
         timeout_s = min(timeout_s, 900.0)  # keep one tool call bounded
         try:
             document = await ctx.spv().wait_for_report(

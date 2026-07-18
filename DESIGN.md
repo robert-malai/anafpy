@@ -68,8 +68,17 @@ invoicing system.
 Python **3.12+** (floor set by PEP 695 syntax in the flat models and lookups; dev
 pin is 3.13), **httpx**, **Pydantic v2**.
 
+Since shipped, expanding the original scope: **SPV** (read-only mailbox, cert-mTLS
+— landed 2026-07-12, §11 notwithstanding its earlier "out of scope" listing) and
+**declaration authoring + signing** (`anafpy.declaratii`, landing 2026-07-15 —
+local D300 authoring, DUKIntegrator validation, qualified signing; plus
+StareD112 filing-status/recipisa tracking, public no-auth, added 2026-07-16;
+see §12). **Filing declarations with ANAF stays out of scope** for now (there is
+no SPV declaration-upload API; portal upload is a later milestone).
+
 Out of scope: local persistence of documents; reconciliation / accounting logic;
-inbound e-Transport; SPV; e-TVA; CII syntax; e-Transport API v1; a sync facade
+inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; **filing tax
+declarations** (authoring + signing only, for now); a sync facade
 *(dropped 2026-07-03 — the consumers that exist are async: the MCP server and
 `asyncio.run` scripts; was to be generated via `unasync`)*.
 
@@ -103,6 +112,19 @@ src/anafpy/
 skills/            # workflow skills, served by the MCP server as same-name prompts
 docs/anaf-reference/   # agent-compiled local reference (+ _sources/)
 ```
+
+The six network clients share only a small `_transport.HttpClientBase`
+chassis: owned-versus-injected `httpx.AsyncClient` lifecycle, trailing-slash
+base-URL convention, and network-error translation. An owned client is
+constructed with the resolved service URL; an injected client is **never
+mutated** — one with a non-empty `base_url` is accepted as-is (the test/proxy
+seam), while an empty `base_url` raises `AnafConfigError` at construction,
+naming the service URL the caller must configure (silently stamping a URL onto
+a caller-owned client would mis-route a second anafpy client sharing it). Request semantics and
+response/business-outcome parsing remain in each service client. Package-level
+`models.py` modules are the value-type homes; in particular,
+`declaratii/models.py` owns the DUK, signing, portal-upload, and StareD112
+outcomes without importing the optional pyHanko stack.
 
 ## 3. Authentication (shared)
 
@@ -589,3 +611,107 @@ never-self-approve rules the two-step gate assumes. After the PyPI release: an
 MCPB bundle for Claude Desktop (`server.type: "uv"` so the host manages Python;
 `user_config` with `sensitive` fields → OS keychain, mapped onto the existing
 `ANAFPY_*` env vars) — a thin wrapper over `anafpy[mcp]`.
+
+## 12. Declarations (authoring + signing + status tracking)
+
+> Landed 2026-07-15 (`anafpy.declaratii`, M1): **local document generation and
+> signing, exposed via MCP.** Recipisa/status tracking landed 2026-07-16, and
+> the recon-grade library upload client landed 2026-07-17; MCP filing exposure
+> remains the next M2 slice. See the two later subsections below.
+
+**The problem.** A taxpayer with no upstream software needs to produce a valid,
+signed tax declaration (D300 VAT return first; the design is per-form generic).
+Unlike e-Factura/e-Transport, ANAF exposes **no submission web service** for
+declarations — filing is a portal upload behind the same F5 APM cert wall as SPV.
+So M1 stops at a signed PDF the user files manually; M2 will automate the upload.
+
+**Pipeline** (all local, no ANAF host): unstructured info → author the XML from
+the form's XSD → **DUKIntegrator `-v`** (validate-fix loop until `ok`) →
+**DUKIntegrator `-p`** (official PDF with the XML embedded) → **pyHanko + a
+platform raw-signer** (qualified signature) → signed PDF on disk.
+
+**Must-keep invariants.**
+
+1. **anafpy never touches key material.** The raw RSASSA-PKCS1-v1_5/SHA-256
+   signature is delegated to the OS (Security.framework on macOS; CNG or
+   DUK+PKCS#11 on Windows later); the PIN/2FA is owned by the token middleware.
+   **No MCP tool accepts a PIN — ever** (it would enter model context). The raw
+   signer is a `RawSigner` protocol (`certificate()` + async `sign()`); its macOS
+   implementation is `KeychainRawSigner`, ctypes against Security.framework
+   (`SecKeyCreateSignature`), chosen over a compiled Swift helper (a toolchain
+   dependency) and over `pyobjc` (a heavy runtime dependency; kept as the
+   documented fallback).
+2. **Validation authority is ANAF's.** DUK's per-form validator jars *are* ANAF's
+   code; anafpy runs them and never re-implements a rule. The composed values —
+   the `nr_evid` payment-evidence numbers of the self-assessed forms
+   (D300/D100/D710/D101/D301, four composers in `declaratii/nr_evid.py`) — are
+   pure functions (decoded from the validator bytecode, confirmed against the
+   annex examples and live `-v` runs) — composition, not validation. Success is judged by the err-file content, never
+   by DUK's exit code (`0` even on failure).
+3. **Signing is consequential.** `declaratie_sign` is gated on `confirm=true`
+   (the model must relay the user's explicit ask), one attempt per call, failures
+   returned as `signed=false` + guidance (mirroring `spv_login`, not exceptions).
+   There is **no two-step filing gate** — nothing is filed with ANAF in M1.
+4. **Binary artifacts go to disk** at caller-given paths through the shared
+   `write_artifact` collision guard, never base64 into context.
+
+**The CryptoTokenKit finding.** On macOS, certSIGN Paperless vToken is a
+CryptoTokenKit extension with **no PKCS#11 dylib**, so DUK's `sunpkcs11` signing
+path (and Windows-only `mscapi`) cannot reach the key — it is reachable only
+through Security.framework, and CPython's `ssl` cannot present a non-exportable
+platform-store key. This is why signing is a separate pyHanko + raw-signer path
+rather than DUK `-s`, and why M1 signing is **macOS-only**; Windows follows over
+the same `RawSigner` seam. Details and the proven Swift reference semantics live
+in [the DUK reference](docs/anaf-reference/declaratii/duk.md).
+
+**Distribution.** Signing needs the optional `anafpy[declaratii]` extra
+(pyHanko); the tools import-guard and raise a "install anafpy[declaratii]"
+`AnafConfigError` when it is absent, like the `mcp` extra. DUKIntegrator is the
+user's to install (like the OAuth app and the certificate): pointed at via
+`ANAFPY_DUK_DIR`, staleness checked, never auto-installed.
+
+**Status tracking (StareD112).** Recon for M2 (2026-07-16) found that recipisa
+tracking needs no certificate at all: ANAF's `www.anaf.ro/StareD112/` service is
+**public and unauthenticated** — the upload index + CUI pair is knowledge-based
+access to the CUI's filings from the last 3 months (max 200), with per-document
+processing state and the signed recipisa PDF (downloadable ~60 days from
+filing; an unknown/expired index answers HTTP 200 with an *empty* PDF body).
+So `DeclarationStatusClient` (`declaratii/status.py`) landed ahead of the upload
+client: a small no-auth httpx client with strict HTML parsing — "no declaration
+identified" is a returned business outcome (`found=False`), an unrecognised
+page raises, per the error model. Scraping is offloaded to **parsel** (Scrapy's
+selector layer: CSS/XPath over lxml, `py.typed`; a core dependency since
+2026-07-16) — decided when the WAS6DUS recon confirmed the upload portal is
+HTML-only too, making HTML extraction a pattern rather than a one-off; the
+strict shape checks stay ours, parsel only does the extraction. This narrows M2 to the upload itself; the
+recipisa-via-SPV route (`Duplicat Recipisa` cerere) remains the fallback for
+documents older than StareD112's windows. MCP: `declaratie_status` (read-only)
++ `declaratie_recipisa` (artifact-saving); both work with zero configuration.
+Wire reference:
+[docs/anaf-reference/declaratii/stared112.md](docs/anaf-reference/declaratii/stared112.md).
+
+**M2 live-verification vehicle: D406T — and the recon-grade upload client.**
+There is no separate TEST environment for declaration filing, but ANAF's SAF-T
+voluntary-testing programme (a permanent assistance service, verified
+2026-07-17) accepts the **D406T** test declaration on the **production** portal
+with **no legal or fiscal effect** — the data is excluded from risk analyses
+and deleted after the verification report. D406T is its own DUK form (namespace
+`mfp:anaf:dgti:d406t:declaratie:v1`; jars only in ANAF's dedicated `duk_SAFT`
+distribution — sourcing and structure gotchas in the
+[DUK reference](docs/anaf-reference/declaratii/duk.md)). On that basis the
+first M2 slice landed the same day: `declaratii/upload.py` —
+`PortalCurlBootstrapper` (the WAS6DUS certificate choreography, discrete curl
+steps, SPV's platform-keystore model) + `DeclarationUploadClient` (cookie-borne
+multipart POST; the known rejection page is a returned business outcome). The
+live test (`tests/test_declaratii_upload_live.py`, gated
+`ANAFPY_LIVE_FILE_D406T=1` since it fires the certificate 2FA twice) files the
+committed minimal D406T (`tests/fixtures/declaratii/d406t-minimal.xml`) end to
+end; its **first run (2026-07-17) verified the whole chain in one pass** —
+the success page was captured (upload index in "Indexul este …"; the parse is
+hardened on the real shape), the **pyHanko CMS signature was accepted** by the
+portal, and **StareD112 listed the D406T** (`In prelucrare`) within a minute.
+Note the portal's own caveat: the success page is not the registration
+confirmation — the recipisa is. What remains for M2 proper is the MCP
+exposure: a gated `declaratie_prepare`/`_submit` pair over `mcp/gate.py`
+(two-step confirmation like the e-Factura/e-Transport filings). See the
+[portal-upload reference](docs/anaf-reference/declaratii/portal-upload.md) §4-§5.

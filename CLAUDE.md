@@ -36,7 +36,21 @@ four operations (declaration/correction, deletion, confirmation, vehicle change)
 Phase 1 is the typed async clients; phase 2 is
 the **MCP server** (`anafpy.mcp`, extra `anafpy[mcp]`) exposing the operations as
 Claude Cowork skills. The client methods map 1:1 onto MCP tools — discrete operations,
-serializable typed inputs/outputs, good docstrings. Distribution is **free and
+serializable typed inputs/outputs, good docstrings. A third strand is
+**`anafpy.declaratii`** (added 2026-07-15): **local** tax-declaration
+authoring, validation (via ANAF's DUKIntegrator), official-PDF rendering, and
+qualified signing (the raw op delegated to the OS token — no key material or PIN
+in-process), exposed as `declaratie_*` MCP tools. M1 is authoring + signing;
+**filing the signed document with ANAF is a later milestone** (no SPV/portal
+upload API yet) — but **status tracking already landed** (2026-07-16):
+`DeclarationStatusClient` checks a filed declaration's processing state and
+downloads the signed recipisa over ANAF's **public, no-auth** StareD112 service
+(upload index + CUI are the access key), so the post-manual-filing confirmation
+loop is automated — and the **first M2 slice landed recon-grade** (2026-07-17):
+`DeclarationUploadClient` (`declaratii/upload.py`) does the WAS6DUS portal
+certificate login + multipart filing POST, live-verified by filing **D406T**,
+ANAF's sanctioned no-fiscal-effect SAF-T test declaration (the only permitted
+production filing; DESIGN.md §12). Distribution is **free and
 as-is**: the library is for anyone to use; the MCP server is **best-effort**, and
 configuring it — including provisioning the OAuth application on ANAF's portal —
 is the user's responsibility (DESIGN.md §11).
@@ -79,10 +93,16 @@ CLI honours the same variable and `--store-backend`),
 `skills/`), `ANAFPY_SPV_SESSION` (SPV cookie-session store, default
 `~/.anafpy/spv-session.json`), `ANAFPY_SPV_IDENTITY_FILE` (persisted SPV
 certificate selection, default `~/.anafpy/spv-identity.json`),
-`ANAFPY_SPV_CURL` (override the SPV bootstrap's curl binary — read by
-`CurlBootstrapper` itself, so it covers CLI and MCP alike; needed on
-Windows-on-ARM, where x64-only vendor KSPs — certSIGN vToken — require an
-x64 Schannel curl such as Git for Windows', see the SPV reference §1.1).
+`ANAFPY_CURL` (override the curl binary of **both** certificate
+bootstraps — SPV and the declaration upload portal; read at the shared
+`_transport/curl.py` base, so it covers CLI and MCP alike; renamed from
+`ANAFPY_SPV_CURL` 2026-07-17, no compat alias; needed
+on Windows-on-ARM, where x64-only vendor KSPs — certSIGN vToken — require an
+x64 Schannel curl such as Git for Windows', see the SPV reference §1.1),
+`ANAFPY_DUK_DIR` (the extracted DUKIntegrator `dist/` folder — enables the
+`declaratie_*` tools; no default), `ANAFPY_DUK_JAVA` (the java binary; optional),
+`ANAFPY_SIGN_IDENTITY` (Keychain identity name to sign declarations with;
+optional — falls back to the persisted SPV certificate selection).
 
 Codegen (only when re-vendoring XSDs / Schematron sources — see below):
 
@@ -100,10 +120,22 @@ green and must stay green.
 ```
 src/anafpy/
   exceptions.py          # AnafError hierarchy (see "Error model")
-  _transport/base.py     # Environment, Service, service_base_url + shared error raising
+  _transport/base.py     # Environment/Service + shared enums/CUI normalization/error raising
+  _transport/http.py     # HttpClientBase: six clients' owned/injected lifecycle
+                         # (owned gets the service base_url; injected is never
+                         # mutated — empty base_url raises AnafConfigError)
+                         # + network-error translation
+  _transport/subprocess.py # bounded async subprocess runner; kills the process
+                           # group on timeout (DUK JVM + platform curl)
+  _transport/curl.py     # CurlBootstrapperBase — shared platform-curl machinery of
+                         # the two APM certificate bootstraps (SPV + declaration
+                         # portal): curl resolution (ANAFPY_CURL), cert
+                         # selectors, TLS-backend pin, failure taxonomy;
+                         # subclasses own choreography + success judgment
   auth/                  # OAuth2 layer: models, store, oauth, provider, callback
-  cli/main.py            # `anafpy auth login|status|logout` +
-                         # `anafpy spv certs|select|login|status|logout`
+  cli/main.py            # cyclopts CLI: `anafpy auth login|status|logout` +
+                         # `anafpy spv certs|select|login|status|logout` +
+                         # `anafpy declaratii validate|render|sign|status|recipisa`
   efactura/
     README.md            # module map: layer diagram (flat <-> generated UBL <-> wire),
                          # outbound/inbound flows, who-owns-what table
@@ -126,9 +158,10 @@ src/anafpy/
     models.py            # lookup value types (TaxpayerRecord, RegistryLookup[...], ...)
                          # + TransformStandard, RemoteValidationResult
   spv/                   # SPV (Spațiul Privat Virtual) read-only client — cert mTLS
-    bootstrap.py         # SessionBootstrapper protocol + CurlBootstrapper (OS curl
-                         # subprocess: macOS SecureTransport / Windows Schannel) —
-                         # the ONLY step that touches the certificate (APM login)
+    bootstrap.py         # SessionBootstrapper protocol + CurlBootstrapper (over the
+                         # _transport/curl.py base) — the ONLY step that touches
+                         # the certificate (APM login); owns the SPV choreography
+                         # (one --location probe) + the SPV-JSON success judgment
     session.py           # SpvSession (APM cookie set = bearer credential) +
                          # SessionStore protocol, FileSessionStore (0600)
     auth.py              # SpvSessionProvider (mirrors TokenProvider; owns login)
@@ -143,6 +176,34 @@ src/anafpy/
                          # MessageList, ReportRequestResult; SpvMessage, ReportType
                          # nomenclature + ReportRequest (per-type param validation),
                          # error hints
+  declaratii/            # tax-declaration authoring/validation/signing (M1, local:
+                         # subprocess + crypto) + StareD112 filing status (public):
+    duk.py               # DukIntegrator (async): validate/render via ANAF's DUK
+                         # (-v/-p headless; judge by err-file, never exit code),
+                         # installed_forms + free fetch_feed_versions staleness
+    models.py            # declaration-family value-type home: DUK, upload, PDF-sign
+                         # outcomes + DeclarationState/Document/StatusList
+    _html.py             # whole-text/accent handling shared by both JSP parsers
+    status.py            # DeclarationStatusClient (async, NO auth): filing status
+                         # + recipisa PDF via www.anaf.ro/StareD112 (index+CUI are
+                         # the access key; empty-PDF answer = receipt unavailable);
+                         # HTML extraction via parsel (core dep) — shape checks ours
+    nr_evid.py           # the 23-char nr_evid composers (pure): payment_evidence_number
+                         # (D300) + obligation_evidence_number (D100/D710) +
+                         # profit_tax_evidence_number (D101) + special_vat_evidence_number (D301)
+    upload.py            # M2 portal upload (decl.anaf.mfinante.gov.ro/WAS6DUS):
+                         # PortalCurlBootstrapper (cert login, discrete curl
+                         # steps, over the _transport/curl.py base) +
+                         # DeclarationUploadClient (cookie multipart POST;
+                         # rejection page = returned business outcome; success
+                         # page -> upload index — LIVE-VERIFIED 2026-07-17 by
+                         # filing a D406T, pyHanko CMS accepted)
+    signing.py           # RawSigner protocol + KeychainRawSigner (ctypes ->
+                         # Security.framework: SecKeyCreateSignature; no key material,
+                         # 2FA is the human gate) + shared framework cache,
+                         # default_signed_path/load_pdfsign/resolve_signing_label
+    pdfsign.py           # sign_pdf (pyHanko: adbe.pkcs7.detached incremental update,
+                         # AIA issuer fetch) — needs the anafpy[declaratii] extra
   mcp/                   # MCP server (extra: anafpy[mcp]) — phase 2, split BY SERVICE:
                          # each service package owns its tools + models + helpers;
                          # the shared core is only what 2+ services genuinely use
@@ -155,7 +216,7 @@ src/anafpy/
                          # HMAC confirmation tokens + TokenLedger, XmlInput base
                          # ({xml|path} -> bytes), PreparedSubmission/SubmitResult,
                          # run_submit (the STEP-2 skeleton with its two orderings)
-    artifacts.py         # tool annotations + collision-guarded write_artifact
+    artifacts.py         # tool annotations + shared ensure_writable/write_artifact
     reference.py         # docs/anaf-reference/ as anafref:// resources
     prompts.py           # skills/*/SKILL.md loader + same-name MCP prompts
     efactura/            # tools.py (tools + anafmsg:// resource), models.py
@@ -167,10 +228,18 @@ src/anafpy/
     public/              # tools.py — the no-auth anaf_* lookup tools
     spv/                 # tools.py (+ spvmsg:// resource), nomenclature.py
                          # (report types + per-type wire params)
+    declaratii/          # tools.py (declaratie_validate/render/sign/nr_evid/
+                         # duk_status — LOCAL, no filing (M1) — + declaratie_status/
+                         # recipisa over the public StareD112), models.py
     __main__.py          # `python -m anafpy.mcp` (stdio)
 skills/                  # workflow skills, served by the MCP server as same-name
                          # prompts (etransport-declare: source data -> FlatTransport
-                         # -> prepare -> approval -> submit -> status)
+                         # -> prepare -> approval -> submit -> status;
+                         # declaratie-prepare: unstructured data -> form selection
+                         # -> completion-guide read -> CUI-lookup inference + ask
+                         # -> author XML -> validate loop -> render -> approval ->
+                         # sign -> manual filing -> status/recipisa; replaced
+                         # declaratie-compose 2026-07-18)
 .claude-plugin/          # marketplace.json — the Claude Code plugin marketplace
                          # published from this repo (`/plugin marketplace add
                          # robert-malai/anafpy`)
@@ -199,9 +268,17 @@ docs/                    # MkDocs source tree for the docs site (mkdocs.yml at r
   library/               # quickstart, auth, efactura, etransport, public, errors guides
   api/                   # mkdocstrings pages over the hand-written public modules
   anaf-reference/        # compiled ANAF API reference (oauth/efactura/etransport/public/spv;
-                         # spv sources = vendored MfpAnaf/ClientSPV repo under _sources/clientspv/);
+                         # spv sources = vendored MfpAnaf/ClientSPV repo under _sources/clientspv/;
+                         # declaratii/forms/ = e-guvernare form inventory (README = all 173
+                         # DUK-filable forms bucketed by SME usage) + per-declaration
+                         # completion guides dXXX.md (hands-on for the top two buckets):
+                         # purpose & legal basis, who-files-&-when, row->XSD filling map,
+                         # DUK-validated example instances, researched gotchas, then the
+                         # technical XSD/DUK layer; big lookup tables split into dXXX-
+                         # nomenclatoare.md (D100, D112); METHOD.md = the playbook for
+                         # generating/updating them);
                          # ALSO served as MCP resources (ANAFPY_DOCS_DIR default) — don't move it
-tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-in live: test_public_live.py, test_oauth_live.py, test_spv_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST)
+tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-in live: test_public_live.py, test_oauth_live.py, test_spv_live.py read-only; test_{efactura,etransport}_roundtrip_live.py file to TEST; test_declaratii_upload_live.py files D406T — sanctioned no-effect — to PROD, double-gated)
 ```
 
 ## Architecture & conventions
@@ -382,6 +459,32 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   `anafpy spv login` remains the CLI path. No two-step gate anywhere in SPV:
   no declaration is ever filed (reports are information requests) — honesty
   about `spv_cerere`'s side effect lives in its annotations, not a gate.
+- **Declaration tools are LOCAL** (`anafpy.mcp.declaratii`, added 2026-07-15 —
+  M1: authoring + signing, no filing): `declaratie_validate` /
+  `declaratie_render` run ANAF's DUKIntegrator (validation authority is ANAF's —
+  we run its per-form validator jars, never re-implement rules; the `nr_evid`
+  helper is composition, not validation), `declaratie_nr_evid` composes the
+  payment-evidence number for the self-assessed forms (`form=` D300/D100/D710/
+  D101/D301 — each with its own code slot, prefix, and position-18 flag),
+  `declaratie_duk_status` surfaces CLI-mode DUK's non-auto-update
+  staleness. `declaratie_sign` is the consequential one: gated on `confirm=true`
+  (mirrors `spv_login` — failures return `signed=false` + guidance, not
+  exceptions) because it fires the certificate's PIN/2FA, and **no MCP tool ever
+  accepts a PIN** — the raw signature is delegated to the OS
+  (`KeychainRawSigner`), never entering model context. There is **no two-step
+  filing gate** here (nothing is filed with ANAF in M1); PDFs land on disk via
+  the shared `write_artifact` collision guard, never base64. Needs
+  `ANAFPY_DUK_DIR`; signing is macOS-only for now (the `RawSigner` protocol is
+  the Windows seam). See the [DUK reference](docs/anaf-reference/declaratii/duk.md).
+  Two more tools close the post-manual-filing loop over the **public, no-auth**
+  StareD112 service (added 2026-07-16; they need neither `ANAFPY_DUK_DIR` nor any
+  login): `declaratie_status` (READ_ONLY; upload index + CUI → the CUI's
+  last-3-months filings with per-document state — the "no declaration identified"
+  page is a returned business outcome, `found=false`) and `declaratie_recipisa`
+  (ARTIFACT_SAVING; saves the signed filing-receipt PDF — ANAF answers an empty
+  PDF body for an unknown/expired index, returned as `ok=false`; recipisas last
+  ~60 days). Wire reference:
+  [docs/anaf-reference/declaratii/stared112.md](docs/anaf-reference/declaratii/stared112.md).
 - **Flat models live at the client layer**
   ([efactura/authoring/](src/anafpy/efactura/authoring/),
   [etransport/models.py](src/anafpy/etransport/models.py)) — the MCP layer only
@@ -400,8 +503,9 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   names.
 - **Tool display names**: every tool has an English MCP `title` following
   `Service: operation` — services are `e-Factura`, `e-Transport`, `ANAF Info`
-  (public no-auth lookups), plus bare `ANAF` for `auth_status`. Titles are
-  UI-only (the model sees `name` + `description`); keep them single-language.
+  (public no-auth lookups), `SPV`, and `Declarations`, plus bare `ANAF` for
+  `auth_status`. Titles are UI-only (the model sees `name` + `description`);
+  keep them single-language.
 - **Branded service names in prose**: in strings, messages, and docs the services
   are written exactly `e-Factura` and `e-Transport` — even at the start of a
   sentence or title. This is the branding ANAF itself uses on its website
@@ -531,8 +635,8 @@ results.
   [tests/test_oauth_live.py](tests/test_oauth_live.py) — authenticated TEST, read-only,
   credentials from the gitignored repo-root `.env` loaded by `tests/conftest.py`) exist
   only to re-confirm wire shapes on demand (`ANAFPY_LIVE=1`) and are skipped by
-  default — don't move behavioural assertions there, and keep them read-only. The **two
-  deliberate exceptions** are the roundtrip files —
+  default — don't move behavioural assertions there, and keep them read-only. The **three
+  deliberate exceptions** are the filing files —
   [tests/test_etransport_roundtrip_live.py](tests/test_etransport_roundtrip_live.py)
   **files** a domestic declaration composed via the flat authoring models — also
   keeping anafpy's own rendered XML honest — (upload → `stareMesaj` → `lista` →
@@ -541,8 +645,14 @@ results.
   **files** a minimal CIUS-RO invoice composed via the authoring models and
   filed with `upload_invoice` (upload → `stareMesaj` → `descarcare` → list),
   also proving the strict `DownloadedMessage.view` on ANAF's returned XML —
-  **TEST only, never prod** — to keep the filing wire shapes honest; don't add uploads
-  to any other live file. The same file's `test_validare_agrees_with_local_rules`
+  **TEST only, never prod** — to keep the filing wire shapes honest — and
+  [tests/test_declaratii_upload_live.py](tests/test_declaratii_upload_live.py),
+  which **files a D406T on the production portal**: D406T is ANAF's sanctioned
+  no-fiscal-effect SAF-T test declaration (there is no TEST environment for
+  declaration filing — DESIGN.md §12), and the test is double-gated
+  (`ANAFPY_LIVE_FILE_D406T=1`) because it fires the certificate 2FA twice.
+  Don't add uploads to any other live file, and never file anything but D406T
+  in that one. The same file's `test_validare_agrees_with_local_rules`
   is the **drift tripwire**: it asserts local `authoring.validate()` verdicts
   track ANAF's `validare` both ways (clean passes clean; a BR-CO-16 break is
   flagged by both with the same rule id) — when a CIUS-RO revision lands, this

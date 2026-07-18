@@ -319,6 +319,49 @@ it asks for your confirmation, then your token's PIN/2FA prompt fires as usual;
 approving it on your device completes the login. The terminal command keeps
 working too.
 
+## Step 8 (optional) — Unlock the declaration tools
+
+The `declaratie_*` tools let Claude fill in, validate, render, and **sign** a tax
+declaration (D300 VAT return first) on your computer. Nothing is filed with ANAF
+through them yet — Claude produces a signed PDF you then upload on the portal.
+Signing is macOS-only for now.
+
+These tools run ANAF's own desktop validator, **DUKIntegrator**, so you install
+it once:
+
+1. Download
+   [`dist_javaInclus20200203.zip`](https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip)
+   and extract it. You get a `dist/` folder — that is what Claude points at.
+2. Add the validator for each form you file. From ANAF's declaration pages (e.g.
+   the D300 page under `static.anaf.ro/.../Declaratii_R/`), download the form's
+   `…Validator.jar` and `…Pdf.jar` and drop them into `dist/lib/`.
+3. Make sure you have **Java** (a JRE/JDK, version 8 or newer) installed —
+   `java -version` in a terminal should print a version. (anafpy only runs
+   DUKIntegrator's *validate* and *render* steps, which work on any modern JVM;
+   the Java-8-only limitation you may read about applies to DUK's own signing,
+   which anafpy does not use.)
+
+   On macOS, the community [nokeect/duk-integrator-macos](https://github.com/nokeect/duk-integrator-macos)
+   project automates this whole install (Java, the kit download, and config fixes)
+   — a useful reference, though anafpy signs through your certificate itself rather
+   than through DUKIntegrator.
+
+Then point the server at the `dist/` folder by adding one line to the `env` block
+from step 5:
+
+```json
+        "ANAFPY_DUK_DIR": "/Users/you/DUKIntegrator/dist"
+```
+
+Restart Claude and ask *"check the declaration setup"* — Claude runs
+`declaratie_duk_status`, which confirms the install and warns if a validator is
+out of date (the command-line DUKIntegrator does not auto-update, unlike its
+desktop window). Signing uses the **same qualified certificate** as SPV (step 7):
+if you selected one there, the declaration signer reuses it; otherwise set
+`"ANAFPY_SIGN_IDENTITY"` to the certificate's Keychain name. When Claude signs, it
+warns you first, then your token's PIN/2FA prompt fires — approving it on your
+device produces the signed PDF.
+
 ## Good to know
 
 - **Production vs. test**: the server talks to **production** ANAF by default. To
@@ -360,5 +403,5 @@ working too.
 | Claude Desktop shows the server as failed / `uv` not found | Desktop apps don't always see the terminal's PATH. In the config, replace `"command": "uv"` with the full path — macOS: `/Users/<you>/.local/bin/uv`; Windows: `C:\\Users\\<you>\\.local\\bin\\uv.exe` (run `where.exe uv` / `which uv` to confirm). |
 | Tools answer "run `anafpy auth login`" | Step 4 wasn't completed on this computer, or the token expired (~1 year). Run step 4 again. |
 | Filing rejected by ANAF | That's ANAF's verdict on the document's content, not an installation problem — the error text comes back in the tool result; fix the data and prepare again. |
-| `anafpy spv login` fails instantly with `SEC_E_UNKNOWN_CREDENTIALS` on a Windows-on-ARM computer (e.g. Parallels on a Mac) | The certificate vendor's software is Intel-only (certSIGN vToken is), so Windows' built-in curl can't use the certificate. Install [Git for Windows](https://git-scm.com/download/win) (the **64-bit** version, not ARM64) and add `"ANAFPY_SPV_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` next to the other `env` entries; set the same variable in PowerShell before `anafpy spv login`. |
-| `anafpy spv login` fails with `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` on Windows | Windows' built-in curl (`C:\Windows\System32\curl.exe`) versions **8.13–8.15** have a [Schannel bug](https://github.com/curl/curl/issues/18029) that breaks ANAF's TLS renegotiation with a certificate-store cert. Check with `curl --version`; if it's in that range, install [Git for Windows](https://git-scm.com/download/win) (its bundled curl is newer) and point `ANAFPY_SPV_CURL` at `C:\\Program Files\\Git\\mingw64\\bin\\curl.exe` — in the `env` block and in PowerShell before `anafpy spv login` (run `cygpath -w "$(command -v curl)"` in Git Bash to get the exact path). anafpy pins the Schannel backend for you. |
+| `anafpy spv login` fails instantly with `SEC_E_UNKNOWN_CREDENTIALS` on a Windows-on-ARM computer (e.g. Parallels on a Mac) | The certificate vendor's software is Intel-only (certSIGN vToken is), so Windows' built-in curl can't use the certificate. Install [Git for Windows](https://git-scm.com/download/win) (the **64-bit** version, not ARM64) and add `"ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` next to the other `env` entries; set the same variable in PowerShell before `anafpy spv login`. |
+| `anafpy spv login` fails with `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` on Windows | Windows' built-in curl (`C:\Windows\System32\curl.exe`) versions **8.13–8.15** have a [Schannel bug](https://github.com/curl/curl/issues/18029) that breaks ANAF's TLS renegotiation with a certificate-store cert. Check with `curl --version`; if it's in that range, install [Git for Windows](https://git-scm.com/download/win) (its bundled curl is newer) and point `ANAFPY_CURL` at `C:\\Program Files\\Git\\mingw64\\bin\\curl.exe` — in the `env` block and in PowerShell before `anafpy spv login` (run `cygpath -w "$(command -v curl)"` in Git Bash to get the exact path). anafpy pins the Schannel backend for you. |

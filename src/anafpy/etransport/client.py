@@ -17,8 +17,6 @@ from __future__ import annotations
 import json
 import urllib.parse
 from collections.abc import AsyncIterator
-from types import TracebackType
-from typing import Self
 
 import httpx
 from pydantic import ValidationError
@@ -38,11 +36,11 @@ from .._transport.base import (
     raise_for_status,
     service_base_url,
 )
+from .._transport.http import HttpClientBase
 from ..auth.provider import AnafAuth, TokenProvider
 from ..exceptions import (
     AnafConfigError,
     AnafResponseError,
-    AnafTransportError,
 )
 from .models import (
     FlatSubmission,
@@ -93,12 +91,15 @@ def _load_envelope[EnvelopeT: _JsonEnvelope](
         ) from exc
 
 
-class ETransportClient:
+class ETransportClient(HttpClientBase):
     """Talks to ANAF e-Transport over OAuth2.
 
     Construct with an authenticated :class:`~anafpy.auth.provider.TokenProvider`; the
-    client owns an ``httpx.AsyncClient`` (unless one is injected) and should be used as
-    an async context manager so it is closed cleanly.
+    client owns an ``httpx.AsyncClient`` (unless one is injected — it must then
+    carry :class:`~anafpy.auth.oauth.AnafAuth` and a non-empty ``base_url``;
+    an empty one raises :class:`~anafpy.exceptions.AnafConfigError`, since
+    injected clients are never mutated) and should
+    be used as an async context manager so it is closed cleanly.
     """
 
     def __init__(
@@ -109,24 +110,12 @@ class ETransportClient:
         http: httpx.AsyncClient | None = None,
         timeout: float = 60.0,
     ) -> None:
-        self._base_url = service_base_url(Service.ETRANSPORT, environment)
-        self._owns_http = http is None
-        self._http = http or httpx.AsyncClient(auth=AnafAuth(provider), timeout=timeout)
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        await self.aclose()
-
-    async def aclose(self) -> None:
-        if self._owns_http:
-            await self._http.aclose()
+        super().__init__(
+            http=http,
+            base_url=service_base_url(Service.ETRANSPORT, environment),
+            timeout=timeout,
+            auth=AnafAuth(provider),
+        )
 
     # -- transport -------------------------------------------------------------------
 
@@ -139,13 +128,9 @@ class ETransportClient:
         content: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
-        url = f"{self._base_url}/{path}"
-        try:
-            response = await self._http.request(
-                method, url, params=params, content=content, headers=headers
-            )
-        except httpx.HTTPError as exc:
-            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+        response = await self._request_http(
+            method, path, params=params, content=content, headers=headers
+        )
         raise_for_status(response)
         return response
 

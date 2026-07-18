@@ -1,0 +1,86 @@
+
+
+<table border="0" width="100%" cellspacing="0">
+  <tr>
+    <td>
+      
+
+
+
+<h3><em>Ministerul Finan&#355;elor</h3>
+<h3><em>Agen&#355;ia Na&#355;ional&#259; de Administrare Fiscal&#259;</em></h3>
+<br><br><br>
+
+
+    </td>
+  </tr>
+  
+  <tr>
+    <td valign="top">
+      
+
+
+ 
+
+<em><b>Vizualizare documente</b></em>
+<br>
+<br><font color="red">
+<em>Verificarea recipiselor pe https://www.anaf.ro/StareD112/ se poate face doar pentru ultimele 200 de declara&#355;ii depuse.
+<br>V&#259; rug&#259;m ca dup&#259; fiecare grup de 200 de declara&#355;ii depuse s&#259; a&#351;tepta&#355;i prelucrarea acestora &#351;i s&#259; desc&#259;rca&#355;i recipisele.
+</em></font>
+<br>
+<br>
+Introduce&#355;i indexul/respectiv num&#259;rul de inregistrare &#351;i CIF-ul unui document depus &#238;n ultimele trei luni.
+Dac&#259; este corect ve&#355;i primi o list&#259; a documentelor depuse &#238;n aceast&#259; perioada.
+<script type="text/javascript">
+function changeTextInternet(){
+	document.getElementById('ghis').innerHTML = 'Introduce&#355;i indexul de &#238;nc&#259;rcare:';
+}
+function changeTextGhiseu(){
+	document.getElementById('ghis').innerHTML = 'Introduce&#355;i num&#259;rul de &#238;nregistrare:';
+}
+</script>
+
+
+<form name="vsf" method="post" action="/StareD112/vizualizareStare.do">
+<table border="1" width="100%" bgcolor="fffff0">
+<tr>
+<td colspan="2" align="center"><b>Pentru documentele  depuse <input type="radio" name="ghiseu" value="N" checked="checked" onclick="changeTextInternet()">Internet <input type="radio" name="ghiseu" value="Y" onclick="changeTextGhiseu()">ghi&#351;eu</b>
+</td>
+</tr>
+<tr><td id="ghis">Introduce&#355;i indexul de &#238;nc&#259;rcare: </td>
+<td><input type="text" name="id" value=""></td>
+</tr>
+<tr><td>
+Introduce&#355;i CIF-ul contribuabilului: </td>
+<td><input type="text" name="cui" value=""></td></tr>
+<tr>
+<td></td>
+<td>
+<input type="submit" value="Verific&#259;">
+</td></tr></table>
+</form>
+
+
+
+
+    </td>
+  </tr>
+  
+  <tr>
+    <td>
+      
+
+
+
+  
+
+ 
+
+
+
+
+
+    </td>
+  </tr>
+</table>

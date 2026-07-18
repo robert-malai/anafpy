@@ -172,7 +172,7 @@ the benign exit-56 close_notify above, which lands *after* the full `200`).
 This bites Windows' built-in `System32\curl.exe` when it is one of those
 versions; a file-backed cert would sidestep it, but SPV's non-exportable
 store key rules that out. Fix: use a Schannel curl **outside** that range —
-current Git for Windows ships one (curl ≥ 8.16) — via `ANAFPY_SPV_CURL`.
+current Git for Windows ships one (curl ≥ 8.16) — via `ANAFPY_CURL`.
 Confirmed live that pointing the override at Git for Windows'
 `mingw64\bin\curl.exe` (curl 8.21.0) completed the bootstrap where the
 System32 8.13.0 curl failed.

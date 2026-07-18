@@ -54,6 +54,14 @@ class ServerConfig(BaseSettings):
         spv_identity_path: the persisted certificate selection written by
             ``spv_select_certificate`` / ``anafpy spv login``
             (``ANAFPY_SPV_IDENTITY_FILE``).
+        duk_dir: the extracted DUKIntegrator ``dist/`` folder (``ANAFPY_DUK_DIR``);
+            no default. Without it the declaration tools report how to enable
+            themselves, like the authenticated tools without OAuth credentials.
+        duk_java: the ``java`` binary DUKIntegrator runs under (``ANAFPY_DUK_JAVA``);
+            optional — falls back to ``java`` on ``PATH``.
+        sign_identity: the Keychain identity name to sign declarations with
+            (``ANAFPY_SIGN_IDENTITY``); optional — falls back to the persisted SPV
+            certificate selection (the same qualified certificate).
         signing_key: per-process secret backing the confirmation tokens issued by the
             two-step ``prepare`` → ``submit`` flow. Defaults to a fresh random key, so
             tokens are only valid within the lifetime of one server process.
@@ -85,6 +93,11 @@ class ServerConfig(BaseSettings):
         default=Path("~/.anafpy/spv-identity.json"),
         validation_alias="ANAFPY_SPV_IDENTITY_FILE",
     )
+    duk_dir: Path | None = Field(default=None, validation_alias="ANAFPY_DUK_DIR")
+    duk_java: str | None = Field(default=None, validation_alias="ANAFPY_DUK_JAVA")
+    sign_identity: str | None = Field(
+        default=None, validation_alias="ANAFPY_SIGN_IDENTITY"
+    )
     # A private attribute, not a settings field: BaseSettings populates fields from
     # the environment by name, and the signing key must never come from a stray
     # `SIGNING_KEY` env var — it is a fresh per-process secret each run.
@@ -96,7 +109,12 @@ class ServerConfig(BaseSettings):
         return self._signing_key
 
     @field_validator(
-        "store_path", "docs_dir", "skills_dir", "spv_session_path", "spv_identity_path"
+        "store_path",
+        "docs_dir",
+        "skills_dir",
+        "spv_session_path",
+        "spv_identity_path",
+        "duk_dir",
     )
     @classmethod
     def _expand_path(cls, value: Path | None) -> Path | None:
@@ -108,6 +126,9 @@ class ServerConfig(BaseSettings):
         "default_cif",
         "docs_dir",
         "skills_dir",
+        "duk_dir",
+        "duk_java",
+        "sign_identity",
         mode="before",
     )
     @classmethod

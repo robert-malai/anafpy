@@ -21,20 +21,23 @@ import time
 import unicodedata
 from email.utils import parsedate_to_datetime
 from enum import StrEnum
+from typing import Self
 from zoneinfo import ZoneInfo
 
 import httpx
 
-from ..exceptions import AnafRateLimitError, AnafResponseError
+from ..exceptions import AnafConfigError, AnafRateLimitError, AnafResponseError
 
 __all__ = [
     "OAUTH_HOST",
     "PUBLIC_HOST",
     "ROMANIA_TZ",
+    "DescribedStrEnum",
     "Environment",
     "Service",
     "as_text",
     "is_empty_result_message",
+    "normalize_cui",
     "raise_for_status",
     "retry_after_seconds",
     "service_base_url",
@@ -55,6 +58,18 @@ OAUTH_HOST = "https://api.anaf.ro"
 PUBLIC_HOST = "https://webservicesp.anaf.ro"
 
 
+class DescribedStrEnum(StrEnum):
+    """String enum whose members carry a required English description."""
+
+    description: str
+
+    def __new__(cls, value: str, description: str) -> Self:
+        member = str.__new__(cls, value)
+        member._value_ = value
+        member.description = description
+        return member
+
+
 class Environment(StrEnum):
     """ANAF API environment."""
 
@@ -72,6 +87,19 @@ class Service(StrEnum):
 def service_base_url(service: Service, environment: Environment) -> str:
     """Return e.g. ``https://api.anaf.ro/test/FCTEL/rest``."""
     return f"{OAUTH_HOST}/{environment.value}/{service.value}"
+
+
+def normalize_cui(value: str | int) -> str:
+    """Return a fiscal code as digits, tolerating the Romanian ``RO`` prefix.
+
+    The string form deliberately preserves leading zeroes. Service-specific
+    callers may impose additional constraints (for example, public lookups
+    convert to a positive integer).
+    """
+    text = str(value).strip().upper().removeprefix("RO").strip()
+    if not text.isdigit():
+        raise AnafConfigError(f"invalid CUI: {value!r} (digits expected)")
+    return text
 
 
 def retry_after_seconds(value: str | None) -> float | None:
