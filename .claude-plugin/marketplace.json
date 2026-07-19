@@ -4,6 +4,9 @@
   "owner": {
     "name": "Robert Malai"
   },
+  "renames": {
+    "anafpy-connector-test": null
+  },
   "plugins": [
     {
       "name": "anafpy-setup",
@@ -20,14 +23,6 @@
       "description": "ANAF workflow skills for Cowork: file e-Transport declarations, author/sign tax declarations, and summarize personal income. Drives the anafpy MCP tools (configure the connector via the anafpy-setup plugin).",
       "category": "workflow",
       "tags": ["anaf", "e-factura", "e-transport", "spv", "declaratii", "romania", "cowork"]
-    },
-    {
-      "name": "anafpy-connector-test",
-      "source": "./plugins/anafpy-connector-test",
-      "displayName": "anafpy connector (TEST)",
-      "description": "THROWAWAY: tests whether a plugin-declared MCP connector reaches Cowork and can read the local anafpy login. Prompts for credentials at enable time. Remove after testing.",
-      "category": "test",
-      "tags": ["anaf", "mcp", "test"]
     }
   ]
 }

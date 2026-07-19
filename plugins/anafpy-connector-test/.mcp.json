@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "anafpy-test": {
-      "command": "/Users/robert.malai/.local/bin/uvx",
-      "args": ["--from", "anafpy[mcp]", "anafpy-mcp"]
-    }
-  }
-}
