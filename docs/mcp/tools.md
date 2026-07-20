@@ -110,16 +110,24 @@ resource `spvmsg://<mesaj_id>/pdf` — a disk-free path for hosts with resource
 UX. It needs an active SPV session (a resource read can't ask for a login);
 `spv_descarca` remains the save-to-disk path.
 
-## Declarations — author, validate, render, sign, track (local; no filing yet)
+## Declarations — author, validate, render, sign, file, track
 
-Prepare tax declarations (D300 VAT return first) entirely on your machine:
+Prepare tax declarations — any form ANAF's validator covers, with hands-on
+completion guides for the common SME declarations (D100, D101, D112, D205,
+D212, D300, D301, D390, D394, D406, D700, D710) — entirely on your machine:
 ANAF's own DUKIntegrator validates and renders the official PDF, and your
-qualified certificate signs it. Nothing is filed with ANAF in this release —
-you file the signed PDF on the portal, then track it with `declaratie_status`
-using the upload index the portal returned. The authoring tools need
-`ANAFPY_DUK_DIR` set and signing is macOS-only for now; the status/recipisa
-tools ride ANAF's public StareD112 service and need no configuration and no
-login at all.
+qualified certificate signs it. Filing the signed PDF is automated too, on
+ANAF's declaration portal (the same one behind anaf.ro → Depunere declarații).
+Two things to know before using it: filing goes to the **production** portal —
+declarations have no test environment, so every submission is a real filing —
+and it is an **opt-out** feature (`ANAFPY_DECLARATII_UPLOAD=off` removes the
+filing tools and Claude guides you through manual portal filing instead).
+The portal login is deliberately a separate step from submitting: it fires
+your certificate PIN/2FA once (like `spv_login`), and the session it
+establishes is probed — without any 2FA — before anything is uploaded.
+The authoring tools need `ANAFPY_DUK_DIR` set and signing is macOS-only for
+now; the status/recipisa tools ride ANAF's public StareD112 service and need
+no configuration and no login at all.
 
 | Tool | What it does |
 |---|---|
@@ -128,6 +136,10 @@ login at all.
 | `declaratie_sign` | Sign a rendered PDF with your qualified certificate — requires your explicit approval (`confirm=true`) since it fires your PIN/2FA prompt; failures come back as `signed=false` + guidance |
 | `declaratie_nr_evid` | Compose the 23-char `nr_evid` payment-evidence number for the self-assessed forms — `form=` `D300` (needs `tip_decont`), `D100`/`D710` (need `cod_oblig` + `scadenta`), `D101` (adds `in_liquidation`), `D301` (takes `mijl_trans`). It has a check digit — never compute it by hand |
 | `declaratie_duk_status` | The DUKIntegrator install: directory, Java version, and installed-vs-current validator versions (CLI-mode DUK does not auto-update); the current feed is still returned before DUK is installed |
+| `declaratie_portal_status` | Probe whether the filing-portal session is still alive (they die after ~10 idle minutes) — a plain page fetch, never fires your PIN/2FA |
+| `declaratie_portal_login` | Log in to the filing portal with the selected certificate — requires your explicit approval (`confirm=true`) since it fires your PIN/2FA prompt; deliberately outside the submit flow, so one login serves the whole filing |
+| `declaratie_prepare` | STEP 1 of filing: reads the signed PDF and returns a confirmation token bound to its exact bytes (plus a local heads-up if no embedded signature is detected). Nothing is filed |
+| `declaratie_submit` | STEP 2: uploads the signed PDF to the production portal — requires the prepare token and your explicit `confirm=true`, probes the session *before* spending the single-use token, and returns the portal's verdict with the upload index (feed it to `declaratie_status` / `declaratie_recipisa`) |
 | `declaratie_status` | Check a filed declaration's processing state by upload index + CUI — returns the client-layer `DeclarationStatusList` directly, containing all the CUI's filings from the last 3 months (max 200). Config/network/input failures return the same typed shape with `found=false` and `message` |
 | `declaratie_recipisa` | Save the digitally signed recipisa (filing receipt) PDF to a path you name — available only ~60 days from filing, so archive it |
 
@@ -157,9 +169,11 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_DUK_DIR` | The extracted DUKIntegrator `dist/` folder — enables the `declaratie_*` tools (no default) |
 | `ANAFPY_DUK_JAVA` | The `java` binary DUKIntegrator runs under (optional; falls back to `java` on `PATH`) |
 | `ANAFPY_SIGN_IDENTITY` | Keychain identity name to sign declarations with (optional; falls back to the persisted SPV certificate selection) |
+| `ANAFPY_DECLARATII_UPLOAD` | Set to `off` to opt out of automated declaration filing — the portal tools (`declaratie_portal_*`, `declaratie_prepare`, `declaratie_submit`) are then not served and Claude guides manual filing instead (default: on) |
 
 The OAuth certificate/browser login stays host-side (`anafpy auth login` —
 it structurally needs a browser; the server only reads and headlessly
-refreshes the token store it wrote). The SPV login is the one interactive step
-exposed as a tool: it needs no host UI — the human gate is your out-of-band
-PIN/2FA approval — and `spv_login` demands your explicit go-ahead per attempt.
+refreshes the token store it wrote). The certificate logins are the
+interactive steps exposed as tools: they need no host UI — the human gate is
+your out-of-band PIN/2FA approval — and both `spv_login` and
+`declaratie_portal_login` demand your explicit go-ahead per attempt.

@@ -1,7 +1,9 @@
 # Tax declarations (authoring, validation, signing, status)
 
-`anafpy.declaratii` prepares Romanian tax declarations (D300 VAT return first;
-the design is per-form generic) entirely **locally**: it validates with ANAF's
+`anafpy.declaratii` prepares Romanian tax declarations (per-form generic —
+any form DUKIntegrator validates, from the D300 VAT return to D406/SAF-T; the
+[declaration reference](https://github.com/robert-malai/anafpy/tree/main/docs/anaf-reference/declaratii/forms)
+carries completion guides for the common SME forms) entirely **locally**: it validates with ANAF's
 own DUKIntegrator, renders the official PDF, and signs it with the taxpayer's
 qualified certificate. Filing the signed PDF works two ways: manually on the
 portal, or through the
@@ -13,8 +15,8 @@ public StareD112 service, with no login of any kind.
 
 The pipeline: unstructured info → author the XML → DUKIntegrator `-v` (validate
 in a loop until `ok`) → DUKIntegrator `-p` (official PDF) → pyHanko + the
-platform raw signer (qualified signature) → signed PDF on disk → manual portal
-upload → status/recipisa via StareD112.
+platform raw signer (qualified signature) → signed PDF on disk → portal
+upload (the upload client, or manually) → status/recipisa via StareD112.
 
 ## Prerequisites
 

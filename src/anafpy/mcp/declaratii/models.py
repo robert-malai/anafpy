@@ -10,9 +10,13 @@ from ..gate import XmlInput
 __all__ = [
     "DeclarationXmlInput",
     "NrEvidResult",
+    "PortalLoginResult",
+    "PortalStatusResult",
+    "PreparedUpload",
     "ReceiptResult",
     "RenderResult",
     "SignResult",
+    "UploadSubmitResult",
     "ValidationResult",
 ]
 
@@ -102,4 +106,61 @@ class ReceiptResult(BaseModel):
     ok: bool
     index: str
     pdf_path: str | None = None
+    message: str = ""
+
+
+class PortalLoginResult(BaseModel):
+    """Outcome of ``declaratie_portal_login``.
+
+    ``logged_in`` is ``False`` (with ``guidance``) on any non-exceptional
+    failure — a missing ``confirm``, no certificate selected, a dismissed or
+    timed-out 2FA approval, ANAF-side flakiness — mirroring ``spv_login``'s
+    contract so the model can relay the reason and retry with the user's
+    go-ahead.
+    """
+
+    logged_in: bool
+    identity: str | None = None
+    guidance: str | None = None
+
+
+class PortalStatusResult(BaseModel):
+    """Outcome of ``declaratie_portal_status`` — the no-2FA session probe."""
+
+    session_active: bool
+    detail: str = ""
+    next_step: str | None = None
+
+
+class PreparedUpload(BaseModel):
+    """STEP-1 result of ``declaratie_prepare``: the filing gate's token.
+
+    ``valid`` is ``False`` (and ``confirmation_token`` ``None``) only when the
+    signed PDF could not be read. ``looks_signed`` is a cheap local sanity
+    check (an embedded PKCS#7 signature was detected) — informational, never
+    withholding the token; the portal's own verdict is authoritative. Pass the
+    token (with the *same* file and ``filename``) to ``declaratie_submit``.
+    """
+
+    valid: bool
+    confirmation_token: str | None = None
+    pdf_path: str | None = None
+    filename: str | None = None
+    size_bytes: int | None = None
+    looks_signed: bool | None = None
+    message: str = ""
+
+
+class UploadSubmitResult(BaseModel):
+    """STEP-2 result of ``declaratie_submit``.
+
+    ``accepted`` mirrors the portal's answer: ``True`` with ``upload_index``
+    on the success page, ``False`` with ``reason`` on the known rejection
+    page, and ``None`` when the page was not recognised (check
+    ``declaratie_status`` before assuming either way).
+    """
+
+    accepted: bool | None = False
+    upload_index: str | None = None
+    reason: str | None = None
     message: str = ""

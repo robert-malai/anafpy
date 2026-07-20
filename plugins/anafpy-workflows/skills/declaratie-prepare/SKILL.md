@@ -7,18 +7,20 @@ description: >
   completion guide, infers identification data via the public ANAF lookups (CUI →
   name, address, VAT status), asks the user for what cannot be inferred, and
   drives the declaration MCP tools (declaratie_validate loop → declaratie_render
-  → declaratie_sign → after manual filing, declaratie_status /
-  declaratie_recipisa). Filing with ANAF is manual in this release.
+  → declaratie_sign → declaratie_prepare/declaratie_submit filing, or manual
+  filing when the portal tools are opted out → declaratie_status /
+  declaratie_recipisa).
 ---
 
 # Build and file a tax declaration from source data
 
 You are preparing a legal tax declaration for Romania's tax authority (ANAF)
 from whatever the user gives you — raw numbers, a document, or just a request.
-The flow is local until the user files: identify the form → read its completion
+The flow is local until the filing step: identify the form → read its completion
 guide → infer what a lookup can answer → **ask for everything else** → author
 the XML → validate until ANAF's validator agrees → render → user review → sign
-→ hand off for manual filing → confirm with the status tools.
+→ file on the portal (or hand off for manual filing) → confirm with the status
+tools.
 
 Three rules override everything else:
 
@@ -30,9 +32,11 @@ Three rules override everything else:
   memory and never by asking the user to retype what ANAF publishes. Elections
   and amounts (settlement period, refund request, bank account, the numbers
   themselves) can never be inferred — always ask.
-- **Never self-approve the signature.** `declaratie_sign` fires the user's
-  certificate PIN/2FA and produces a legally signed document. Call it only
-  after the user reviewed the rendered PDF and explicitly approved here.
+- **Never self-approve the signature — or the filing.** `declaratie_sign` and
+  `declaratie_portal_login` fire the user's certificate PIN/2FA, and
+  `declaratie_submit` files a real declaration on the production portal
+  (declarations have no test environment). Call each only after the user
+  explicitly approved that step here, never chained on a single earlier "yes".
 
 ## Step 1 — identify the form, orient the tooling
 
@@ -133,15 +137,40 @@ is about to fire, then `declaratie_sign` with the PDF path and `confirm=true`.
 One attempt per call; on `signed=false` relay the `guidance` and retry only
 with the user's go-ahead.
 
-## Step 10 — file and confirm
+## Step 10 — file (portal tools, or manual hand-off)
 
-Hand back the signed PDF; the user files it at **anaf.ro → Depunere
-declarații** (portal upload is automated in a later release). If
-`chain_complete` was false, mention the signature is leaf-only and portal
-acceptance of that is unverified. Ask the user to note the **upload index**
-the portal shows. When they return with it: `declaratie_status` (no login
-needed) — relay ANAF's state verbatim: `In prelucrare` means check again
-later; `Documentul este valid` means accepted; a validation-error state means
-fix and refile — say so plainly. Once valid, offer `declaratie_recipisa` to
-save the signed receipt to a path the user names and advise archiving it
-(ANAF keeps it downloadable only ~60 days).
+Filing is REAL: the portal is production-only. If `chain_complete` was false,
+mention the signature is leaf-only and portal acceptance of that is
+unverified.
+
+With the portal tools available (`declaratie_submit` in the tool list):
+
+1. `declaratie_portal_status` — no PIN/2FA fires. If the session lapsed, ask
+   the user to approve a portal login, warn their certificate prompt is about
+   to fire, then `declaratie_portal_login` with `confirm=true`. Sessions die
+   after ~10 idle minutes, so do this right before filing, not earlier.
+2. `declaratie_prepare` with the signed PDF path. Recap what is about to be
+   filed — form, period, CUI, amount payable/refundable — and ask for explicit
+   approval of the *filing* (the earlier signature approval does not carry
+   over). Heed `looks_signed=false`: it means the PDF has no embedded
+   signature and the portal will reject it.
+3. On their go: `declaratie_submit` with the same path, the token, and
+   `confirm=true`. The token is single-use and bound to the exact bytes; a
+   lapsed session comes back as "token NOT consumed" — log in again and retry
+   with the same token. Relay the verdict: `accepted=true` gives the **upload
+   index** (tell the user to note it); `accepted=false` carries the portal's
+   rejection reason — fix and re-prepare; `accepted=null` means the outcome is
+   unknown — check `declaratie_status` before ever re-filing.
+
+If the portal tools are absent (opted out via `ANAFPY_DECLARATII_UPLOAD`),
+hand back the signed PDF; the user files it at **anaf.ro → Depunere
+declarații** and notes the upload index the portal shows.
+
+## Step 11 — confirm
+
+With the upload index: `declaratie_status` (no login needed) — relay ANAF's
+state verbatim: `In prelucrare` means check again later; `Documentul este
+valid` means accepted; a validation-error state means fix and refile — say so
+plainly. Once valid, offer `declaratie_recipisa` to save the signed receipt to
+a path the user names and advise archiving it (ANAF keeps it downloadable only
+~60 days).

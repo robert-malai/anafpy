@@ -7,7 +7,7 @@ never runs (its confirm gate and its failure paths are what the tools promise).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import httpx
 import pytest
@@ -15,8 +15,11 @@ import respx
 from mcp.server.fastmcp.exceptions import ToolError
 
 from anafpy.declaratii.duk import DukIntegrator
+from anafpy.declaratii.upload import PORTAL_BASE_URL
+from anafpy.exceptions import AnafAuthError
 from anafpy.mcp import create_server
 from anafpy.mcp.config import ServerConfig
+from anafpy.spv import StoreIdentity, save_selected_identity
 
 
 def _config(
@@ -24,6 +27,7 @@ def _config(
     *,
     with_duk: bool = True,
     default_cif: str | None = "8000000000",
+    upload: bool = True,
 ) -> ServerConfig:
     duk_dir: Path | None = None
     if with_duk:
@@ -40,6 +44,7 @@ def _config(
         spv_identity_path=tmp_path / "spv-identity.json",
         duk_dir=duk_dir,
         duk_java="java",
+        declaratii_upload=upload,
     )
 
 
@@ -544,3 +549,380 @@ async def test_duk_status_reports_staleness(
     # Installed version is "unknown" (no history file), feed says J13.0.0 -> stale.
     assert forms["D300"]["current"] == "J13.0.0"
     assert forms["D300"]["stale"] is True
+
+
+# --- portal filing (login / status / prepare / submit) -----------------------------
+
+_UPLOAD_TOOLS = {
+    "declaratie_portal_login",
+    "declaratie_portal_status",
+    "declaratie_prepare",
+    "declaratie_submit",
+}
+
+_IDENTITY = StoreIdentity(
+    name="MIHAI-ROBERT MALAI",
+    sha1_thumbprint="C5E18AB56B0AC30A05BE8D526610F17BB2EF9E7D",
+    platform="darwin",
+)
+
+# Minimal pages carrying the live-captured markers the client judges by.
+_UPLOAD_FORM = (
+    '<html><form method="POST" action="/WAS6DUS/displayFile.do"'
+    ' enctype="multipart/form-data"><input type="file" name="linkdoc"></form></html>'
+)
+_LOGON_PAGE = "<html><form>Prezentare certificat</form></html>"
+_SUCCESS_PAGE = (
+    '<html>Fișierul "d300.pdf" a fost depus cu succes. '
+    "Indexul este <b>1100000005</b>.</html>"
+)
+_REJECTION_PAGE = (
+    "<html>Ne cerem scuze, dar cererea dumneavoastra nu a putut fi indeplinita!"
+    '<br>Motivul: <span style="color: red">Semnatura nu este valida</span></html>'
+)
+
+_SIGNED_PDF = (
+    b"%PDF-1.7\n1 0 obj\n<</Type/Sig/SubFilter/adbe.pkcs7.detached"
+    b"/ByteRange [0 100 200 300]>>\n%%EOF"
+)
+
+
+class FakePortalBootstrapper:
+    """Stands in for PortalCurlBootstrapper inside declaratie_portal_login."""
+
+    fail_with: ClassVar[str | None] = None
+    instances: ClassVar[list[FakePortalBootstrapper]] = []
+
+    def __init__(self, identity: str, *, timeout: float = 180.0) -> None:
+        self.identity = identity
+        self.timeout = timeout
+        FakePortalBootstrapper.instances.append(self)
+
+    async def bootstrap(self) -> dict[str, str]:
+        if FakePortalBootstrapper.fail_with is not None:
+            raise AnafAuthError(FakePortalBootstrapper.fail_with)
+        return {"MRHSession": "abc123", "JSESSIONID": "def456"}
+
+
+@pytest.fixture(autouse=True)
+def _reset_fake_portal_bootstrapper() -> None:
+    FakePortalBootstrapper.fail_with = None
+    FakePortalBootstrapper.instances = []
+
+
+def _select_identity(tmp_path: Path) -> None:
+    save_selected_identity(_IDENTITY, tmp_path / "spv-identity.json")
+
+
+def _patch_bootstrapper(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "anafpy.mcp.declaratii.tools.PortalCurlBootstrapper", FakePortalBootstrapper
+    )
+
+
+async def _login(server: Any) -> None:
+    result = await _call(server, "declaratie_portal_login", confirm=True)
+    assert result["logged_in"] is True
+
+
+def _signed_pdf(tmp_path: Path) -> Path:
+    pdf = tmp_path / "d300.pdf"
+    pdf.write_bytes(_SIGNED_PDF)
+    return pdf
+
+
+async def test_upload_tools_registered_by_default(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    names = {tool.name for tool in await server.list_tools()}
+    assert names >= _UPLOAD_TOOLS
+
+
+async def test_upload_opt_out_unregisters_tools_and_redirects_guidance(
+    tmp_path: Path,
+) -> None:
+    server = create_server(_config(tmp_path, upload=False))
+    tools = await server.list_tools()
+    assert _UPLOAD_TOOLS.isdisjoint({tool.name for tool in tools})
+    # declaratie_sign then guides toward manual portal filing.
+    sign = next(tool for tool in tools if tool.name == "declaratie_sign")
+    assert sign.description is not None
+    assert "manually" in sign.description
+    assert "ANAFPY_DECLARATII_UPLOAD" in sign.description
+
+
+async def test_sign_guidance_points_at_portal_tools_when_enabled(
+    tmp_path: Path,
+) -> None:
+    server = create_server(_config(tmp_path))
+    sign = next(
+        tool for tool in await server.list_tools() if tool.name == "declaratie_sign"
+    )
+    assert sign.description is not None
+    assert "declaratie_submit" in sign.description
+
+
+async def test_portal_login_requires_confirm(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    result = await _call(server, "declaratie_portal_login")
+    assert result["logged_in"] is False
+    assert "confirm=true" in result["guidance"]
+
+
+async def test_portal_login_without_certificate_selection(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    result = await _call(server, "declaratie_portal_login", confirm=True)
+    assert result["logged_in"] is False
+    assert "spv_select_certificate" in result["guidance"]
+
+
+@respx.mock
+async def test_portal_login_establishes_probeable_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _select_identity(tmp_path)
+    _patch_bootstrapper(monkeypatch)
+    respx.get(f"{PORTAL_BASE_URL}/WAS6DUS/").mock(
+        return_value=httpx.Response(200, text=_UPLOAD_FORM)
+    )
+    server = create_server(_config(tmp_path))
+
+    # Before login: inactive, no network probe possible (no cookies).
+    status = await _call(server, "declaratie_portal_status")
+    assert status["session_active"] is False
+    assert "declaratie_portal_login" in status["next_step"]
+
+    result = await _call(server, "declaratie_portal_login", confirm=True)
+    assert result["logged_in"] is True
+    assert result["identity"] == "MIHAI-ROBERT MALAI"
+    # macOS selection: the bootstrapper gets the Keychain NAME.
+    assert FakePortalBootstrapper.instances[0].identity == "MIHAI-ROBERT MALAI"
+
+    status = await _call(server, "declaratie_portal_status")
+    assert status["session_active"] is True
+
+
+async def test_portal_login_failure_returns_guidance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _select_identity(tmp_path)
+    _patch_bootstrapper(monkeypatch)
+    FakePortalBootstrapper.fail_with = "curl timed out awaiting the 2FA approval"
+    server = create_server(_config(tmp_path))
+    result = await _call(server, "declaratie_portal_login", confirm=True)
+    assert result["logged_in"] is False
+    assert "2FA" in result["guidance"]
+
+
+async def test_prepare_missing_file_is_invalid(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    result = await _call(
+        server, "declaratie_prepare", pdf_path=str(tmp_path / "absent.pdf")
+    )
+    assert result["valid"] is False
+    assert result["confirmation_token"] is None
+    assert "cannot read" in result["message"]
+
+
+async def test_prepare_issues_token_and_detects_signature(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    pdf = _signed_pdf(tmp_path)
+    result = await _call(server, "declaratie_prepare", pdf_path=str(pdf))
+    assert result["valid"] is True
+    assert result["confirmation_token"]
+    assert result["filename"] == "d300.pdf"
+    assert result["size_bytes"] == len(_SIGNED_PDF)
+    assert result["looks_signed"] is True
+
+
+async def test_prepare_warns_on_unsigned_pdf_but_issues_token(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    pdf = tmp_path / "d300.pdf"
+    pdf.write_bytes(b"%PDF-1.7\nno signature here\n%%EOF")
+    result = await _call(server, "declaratie_prepare", pdf_path=str(pdf))
+    assert result["valid"] is True
+    assert result["looks_signed"] is False
+    assert "declaratie_sign" in result["message"]
+    assert result["confirmation_token"]
+
+
+async def test_submit_requires_confirm(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    pdf = _signed_pdf(tmp_path)
+    result = await _call(
+        server,
+        "declaratie_submit",
+        pdf_path=str(pdf),
+        confirmation_token="anything",
+    )
+    assert result["accepted"] is False
+    assert "confirm=true" in result["message"]
+
+
+async def test_submit_rejects_bad_token(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    pdf = _signed_pdf(tmp_path)
+    result = await _call(
+        server,
+        "declaratie_submit",
+        pdf_path=str(pdf),
+        confirmation_token="not-a-token",
+        confirm=True,
+    )
+    assert result["accepted"] is False
+    assert "does not verify" in result["message"]
+
+
+async def test_submit_rejects_changed_bytes(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    pdf = _signed_pdf(tmp_path)
+    prepared = await _call(server, "declaratie_prepare", pdf_path=str(pdf))
+    pdf.write_bytes(_SIGNED_PDF + b"\ntampered")
+    result = await _call(
+        server,
+        "declaratie_submit",
+        pdf_path=str(pdf),
+        confirmation_token=prepared["confirmation_token"],
+        confirm=True,
+    )
+    assert result["accepted"] is False
+    assert "does not match" in result["message"]
+
+
+@respx.mock
+async def test_submit_dead_session_does_not_consume_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _select_identity(tmp_path)
+    _patch_bootstrapper(monkeypatch)
+    probe = respx.get(f"{PORTAL_BASE_URL}/WAS6DUS/").mock(
+        return_value=httpx.Response(200, text=_UPLOAD_FORM)
+    )
+    upload = respx.post(f"{PORTAL_BASE_URL}/WAS6DUS/displayFile.do").mock(
+        return_value=httpx.Response(200, text=_SUCCESS_PAGE)
+    )
+    server = create_server(_config(tmp_path))
+    pdf = _signed_pdf(tmp_path)
+    prepared = await _call(server, "declaratie_prepare", pdf_path=str(pdf))
+    token = prepared["confirmation_token"]
+
+    # No login yet: the pre-flight refuses without spending the token.
+    result = await _call(
+        server,
+        "declaratie_submit",
+        pdf_path=str(pdf),
+        confirmation_token=token,
+        confirm=True,
+    )
+    assert result["accepted"] is False
+    assert "NOT consumed" in result["message"]
+    assert probe.call_count == 0 and upload.call_count == 0
+
+    # After the login the SAME token files successfully — proof it survived.
+    await _login(server)
+    result = await _call(
+        server,
+        "declaratie_submit",
+        pdf_path=str(pdf),
+        confirmation_token=token,
+        confirm=True,
+    )
+    assert result["accepted"] is True
+    assert result["upload_index"] == "1100000005"
+    assert "declaratie_status" in result["message"]
+
+    # And it is single-use: a replay is refused.
+    result = await _call(
+        server,
+        "declaratie_submit",
+        pdf_path=str(pdf),
+        confirmation_token=token,
+        confirm=True,
+    )
+    assert result["accepted"] is False
+    assert "already used" in result["message"]
+    assert upload.call_count == 1
+
+
+@respx.mock
+async def test_submit_rejection_page_is_returned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _select_identity(tmp_path)
+    _patch_bootstrapper(monkeypatch)
+    respx.get(f"{PORTAL_BASE_URL}/WAS6DUS/").mock(
+        return_value=httpx.Response(200, text=_UPLOAD_FORM)
+    )
+    respx.post(f"{PORTAL_BASE_URL}/WAS6DUS/displayFile.do").mock(
+        return_value=httpx.Response(200, text=_REJECTION_PAGE)
+    )
+    server = create_server(_config(tmp_path))
+    await _login(server)
+    pdf = _signed_pdf(tmp_path)
+    prepared = await _call(server, "declaratie_prepare", pdf_path=str(pdf))
+    result = await _call(
+        server,
+        "declaratie_submit",
+        pdf_path=str(pdf),
+        confirmation_token=prepared["confirmation_token"],
+        confirm=True,
+    )
+    assert result["accepted"] is False
+    assert "Semnatura nu este valida" in result["reason"]
+    assert "declaratie_prepare" in result["message"]
+
+
+@respx.mock
+async def test_submit_unrecognised_page_is_unknown_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _select_identity(tmp_path)
+    _patch_bootstrapper(monkeypatch)
+    respx.get(f"{PORTAL_BASE_URL}/WAS6DUS/").mock(
+        return_value=httpx.Response(200, text=_UPLOAD_FORM)
+    )
+    respx.post(f"{PORTAL_BASE_URL}/WAS6DUS/displayFile.do").mock(
+        return_value=httpx.Response(200, text="<html>ceva nou</html>")
+    )
+    server = create_server(_config(tmp_path))
+    await _login(server)
+    pdf = _signed_pdf(tmp_path)
+    prepared = await _call(server, "declaratie_prepare", pdf_path=str(pdf))
+    result = await _call(
+        server,
+        "declaratie_submit",
+        pdf_path=str(pdf),
+        confirmation_token=prepared["confirmation_token"],
+        confirm=True,
+    )
+    assert result["accepted"] is None
+    assert "declaratie_status" in result["message"]
+
+
+@respx.mock
+async def test_submit_session_expiry_mid_upload_reports_nothing_filed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _select_identity(tmp_path)
+    _patch_bootstrapper(monkeypatch)
+    respx.get(f"{PORTAL_BASE_URL}/WAS6DUS/").mock(
+        return_value=httpx.Response(200, text=_UPLOAD_FORM)
+    )
+    respx.post(f"{PORTAL_BASE_URL}/WAS6DUS/displayFile.do").mock(
+        return_value=httpx.Response(
+            302, headers={"Location": f"{PORTAL_BASE_URL}/my.policy"}
+        )
+    )
+    server = create_server(_config(tmp_path))
+    await _login(server)
+    pdf = _signed_pdf(tmp_path)
+    prepared = await _call(server, "declaratie_prepare", pdf_path=str(pdf))
+    result = await _call(
+        server,
+        "declaratie_submit",
+        pdf_path=str(pdf),
+        confirmation_token=prepared["confirmation_token"],
+        confirm=True,
+    )
+    assert result["accepted"] is False
+    assert "NOTHING was filed" in result["message"]
+    assert "declaratie_prepare" in result["message"]

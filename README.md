@@ -1,7 +1,7 @@
 <p align="center">
   <a href="https://anafpy.readthedocs.io">
     <img src="https://raw.githubusercontent.com/robert-malai/anafpy/main/imgs/anafpy-social-preview.png"
-         alt="anafpy — Python client for ANAF e-Factura &amp; e-Transport" width="720">
+         alt="anafpy — typed Python clients for Romania's ANAF tax web services" width="720">
   </a>
 </p>
 
@@ -23,9 +23,12 @@
 # anafpy
 
 Typed Python clients for Romania's **ANAF** tax-authority web services —
-**e-Factura** (electronic invoicing), **e-Transport** (goods transport), and the
-**public no-auth registries** (VAT/taxpayer lookups, financial statements) — plus a
-local MCP server that exposes them as [Claude Cowork](https://claude.com) skills.
+**e-Factura** (electronic invoicing), **e-Transport** (goods transport), the
+**SPV mailbox** (certificate-authenticated, read-only), **tax declarations**
+(declarații — local authoring, validation, qualified signing, filing status), and
+the **public no-auth registries** (VAT/taxpayer lookups, financial statements) —
+plus a local MCP server that exposes them as
+[Claude Cowork](https://claude.com) skills.
 
 anafpy is a **thin transport client** — no persistence, no accounting logic. For
 **e-Factura** there are two ways out: if you run invoicing software, bring the
@@ -43,6 +46,10 @@ invoices suppliers issued to you) come wrapped in a friendly **flat read view**
 for easy display. **e-Transport** is fully translated too: you author
 declarations, UIT deletions, confirmations, and vehicle changes from structured
 fields, no XML handling needed, and the same models render what you read back.
+**Tax declarations** round out the set: authored locally against ANAF's official
+form schemas, validated by ANAF's own DUKIntegrator (the authority — anafpy never
+re-implements form rules), rendered to the official PDF, signed with your
+qualified certificate, and tracked all the way to the signed filing receipt.
 
 **Documentation: [anafpy.readthedocs.io](https://anafpy.readthedocs.io)** — the
 end-user setup walkthrough, the library guides, and the API reference.
@@ -97,14 +104,42 @@ no-auth services):
 - **See exactly which companies your certificate can query** — SPV reports the
   authorization inventory on every call.
 
-**Prepare and sign a tax declaration** (D300 VAT return first — local, macOS signing):
+**Prepare and sign a tax declaration** (local; signing is macOS-only for now):
 
 - **Fill in, validate, render, and sign a declaration** from unstructured info —
-  Claude authors the XML, validates it with ANAF's own DUKIntegrator (the
-  authority) in a fix-and-retry loop, renders the official PDF, and signs it with
-  your qualified certificate (the PIN/2FA prompt is the human gate).
-- **Filing is not automated yet** — you upload the signed PDF on the portal;
-  automating that is the next milestone.
+  an accountant's email, a spreadsheet, "file my VAT return for March": Claude
+  picks the form, authors the XML, validates it with ANAF's own DUKIntegrator
+  (the authority) in a fix-and-retry loop, renders the official PDF, and signs
+  it with your qualified certificate (the PIN/2FA prompt is the human gate).
+- **Every electronically filable form is in scope** — ANAF's DUKIntegrator
+  carries a validator for each (173 at last count, inventoried in the
+  [declaration reference](docs/anaf-reference/declaratii/forms/README.md)) — and
+  the declarations a typical SME actually files come with hands-on **completion
+  guides** (purpose and deadlines, row-by-row filling maps, validated examples,
+  filing gotchas) that Claude reads before authoring:
+
+  | Form | What it is |
+  |---|---|
+  | D300 | VAT return (decont de TVA) |
+  | D390 | EU recapitulative statement (VIES) |
+  | D394 | Informative return on domestic supplies/purchases |
+  | D100 | Payment obligations to the state budget |
+  | D112 | Payroll: wage income tax + social contributions |
+  | D101 | Annual corporate profit tax |
+  | D710 | Rectifying declaration (corrects D100-family filings) |
+  | D301 | Special VAT return (persons not VAT-registered who owe VAT) |
+  | D700 | Fiscal registration / fiscal-vector changes |
+  | D406 | SAF-T (Standard Audit File for Tax) |
+  | D205 | Annual informative on income tax withheld at source |
+  | D212 | Individuals' unified declaration (declarația unică) |
+
+- **File from Claude, with you approving every consequential step** — the
+  portal login (your certificate PIN/2FA) and the filing itself each require
+  your explicit go-ahead, through the same two-step prepare→submit gate as
+  e-Factura and e-Transport. Declarations file on ANAF's real portal (there is
+  no test environment), and the feature is opt-out
+  (`ANAFPY_DECLARATII_UPLOAD=off`) if you prefer uploading the signed PDF
+  yourself.
 - **Track the filing afterwards, with no login at all** — given the upload index
   the portal returns, Claude checks whether the declaration was accepted (ANAF's
   public status service) and saves the digitally signed filing receipt PDF —
@@ -122,8 +157,10 @@ full Claude Desktop + ANAF setup — also available
 > [`anafpy`](https://pypi.org/project/anafpy/). The OAuth2 auth layer, both async
 > clients, the bidirectional invoice-authoring models, and the MCP server
 > (two-step gated filing for both services, inbox, download, validate) are
-> implemented and tested, as is the read-only SPV layer (certificate-mTLS
-> mailbox: messages, downloads, report requests). ANAF's own server-side `validare` stays the
+> implemented and tested, as are the read-only SPV layer (certificate-mTLS
+> mailbox: messages, downloads, report requests) and the declarations layer
+> (DUKIntegrator validation and rendering, qualified signing, portal upload,
+> filing status/receipt). ANAF's own server-side `validare` stays the
 > authoritative validator; the authoring models add a local translated rule
 > check for fast feedback. See [`DESIGN.md`](DESIGN.md) for the full design and
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
@@ -189,15 +226,19 @@ Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
   e-Factura invoices (ready-made XML or composed from structured fields) and
   e-Transport declarations (see below).
 - **Declarations** (`anafpy.declaratii`, signing via `anafpy[declaratii]`) —
-  local authoring/validation/signing of tax declarations (D300 first): a
-  DUKIntegrator wrapper (`-v`/`-p`), the `nr_evid` composer, and a pyHanko
-  qualified-signature path where the raw op is delegated to the OS token
-  (macOS Keychain / CryptoTokenKit; no key material in-process). Filing works
-  two ways: manually on the portal, or through `DeclarationUploadClient`
-  (certificate login + upload on ANAF's declaration portal — live-verified
-  end to end on 2026-07-17); exposing filing as an MCP tool is what remains.
-  Filing **status** and the signed recipisa are covered too
-  (`DeclarationStatusClient` over ANAF's public no-auth StareD112 service).
+  local authoring/validation/signing of tax declarations, per-form generic
+  across every DUK-validated form (173 today, with hands-on completion guides
+  for the twelve common SME forms tabled above): a DUKIntegrator wrapper
+  (`-v`/`-p`), the `nr_evid` payment-evidence-number composers (D300,
+  D100/D710, D101, D301), and a pyHanko qualified-signature path where the raw
+  op is delegated to the OS token (macOS Keychain / CryptoTokenKit; no key
+  material in-process). Filing works two ways: manually on the portal, or
+  through `DeclarationUploadClient` (certificate login + upload on ANAF's
+  declaration portal — live-verified end to end on 2026-07-17), which the MCP
+  server exposes as a two-step gated filing flow (opt-out via
+  `ANAFPY_DECLARATII_UPLOAD=off`). Filing **status** and the signed
+  recipisa are covered too (`DeclarationStatusClient` over ANAF's public
+  no-auth StareD112 service).
 
 A sync facade was dropped as a goal — the clients are async-only.
 
@@ -356,10 +397,18 @@ declarations are composed from structured fields by `etransport_prepare*`.
 The `spv_*` tools read the SPV mailbox (list, download PDFs to disk, request
 official reports and await their delivery) over the certificate session
 established by `anafpy spv login` — read-only, no submissions.
+The `declaratie_*` tools run the local declaration pipeline — validate and
+render with ANAF's DUKIntegrator, compose the payment-evidence number, sign
+with a `confirm` gate (no MCP tool ever accepts a PIN — the raw signature is
+delegated to the OS token) — plus the login-free filing status check and
+signed-receipt download over ANAF's public service.
 The compiled ANAF reference is served as read-only resources, and workflow
 playbooks as MCP prompts — `etransport-declare`, which takes a declaration from
 any source (an email, a PDF invoice, a CMR) through extract → prepare → your
-approval → submit → UIT, and `personal-income-summary`, which pulls a person's
+approval → submit → UIT; `declaratie-prepare`, which takes a tax declaration
+from unstructured source data through form selection → completion-guide read →
+authoring → DUK validation loop → official PDF → your approval → signing →
+filing status; and `personal-income-summary`, which pulls a person's
 realized income from the SPV income certificates into a per-year summary (with an
 optional Excel workbook). See the
 [tools overview](https://anafpy.readthedocs.io/en/latest/mcp/tools/) and

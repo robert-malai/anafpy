@@ -80,17 +80,23 @@ an error. Downloads always go to disk at caller-given paths, never into context.
 A message's document also exists as the resource `spvmsg://<mesaj_id>/pdf`;
 never read it into context when a file on disk is what the user wants.
 
-The `declaratie_*` tools author, validate, render, and sign Romanian tax
-declarations (D300 first) entirely locally — nothing is filed with ANAF in this
-release. Compose the XML from the form's XSD (attributes on a single root
-element), then: `declaratie_validate` in a loop (findings are ANAF's own
-DUKIntegrator messages — fix and retry until ok); compute `nr_evid` with
+The `declaratie_*` tools author, validate, render, sign, and file Romanian tax
+declarations (D300 first). Authoring is entirely local: compose the XML from
+the form's XSD (attributes on a single root element), then
+`declaratie_validate` in a loop (findings are ANAF's own DUKIntegrator
+messages — fix and retry until ok); compute `nr_evid` with
 `declaratie_nr_evid`, never by hand; `declaratie_render` to write the official
 PDF; ask the user to review it; then, only on their explicit go, warn them the
 certificate PIN/2FA prompt is about to fire and call `declaratie_sign` with
-confirm=true. Hand back the signed PDF path and tell the user to file it at
-anaf.ro → Depunere declarații (portal upload is a later release), asking them to
-note the upload index the portal returns. With that index, `declaratie_status`
+confirm=true. Filing the signed PDF goes to ANAF's PRODUCTION portal
+(declarations have no test environment — every submission is real) through the
+same two-step gate, with the certificate login deliberately outside the submit
+cycle: probe the session with `declaratie_portal_status` (no 2FA), have the
+user approve `declaratie_portal_login` if it lapsed (fires their PIN/2FA, like
+`spv_login`), then `declaratie_prepare` (token bound to the signed PDF bytes) →
+user approval → `declaratie_submit` with confirm=true. Submit re-probes the
+session before spending the single-use token, so a lapsed login never costs an
+approval. A successful filing returns the upload index: `declaratie_status`
 checks the processing state (public no-auth service — works without any login;
 states come in ANAF's verbatim Romanian: 'In prelucrare' means check again
 later, 'Documentul este valid' means accepted) and
@@ -98,7 +104,9 @@ later, 'Documentul este valid' means accepted) and
 are only available ~60 days, so advise archiving it promptly.
 `declaratie_duk_status` reports the DUKIntegrator install and validator
 staleness. The authoring tools need ANAFPY_DUK_DIR set (signing is macOS-only
-for now); the status/recipisa tools need nothing.
+for now); the status/recipisa tools need nothing; the portal-filing tools can
+be opted out with ANAFPY_DECLARATII_UPLOAD=off (then guide the user through
+manual filing at anaf.ro → Depunere declarații).
 
 The `anaf_*` lookup tools query ANAF's PUBLIC no-auth services and work even without
 a login: the taxpayer/VAT registry (`anaf_lookup_taxpayers` answers "is this CUI

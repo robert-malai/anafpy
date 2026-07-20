@@ -338,9 +338,13 @@ finalizezi autentificarea. Comanda din terminal funcționează în continuare ș
 ## Pasul 8 (opțional) — Deblochează uneltele pentru declarații
 
 Uneltele `declaratie_*` îi permit lui Claude să completeze, să valideze, să
-genereze și să **semneze** o declarație fiscală (întâi decontul de TVA D300) pe
-calculatorul tău. Nimic nu se depune încă la ANAF prin ele — Claude produce un
-PDF semnat pe care îl încarci apoi tu pe portal. Semnarea funcționează deocamdată
+genereze, să **semneze** și — cu aprobarea ta explicită la fiecare pas
+important — să **depună** o declarație fiscală (decontul de TVA D300, D100,
+D112 și orice alt formular acoperit de validatorul ANAF). Depunerea merge pe
+portalul real al ANAF (declarațiile nu au un mediu de test) printr-un flux de
+confirmare în doi pași, iar dacă preferi poți dezactiva depunerea complet cu
+`ANAFPY_DECLARATII_UPLOAD: "off"` în blocul `env` — Claude îți predă atunci
+PDF-ul semnat, iar tu îl încarci pe portal. Semnarea funcționează deocamdată
 doar pe macOS.
 
 Aceste unelte rulează validatorul desktop al ANAF, **DUKIntegrator**, așa că îl

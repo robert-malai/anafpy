@@ -68,12 +68,11 @@ human gate here is the SPV login (certificate PIN / 2FA), described in the
 
 ## `declaratie-prepare`
 
-Builds, validates, renders, signs, and tracks a Romanian tax declaration
-starting from **unstructured source data** — an accountant's email, a
-spreadsheet, pasted numbers, or just "file my VAT return for March". It drives
-the local `declaratie_*` tools plus the public `anaf_*` lookups — nothing is
-filed with ANAF here; you file the signed PDF on the portal. The playbook walks
-Claude through:
+Builds, validates, renders, signs, files, and tracks a Romanian tax
+declaration starting from **unstructured source data** — an accountant's
+email, a spreadsheet, pasted numbers, or just "file my VAT return for March".
+It drives the `declaratie_*` tools plus the public `anaf_*` lookups. The
+playbook walks Claude through:
 
 1. **Identify the form** — named by you it is simply echoed; otherwise inferred
    from the data against the form inventory, asking only when two forms remain
@@ -101,11 +100,18 @@ Claude through:
    to check.
 9. **Sign on your explicit go** — `declaratie_sign` with `confirm=true`, after
    a warning that the certificate PIN/2FA prompt is about to fire.
-10. **File and confirm** — you file at anaf.ro → Depunere declarații and note
-    the upload index; `declaratie_status` then checks acceptance (no login
-    needed) and `declaratie_recipisa` saves the signed filing receipt —
+10. **File on your explicit go** — `declaratie_portal_status` probes the
+    portal session (no 2FA); if it lapsed, `declaratie_portal_login` with your
+    approval (your certificate prompt fires); then `declaratie_prepare` →
+    filing recap → `declaratie_submit` with `confirm=true`. Where the portal
+    tools are opted out (`ANAFPY_DECLARATII_UPLOAD`), you file the signed PDF
+    at anaf.ro → Depunere declarații yourself and note the upload index.
+11. **Confirm** — `declaratie_status` checks acceptance by upload index (no
+    login needed) and `declaratie_recipisa` saves the signed filing receipt —
     available only ~60 days, so it's archived promptly.
 
-The human gates are the batched questions, the PDF review, and the signature
-approval (certificate PIN / 2FA); the skill never signs without your explicit
-go-ahead relayed as `confirm=true`.
+The human gates are the batched questions, the PDF review, the signature
+approval, the portal login (both fire your certificate PIN / 2FA), and the
+filing approval; the skill never signs or files without your explicit
+go-ahead relayed as `confirm=true`, and a signature approval never doubles as
+the filing approval.

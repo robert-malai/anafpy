@@ -321,9 +321,13 @@ working too.
 
 ## Step 8 (optional) — Unlock the declaration tools
 
-The `declaratie_*` tools let Claude fill in, validate, render, and **sign** a tax
-declaration (D300 VAT return first) on your computer. Nothing is filed with ANAF
-through them yet — Claude produces a signed PDF you then upload on the portal.
+The `declaratie_*` tools let Claude fill in, validate, render, **sign**, and —
+with your explicit approval at every consequential step — **file** a tax
+declaration (the D300 VAT return, D100, D112, and any other form ANAF's
+validator covers). Filing goes to ANAF's real declaration portal (declarations
+have no test environment) through a two-step confirmation flow, and you can
+opt out of it entirely with `ANAFPY_DECLARATII_UPLOAD: "off"` in the `env`
+block — Claude then hands you the signed PDF to upload on the portal yourself.
 Signing is macOS-only for now.
 
 These tools run ANAF's own desktop validator, **DUKIntegrator**, so you install

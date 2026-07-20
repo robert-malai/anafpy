@@ -15,7 +15,7 @@ import time
 from pydantic import BaseModel
 
 from ..auth import FileTokenStore, KeyringTokenStore, TokenProvider, TokenStore
-from ..declaratii import DeclarationStatusClient, DukIntegrator
+from ..declaratii import DeclarationStatusClient, DeclarationUploadClient, DukIntegrator
 from ..efactura.client import EFacturaClient
 from ..etransport.client import ETransportClient
 from ..exceptions import AnafConfigError
@@ -78,6 +78,7 @@ class AppContext:
         self._spv: SpvClient | None = None
         self._duk: DukIntegrator | None = None
         self._declaration_status: DeclarationStatusClient | None = None
+        self._declaration_upload: DeclarationUploadClient | None = None
         #: Redeemed confirmation tokens (single-use gate for the submit tools).
         self.token_ledger = TokenLedger()
         #: Same-day `cerere` dedupe for agent loops: canonical params -> the
@@ -144,6 +145,19 @@ class AppContext:
             self._declaration_status = DeclarationStatusClient()
         return self._declaration_status
 
+    def declaration_upload(self) -> DeclarationUploadClient:
+        """The portal upload client, carrying the in-process APM session.
+
+        Built without a bootstrapper: the certificate/2FA login stays in the
+        ``declaratie_portal_login`` tool, which runs a per-attempt bootstrapper
+        and installs the resulting cookie set here (``install_session``). The
+        session is deliberately in-memory only — portal sessions die after ~10
+        idle minutes, so unlike SPV's there is nothing worth persisting.
+        """
+        if self._declaration_upload is None:
+            self._declaration_upload = DeclarationUploadClient()
+        return self._declaration_upload
+
     def auth_status(self) -> AuthStatus:
         """Report whether a usable ANAF session is present (read-only)."""
         env = self.config.environment.value
@@ -194,5 +208,7 @@ class AppContext:
             await self._spv.aclose()
         if self._declaration_status is not None:
             await self._declaration_status.aclose()
+        if self._declaration_upload is not None:
+            await self._declaration_upload.aclose()
         if self._provider is not None:
             await self._provider.aclose()

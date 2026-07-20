@@ -39,6 +39,7 @@ from ..exceptions import AnafConfigError, AnafError
 from .config import ServerConfig
 
 __all__ = [
+    "TOKEN_USED_MESSAGE",
     "ConfirmationError",
     "PreparedSubmission",
     "SubmitResult",
@@ -53,7 +54,7 @@ __all__ = [
 _ALGORITHM = "HS256"
 _DEFAULT_TTL = 900.0  # seconds a preview stays fileable (15 min)
 
-_TOKEN_USED_MESSAGE = (
+TOKEN_USED_MESSAGE = (
     "confirmation token already used — filing is never repeated on the same "
     "approval; run the prepare step again"
 )
@@ -274,7 +275,7 @@ async def run_submit[C](
     # deterministic config error, and must not burn the human's approval.
     service = client()
     if not ledger.consume(confirmation_token, expires_at):
-        return SubmitResult(accepted=False, message=_TOKEN_USED_MESSAGE)
+        return SubmitResult(accepted=False, message=TOKEN_USED_MESSAGE)
     # The token is consumed BEFORE the upload, deliberately: on an ambiguous
     # failure (e.g. a timeout after the request was sent) replaying the same
     # token must not be able to double-file — the human re-approves instead.

@@ -287,6 +287,59 @@ async def test_login_scopes_cookies_to_portal_host() -> None:
         assert domains == {"decl.anaf.mfinante.gov.ro"}
 
 
+async def test_install_session_scopes_cookies_to_portal_host() -> None:
+    # The seam callers with their own bootstrap use — same scoping as login().
+    async with DeclarationUploadClient() as client:
+        client.install_session({"MRHSession": "abc123"})
+        domains = {cookie.domain for cookie in client._http.cookies.jar}
+        assert domains == {"decl.anaf.mfinante.gov.ro"}
+
+
+# -- session probe -----------------------------------------------------------------
+
+
+@respx.mock
+async def test_probe_active_session_sees_upload_form() -> None:
+    route = respx.get(f"{PORTAL_BASE_URL}/WAS6DUS/").mock(
+        return_value=httpx.Response(200, text=_UPLOAD_FORM)
+    )
+    async with _client() as client:
+        assert await client.probe() is True
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_probe_logon_page_answer_is_false() -> None:
+    respx.get(f"{PORTAL_BASE_URL}/WAS6DUS/").mock(
+        return_value=httpx.Response(200, text=_LOGON_PAGE)
+    )
+    async with _client() as client:
+        assert await client.probe() is False
+
+
+@respx.mock
+async def test_probe_follows_bounce_to_logon_page() -> None:
+    # Unlike the upload POST, the probe GET follows the APM bounce — landing
+    # anywhere but the upload form is simply "not logged in".
+    respx.get(f"{PORTAL_BASE_URL}/WAS6DUS/").mock(
+        return_value=httpx.Response(
+            302, headers={"Location": f"{PORTAL_BASE_URL}/my.policy"}
+        )
+    )
+    respx.get(f"{PORTAL_BASE_URL}/my.policy").mock(
+        return_value=httpx.Response(200, text=_LOGON_PAGE)
+    )
+    async with _client() as client:
+        assert await client.probe() is False
+
+
+@respx.mock
+async def test_probe_without_cookies_is_false_with_no_network_call() -> None:
+    # respx would raise on any unmatched request — none may happen.
+    async with DeclarationUploadClient() as client:
+        assert await client.probe() is False
+
+
 # -- page parsing ------------------------------------------------------------------
 
 

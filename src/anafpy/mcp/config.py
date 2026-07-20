@@ -62,6 +62,15 @@ class ServerConfig(BaseSettings):
         sign_identity: the Keychain identity name to sign declarations with
             (``ANAFPY_SIGN_IDENTITY``); optional — falls back to the persisted SPV
             certificate selection (the same qualified certificate).
+        declaratii_upload: whether the declaration portal-upload tools
+            (``declaratie_portal_login`` / ``declaratie_portal_status`` /
+            ``declaratie_prepare`` / ``declaratie_submit``) are served
+            (``ANAFPY_DECLARATII_UPLOAD``). **On by default**; set it to
+            ``off``/``0``/``false`` to opt out — the server then serves the
+            local authoring tools only and ``declaratie_sign`` points the user
+            at manual portal filing. Filing goes to the PRODUCTION portal
+            (declaration filing has no TEST environment), which is why the
+            opt-out exists.
         signing_key: per-process secret backing the confirmation tokens issued by the
             two-step ``prepare`` → ``submit`` flow. Defaults to a fresh random key, so
             tokens are only valid within the lifetime of one server process.
@@ -97,6 +106,9 @@ class ServerConfig(BaseSettings):
     duk_java: str | None = Field(default=None, validation_alias="ANAFPY_DUK_JAVA")
     sign_identity: str | None = Field(
         default=None, validation_alias="ANAFPY_SIGN_IDENTITY"
+    )
+    declaratii_upload: bool = Field(
+        default=True, validation_alias="ANAFPY_DECLARATII_UPLOAD"
     )
     # A private attribute, not a settings field: BaseSettings populates fields from
     # the environment by name, and the signing key must never come from a stray
@@ -139,6 +151,11 @@ class ServerConfig(BaseSettings):
     @classmethod
     def _blank_backend_is_default(cls, value: object) -> object:
         return value or "keyring"
+
+    @field_validator("declaratii_upload", mode="before")
+    @classmethod
+    def _blank_upload_is_default(cls, value: object) -> object:
+        return True if value == "" else value
 
     @property
     def has_credentials(self) -> bool:

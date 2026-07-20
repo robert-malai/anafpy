@@ -73,12 +73,13 @@ Since shipped, expanding the original scope: **SPV** (read-only mailbox, cert-mT
 **declaration authoring + signing** (`anafpy.declaratii`, landing 2026-07-15 —
 local D300 authoring, DUKIntegrator validation, qualified signing; plus
 StareD112 filing-status/recipisa tracking, public no-auth, added 2026-07-16;
-see §12). **Filing declarations with ANAF stays out of scope** for now (there is
-no SPV declaration-upload API; portal upload is a later milestone).
+see §12). **Declaration filing landed too** (M2): the WAS6DUS portal-upload
+client was live-verified 2026-07-17 (D406T) and the MCP two-step filing gate
+followed 2026-07-20 — an **opt-out** feature (`ANAFPY_DECLARATII_UPLOAD=off`),
+since declarations file on the production portal only.
 
 Out of scope: local persistence of documents; reconciliation / accounting logic;
-inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; **filing tax
-declarations** (authoring + signing only, for now); a sync facade
+inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; a sync facade
 *(dropped 2026-07-03 — the consumers that exist are async: the MCP server and
 `asyncio.run` scripts; was to be generated via `unasync`)*.
 
@@ -615,15 +616,16 @@ MCPB bundle for Claude Desktop (`server.type: "uv"` so the host manages Python;
 ## 12. Declarations (authoring + signing + status tracking)
 
 > Landed 2026-07-15 (`anafpy.declaratii`, M1): **local document generation and
-> signing, exposed via MCP.** Recipisa/status tracking landed 2026-07-16, and
-> the recon-grade library upload client landed 2026-07-17; MCP filing exposure
-> remains the next M2 slice. See the two later subsections below.
+> signing, exposed via MCP.** Recipisa/status tracking landed 2026-07-16, the
+> recon-grade library upload client 2026-07-17, and the MCP filing gate
+> 2026-07-20 — M2 complete. See the later subsections below.
 
 **The problem.** A taxpayer with no upstream software needs to produce a valid,
 signed tax declaration (D300 VAT return first; the design is per-form generic).
 Unlike e-Factura/e-Transport, ANAF exposes **no submission web service** for
 declarations — filing is a portal upload behind the same F5 APM cert wall as SPV.
-So M1 stops at a signed PDF the user files manually; M2 will automate the upload.
+So M1 stopped at a signed PDF the user files manually; M2 automated the upload
+(the portal client and the MCP filing gate — see the subsections below).
 
 **Pipeline** (all local, no ANAF host): unstructured info → author the XML from
 the form's XSD → **DUKIntegrator `-v`** (validate-fix loop until `ok`) →
@@ -711,7 +713,37 @@ the success page was captured (upload index in "Indexul este …"; the parse is
 hardened on the real shape), the **pyHanko CMS signature was accepted** by the
 portal, and **StareD112 listed the D406T** (`In prelucrare`) within a minute.
 Note the portal's own caveat: the success page is not the registration
-confirmation — the recipisa is. What remains for M2 proper is the MCP
-exposure: a gated `declaratie_prepare`/`_submit` pair over `mcp/gate.py`
-(two-step confirmation like the e-Factura/e-Transport filings). See the
+confirmation — the recipisa is. See the
 [portal-upload reference](docs/anaf-reference/declaratii/portal-upload.md) §4-§5.
+
+**MCP filing gate (landed 2026-07-20).** The MCP exposure completes M2 as a
+`declaratie_prepare`/`declaratie_submit` pair over the shared `mcp/gate.py`
+token primitives, with three deliberate deviations from the e-Factura/
+e-Transport shape, all decided with the user:
+
+- **Opt-out, not opt-in.** The filing tools are served by default and removed
+  by `ANAFPY_DECLARATII_UPLOAD=off` (declarations file on the **production**
+  portal — there is no test environment — so a user who wants the MCP server
+  authoring-only can strip the capability entirely; `declaratie_sign`'s
+  guidance then points at manual portal filing).
+- **Login outside the submit cycle.** `declaratie_portal_login` is its own
+  confirm-gated tool (mirrors `spv_login`: fires the certificate PIN/2FA, one
+  attempt per call, failures return `logged_in=false` + guidance). The session
+  lives in-memory on the long-lived `DeclarationUploadClient`
+  (`install_session`) — unlike SPV's it is deliberately not persisted, since
+  the portal kills sessions after ~10 idle minutes.
+- **Probe before spending the approval.** `DeclarationUploadClient.probe()` is
+  a no-2FA session check (a plain GET of the upload app; landing anywhere but
+  the upload form is "not logged in"), exposed as `declaratie_portal_status`
+  and run by `declaratie_submit` *before* the single-use confirmation token is
+  consumed — a lapsed session never burns the human's approval; the same token
+  files after a re-login.
+
+The token binds the exact signed-PDF bytes plus the multipart filename (the
+declaration's CUI rides inside the signed document itself, so unlike the other
+filings there is no separate CIF context to bind). `declaratie_prepare` also
+runs a cheap local signature sniff (`/ByteRange` + `adbe.pkcs7.detached`) —
+informational only, per the prepare-never-blocks rule. A mid-upload APM bounce
+(the portal redirecting the POST) is reported as "nothing was filed"; any other
+upload failure is an UNKNOWN outcome that directs the model to check
+StareD112 before re-preparing, so a filing is never silently repeated.

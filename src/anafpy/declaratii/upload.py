@@ -213,7 +213,16 @@ class DeclarationUploadClient(HttpClientBase):
                 "no bootstrapper configured — construct the client with "
                 "PortalCurlBootstrapper(identity) to log in"
             )
-        cookies = await self._bootstrapper.bootstrap()
+        self.install_session(await self._bootstrapper.bootstrap())
+
+    def install_session(self, cookies: dict[str, str]) -> None:
+        """Install an already-bootstrapped APM cookie set as the session.
+
+        The seam for callers that run the certificate bootstrap themselves
+        (the MCP ``declaratie_portal_login`` tool holds one long-lived client
+        and logs it in with a per-attempt bootstrapper); :meth:`login` is the
+        packaged bootstrap-then-install path.
+        """
         # Scope the bearer-cookie set to the portal host: httpx's default
         # empty domain would attach MRHSession to a request to ANY host, so
         # an off-portal redirect must never carry the session with it.
@@ -221,6 +230,25 @@ class DeclarationUploadClient(HttpClientBase):
         self._http.cookies.clear()
         for name, value in cookies.items():
             self._http.cookies.set(name, value, domain=host)
+
+    async def probe(self) -> bool:
+        """Report whether the session still opens the upload app — no 2FA.
+
+        A plain ``GET`` of the app's landing page with the current cookies:
+        an active session answers the upload form; a missing/expired one is
+        bounced to the APM logon page (redirects are followed — unlike the
+        upload POST there is nothing to lose). Without any cookies the answer
+        is ``False`` with no network call. Never triggers the certificate
+        bootstrap.
+
+        Raises:
+            AnafTransportError: network failure (unreachable is not the same
+                answer as "not logged in").
+        """
+        if not self._http.cookies:
+            return False
+        response = await self._request_http("GET", "WAS6DUS/", follow_redirects=True)
+        return response.status_code == 200 and _FORM_MARKER in response.text.lower()
 
     async def upload(self, pdf: bytes, *, filename: str) -> PortalUploadResult:
         """POST the signed declaration PDF to ``displayFile.do``.

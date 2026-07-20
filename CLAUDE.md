@@ -41,16 +41,20 @@ serializable typed inputs/outputs, good docstrings. A third strand is
 authoring, validation (via ANAF's DUKIntegrator), official-PDF rendering, and
 qualified signing (the raw op delegated to the OS token — no key material or PIN
 in-process), exposed as `declaratie_*` MCP tools. M1 is authoring + signing;
-**filing the signed document with ANAF is a later milestone** (no SPV/portal
-upload API yet) — but **status tracking already landed** (2026-07-16):
+**status tracking landed** 2026-07-16:
 `DeclarationStatusClient` checks a filed declaration's processing state and
 downloads the signed recipisa over ANAF's **public, no-auth** StareD112 service
-(upload index + CUI are the access key), so the post-manual-filing confirmation
-loop is automated — and the **first M2 slice landed recon-grade** (2026-07-17):
+(upload index + CUI are the access key), so the post-filing confirmation
+loop is automated. **M2 (filing) is complete**:
 `DeclarationUploadClient` (`declaratii/upload.py`) does the WAS6DUS portal
-certificate login + multipart filing POST, live-verified by filing **D406T**,
-ANAF's sanctioned no-fiscal-effect SAF-T test declaration (the only permitted
-production filing; DESIGN.md §12). Distribution is **free and
+certificate login + multipart filing POST, live-verified 2026-07-17 by filing
+**D406T**, ANAF's sanctioned no-fiscal-effect SAF-T test declaration (the only
+permitted production filing; DESIGN.md §12), and the **MCP filing gate landed
+2026-07-20**: `declaratie_portal_login` (confirm-gated, outside the submit
+cycle) + `declaratie_portal_status` (no-2FA session probe) +
+`declaratie_prepare` → `declaratie_submit` over the shared two-step gate —
+served by default, **opt-out** via `ANAFPY_DECLARATII_UPLOAD=off` (declarations
+file on the production portal only). Distribution is **free and
 as-is**: the library is for anyone to use; the MCP server is **best-effort**, and
 configuring it — including provisioning the OAuth application on ANAF's portal —
 is the user's responsibility (DESIGN.md §11).
@@ -103,7 +107,10 @@ x64 Schannel curl such as Git for Windows', see the SPV reference §1.1),
 `ANAFPY_DUK_DIR` (the extracted DUKIntegrator `dist/` folder — enables the
 `declaratie_*` tools; no default), `ANAFPY_DUK_JAVA` (the java binary; optional),
 `ANAFPY_SIGN_IDENTITY` (Keychain identity name to sign declarations with;
-optional — falls back to the persisted SPV certificate selection).
+optional — falls back to the persisted SPV certificate selection),
+`ANAFPY_DECLARATII_UPLOAD` (default on; `off` opts out of the declaration
+portal-filing tools — the server then serves authoring/status only and
+`declaratie_sign` guides manual filing).
 
 Codegen (only when re-vendoring XSDs / Schematron sources — see below):
 
@@ -200,7 +207,9 @@ src/anafpy/
                          # DeclarationUploadClient (cookie multipart POST;
                          # rejection page = returned business outcome; success
                          # page -> upload index — LIVE-VERIFIED 2026-07-17 by
-                         # filing a D406T, pyHanko CMS accepted)
+                         # filing a D406T, pyHanko CMS accepted; probe() =
+                         # no-2FA session check, install_session() = the seam
+                         # for externally-run bootstraps)
     signing.py           # RawSigner protocol + KeychainRawSigner (ctypes ->
                          # Security.framework: SecKeyCreateSignature; no key material,
                          # 2FA is the human gate) + shared framework cache,
@@ -233,8 +242,10 @@ src/anafpy/
     spv/                 # tools.py (+ spvmsg:// resource), nomenclature.py
                          # (report types + per-type wire params)
     declaratii/          # tools.py (declaratie_validate/render/sign/nr_evid/
-                         # duk_status — LOCAL, no filing (M1) — + declaratie_status/
-                         # recipisa over the public StareD112), models.py
+                         # duk_status — LOCAL — + declaratie_status/recipisa
+                         # over the public StareD112 + the portal filing gate:
+                         # declaratie_portal_login/portal_status/prepare/submit,
+                         # opt-out via ANAFPY_DECLARATII_UPLOAD), models.py
     __main__.py          # `python -m anafpy.mcp` (stdio)
 .claude-plugin/          # marketplace.json — the `anafpy` plugin marketplace
                          # published from this repo (`/plugin marketplace add
@@ -476,24 +487,23 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   `anafpy spv login` remains the CLI path. No two-step gate anywhere in SPV:
   no declaration is ever filed (reports are information requests) — honesty
   about `spv_cerere`'s side effect lives in its annotations, not a gate.
-- **Declaration tools are LOCAL** (`anafpy.mcp.declaratii`, added 2026-07-15 —
-  M1: authoring + signing, no filing): `declaratie_validate` /
+- **Declaration authoring tools are LOCAL** (`anafpy.mcp.declaratii`, added
+  2026-07-15 — M1: authoring + signing): `declaratie_validate` /
   `declaratie_render` run ANAF's DUKIntegrator (validation authority is ANAF's —
   we run its per-form validator jars, never re-implement rules; the `nr_evid`
   helper is composition, not validation), `declaratie_nr_evid` composes the
   payment-evidence number for the self-assessed forms (`form=` D300/D100/D710/
   D101/D301 — each with its own code slot, prefix, and position-18 flag),
   `declaratie_duk_status` surfaces CLI-mode DUK's non-auto-update
-  staleness. `declaratie_sign` is the consequential one: gated on `confirm=true`
+  staleness. `declaratie_sign` is consequential: gated on `confirm=true`
   (mirrors `spv_login` — failures return `signed=false` + guidance, not
   exceptions) because it fires the certificate's PIN/2FA, and **no MCP tool ever
   accepts a PIN** — the raw signature is delegated to the OS
-  (`KeychainRawSigner`), never entering model context. There is **no two-step
-  filing gate** here (nothing is filed with ANAF in M1); PDFs land on disk via
+  (`KeychainRawSigner`), never entering model context. PDFs land on disk via
   the shared `write_artifact` collision guard, never base64. Needs
   `ANAFPY_DUK_DIR`; signing is macOS-only for now (the `RawSigner` protocol is
   the Windows seam). See the [DUK reference](docs/anaf-reference/declaratii/duk.md).
-  Two more tools close the post-manual-filing loop over the **public, no-auth**
+  Two tools close the post-filing loop over the **public, no-auth**
   StareD112 service (added 2026-07-16; they need neither `ANAFPY_DUK_DIR` nor any
   login): `declaratie_status` (READ_ONLY; upload index + CUI → the CUI's
   last-3-months filings with per-document state — the "no declaration identified"
@@ -502,6 +512,27 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   PDF body for an unknown/expired index, returned as `ok=false`; recipisas last
   ~60 days). Wire reference:
   [docs/anaf-reference/declaratii/stared112.md](docs/anaf-reference/declaratii/stared112.md).
+- **Declaration FILING is the M2 gate** (added 2026-07-20, **opt-out** via
+  `ANAFPY_DECLARATII_UPLOAD=off` — filing goes to the production portal only,
+  so a user can strip the capability; the sign tool's guidance then points at
+  manual filing). Four tools over `DeclarationUploadClient`, with the portal
+  login deliberately OUTSIDE the submit cycle: `declaratie_portal_login`
+  (confirm-gated like `spv_login`; builds a per-attempt
+  `PortalCurlBootstrapper` from the persisted SPV certificate selection and
+  installs the cookie set into the long-lived client — in-memory only, portal
+  sessions die after ~10 idle minutes, nothing worth persisting),
+  `declaratie_portal_status` (READ_ONLY no-2FA probe: `probe()` GETs the app
+  landing page and judges by the upload-form marker), and the two-step
+  `declaratie_prepare` → `declaratie_submit` over the shared `gate.py`
+  primitives (kind `declaratie.upload`; token bound to the exact signed-PDF
+  bytes + the multipart filename — no CIF context, the CUI rides inside the
+  signed document). `declaratie_submit` **re-probes the session before
+  consuming the single-use token**, so a lapsed login never burns the human's
+  approval (the same token files after re-login); an APM bounce on the POST is
+  reported as "nothing was filed", any other upload failure as UNKNOWN with a
+  check-StareD112-before-refiling instruction. `declaratie_prepare` runs a
+  local signature sniff (`/ByteRange` + `adbe.pkcs7.detached`), informational
+  only — the prepare-never-blocks rule holds.
 - **Flat models live at the client layer**
   ([efactura/authoring/](src/anafpy/efactura/authoring/),
   [etransport/models.py](src/anafpy/etransport/models.py)) — the MCP layer only
