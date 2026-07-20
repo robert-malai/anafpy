@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "anafpy"
-version = "0.4.2"
+version = "0.4.3"
 description = "Typed Python clients for Romania's ANAF web services: e-Factura, e-Transport, and the public no-auth registries."
 readme = "README.md"
 requires-python = ">=3.12"
