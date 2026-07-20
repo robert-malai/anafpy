@@ -94,6 +94,26 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/anafpy"]
+# The compiled ANAF reference (anafref:// MCP resources) and the workflow skills
+# (MCP prompts) ride inside the wheel so a PyPI install serves them too; the
+# repo trees stay the single source (docs/ is also the MkDocs tree, plugins/ the
+# Cowork plugin) and the copy happens only at build time. reference.py/prompts.py
+# fall back to these packaged copies when no repo checkout is present.
+# force-include bypasses exclude patterns, so the reference's curated subtrees
+# are enumerated here to keep the raw _sources/ captures (3.5 MB) out of the
+# wheel; test_mcp_server.py's wheel-map tripwire fails when a new service dir
+# appears in docs/anaf-reference/ without a mapping below.
+exclude = ["**/.DS_Store"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"docs/anaf-reference/README.md" = "anafpy/mcp/_reference/README.md"
+"docs/anaf-reference/declaratii" = "anafpy/mcp/_reference/declaratii"
+"docs/anaf-reference/efactura" = "anafpy/mcp/_reference/efactura"
+"docs/anaf-reference/etransport" = "anafpy/mcp/_reference/etransport"
+"docs/anaf-reference/oauth" = "anafpy/mcp/_reference/oauth"
+"docs/anaf-reference/public" = "anafpy/mcp/_reference/public"
+"docs/anaf-reference/spv" = "anafpy/mcp/_reference/spv"
+"plugins/anafpy-workflows/skills" = "anafpy/mcp/_skills"
 
 [tool.ruff]
 line-length = 88

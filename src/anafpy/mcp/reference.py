@@ -11,6 +11,12 @@ from .config import ServerConfig
 
 __all__ = ["register"]
 
+# Default locations, tried in order when ANAFPY_DOCS_DIR is unset: the repo
+# checkout's live tree, then the copy the wheel build packages (pyproject's
+# force-include) so a PyPI install serves the reference too.
+_REPO_DOCS = Path(__file__).resolve().parents[3] / "docs" / "anaf-reference"
+_PACKAGED_DOCS = Path(__file__).resolve().parent / "_reference"
+
 
 def register(mcp: FastMCP, cfg: ServerConfig) -> None:
     """Expose the compiled ANAF reference Markdown as read-only resources."""
@@ -36,9 +42,12 @@ def register(mcp: FastMCP, cfg: ServerConfig) -> None:
 
 
 def _docs_dir(cfg: ServerConfig) -> Path | None:
-    default = Path(__file__).resolve().parents[3] / "docs" / "anaf-reference"
-    docs = cfg.docs_dir or default
-    return docs if docs.is_dir() else None
+    if cfg.docs_dir is not None:
+        return cfg.docs_dir if cfg.docs_dir.is_dir() else None
+    for candidate in (_REPO_DOCS, _PACKAGED_DOCS):
+        if candidate.is_dir():
+            return candidate
+    return None
 
 
 def _make_reader(path: Path) -> Callable[[], str]:

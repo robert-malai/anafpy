@@ -162,8 +162,8 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_ENV` | `prod` (default) or `test` — ANAF's TEST environment for practicing |
 | `ANAFPY_TOKEN_STORE_BACKEND` | `keyring` (default, OS credential store) or `file` for headless/Docker hosts |
 | `ANAFPY_TOKEN_STORE` | Token file path for the `file` backend (default `~/.anafpy/tokens.json`) |
-| `ANAFPY_DOCS_DIR` | ANAF reference served as resources (defaults to the repo's `docs/anaf-reference/`) |
-| `ANAFPY_SKILLS_DIR` | Workflow skills served as prompts (defaults to the repo's `plugins/anafpy-workflows/skills/`) |
+| `ANAFPY_DOCS_DIR` | ANAF reference served as resources (defaults to the repo's `docs/anaf-reference/` when present, else the copy packaged in the wheel) |
+| `ANAFPY_SKILLS_DIR` | Workflow skills served as prompts (defaults to the repo's `plugins/anafpy-workflows/skills/` when present, else the copy packaged in the wheel) |
 | `ANAFPY_SPV_SESSION` | SPV cookie-session store written by `anafpy spv login` (default `~/.anafpy/spv-session.json`) |
 | `ANAFPY_SPV_IDENTITY_FILE` | Persisted SPV certificate selection (default `~/.anafpy/spv-identity.json`) |
 | `ANAFPY_DUK_DIR` | The extracted DUKIntegrator `dist/` folder — enables the `declaratie_*` tools (no default) |

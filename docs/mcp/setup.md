@@ -11,8 +11,8 @@ what you should see.
 You will do five things, in order:
 
 1. Register an application on ANAF's portal (one-time, on ANAF's website).
-2. Install two small tools: `git` and `uv`.
-3. Download anafpy.
+2. Install one small tool: `uv`.
+3. Install anafpy.
 4. Log in to ANAF once with your qualified certificate.
 5. Connect the server to Claude, and check that it works.
 
@@ -79,7 +79,7 @@ Copy both into a password manager (or write them somewhere safe). They identify
 *your* application to ANAF and you will need them in steps 4 and 5. They are not
 your SPV password and they don't replace the certificate.
 
-## Step 2 — Install git and uv
+## Step 2 — Install uv
 
 Open a terminal — **Terminal** on macOS, **PowerShell** on Windows (press Start,
 type "PowerShell") — and run:
@@ -87,46 +87,40 @@ type "PowerShell") — and run:
 **macOS**
 
 ```bash
-xcode-select --install                                 # installs git (skip if git --version already works)
-curl -LsSf https://astral.sh/uv/install.sh | sh        # installs uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-winget install --id Git.Git -e
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Close and reopen the terminal, then check both answer:
+Close and reopen the terminal, then check it answers:
 
 ```bash
-git --version
 uv --version
 ```
 
 `uv` manages Python for you — you do **not** need to install Python separately; the
 right version is downloaded automatically on first use.
 
-## Step 3 — Download anafpy
+## Step 3 — Install anafpy
 
 Still in the terminal:
 
 ```bash
-git clone https://github.com/robert-malai/anafpy
-cd anafpy
-uv sync --frozen --extra mcp
+uv tool install "anafpy[mcp]"
 ```
 
-The last command builds the environment from the locked dependency list; it takes a
-minute the first time. Remember where the folder ended up (run `pwd` on macOS or
-`cd` on Windows to print it) — you'll paste that path in step 5. To update anafpy
-later: `git pull` in this folder, then `uv sync --frozen --extra mcp` again.
+This downloads anafpy from [PyPI](https://pypi.org/project/anafpy/) and installs
+two commands: `anafpy` (used in the next step) and `anafpy-mcp` (the server
+Claude starts). They land in `~/.local/bin` on macOS and
+`%USERPROFILE%\.local\bin` on Windows — you'll paste the full path of
+`anafpy-mcp` in step 5. To update anafpy later: `uv tool upgrade anafpy`.
 
-(anafpy is also on PyPI — `pip install 'anafpy[mcp]'` — but this walkthrough
-deliberately uses the downloaded folder: the ANAF reference documentation and the
-workflow skills that the server offers to Claude ship with the folder, not with
-the PyPI package.)
+(Developers who want to run from a source checkout instead: see the
+[README](https://github.com/robert-malai/anafpy#install).)
 
 ## Step 4 — Log in to ANAF (one-time, with your certificate)
 
@@ -158,8 +152,8 @@ brew install mkcert
 winget install FiloSottile.mkcert
 ```
 
-Then — same on both systems — reopen the terminal, go to the `anafpy` folder from
-step 3, and create the `localhost` certificate (once):
+Then — same on both systems — reopen the terminal and create the `localhost`
+certificate (once):
 
 ```bash
 mkcert -install          # one-time; adds mkcert's authority to this computer's trust store — confirm the password/UAC prompt
@@ -170,10 +164,11 @@ This writes `localhost+1.pem` and `localhost+1-key.pem` into the current folder.
 The certificates mkcert makes are trusted **only on this computer** — nothing
 leaves it.
 
-Then plug in the USB token and run (one line, with your values from step 1):
+Then plug in the USB token and run, from that same folder (one line, with your
+values from step 1):
 
 ```bash
-uv run anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
+anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
   --redirect-uri https://localhost:9002/callback \
   --tls-cert localhost+1.pem --tls-key localhost+1-key.pem
 ```
@@ -188,7 +183,7 @@ itself.
 ### Option B — paste mode
 
 ```bash
-uv run anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
+anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
   --redirect-uri https://localhost:9002/callback --paste
 ```
 
@@ -210,7 +205,7 @@ secure credential store (macOS Keychain / Windows Credential Manager). Check it
 worked:
 
 ```bash
-uv run anafpy auth status
+anafpy auth status
 ```
 
 It should report a valid token. From here on, everything is automatic: the access
@@ -233,18 +228,15 @@ computer, so the configuration lives in Claude Desktop:
    - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
      (in Claude Desktop: *Settings → Developer → Edit Config*)
    - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-3. Add this (replace the three `...` values and the folder path from step 3; on
-   Windows write the path with doubled backslashes, e.g. `C:\\Users\\ana\\anafpy`):
+3. Add this (replace the three `...` values, and put the full path of the
+   `anafpy-mcp` command from step 3 in `"command"`; on Windows write it with
+   doubled backslashes, e.g. `C:\\Users\\ana\\.local\\bin\\anafpy-mcp.exe`):
 
 ```json
 {
   "mcpServers": {
     "anafpy": {
-      "command": "uv",
-      "args": [
-        "run", "--directory", "/Users/ana/anafpy",
-        "--frozen", "--extra", "mcp", "anafpy-mcp"
-      ],
+      "command": "/Users/ana/.local/bin/anafpy-mcp",
       "env": {
         "ANAFPY_CLIENT_ID": "...",
         "ANAFPY_CLIENT_SECRET": "...",
@@ -268,7 +260,7 @@ If you use Claude Code in a terminal instead:
 ```bash
 claude mcp add anafpy \
   -e ANAFPY_CLIENT_ID=... -e ANAFPY_CLIENT_SECRET=... -e ANAFPY_CIF=... \
-  -- uv run --directory /Users/ana/anafpy --frozen --extra mcp anafpy-mcp
+  -- anafpy-mcp
 ```
 
 ## Step 6 — Check that it works
@@ -299,12 +291,18 @@ you used in step 4's browser login), so this is a separate, equally one-time-ish
 step — the difference is that SPV sessions are short-lived (under an hour of
 idle time), so you re-run the login when you next need SPV, not yearly.
 
-In a terminal, in the anafpy folder:
+On **Windows**, run `curl --version` first: the built-in curl versions
+**8.13–8.15** break ANAF's certificate login, and Windows-on-ARM computers need
+Git for Windows' curl regardless of version — apply the `ANAFPY_CURL` fix from
+the [troubleshooting table](#troubleshooting) *before* your first login
+attempt, so it doesn't fail after you've already entered the PIN.
+
+In a terminal:
 
 ```bash
-uv run anafpy spv certs                  # lists your certificates
-uv run anafpy spv select <thumbprint>    # pick yours (the hex id from `certs`)
-uv run anafpy spv login                  # answer your token's PIN / 2FA prompt
+anafpy spv certs                  # lists your certificates
+anafpy spv select <thumbprint>    # pick yours (the hex id from `certs`)
+anafpy spv login                  # answer your token's PIN / 2FA prompt
 ```
 
 USB-token and cloud certificates (e.g. certSIGN vToken) appear in `certs` via
@@ -387,7 +385,7 @@ device produces the signed PDF.
 - **Yearly renewal**: when tools start failing with a "run `anafpy auth login`"
   message after ~a year, repeat step 4. Nothing else needs to change.
 - **Signing out** (leaving a shared computer, handing it back to IT): run
-  `uv run anafpy auth logout` from the `anafpy` folder. It deletes the tokens
+  `anafpy auth logout` in a terminal. It deletes the tokens
   from this computer — afterwards the tools answer "run `anafpy auth login`"
   until someone signs in again with the certificate. (ANAF offers no way for a
   program to revoke the tokens on its side; they expire on their own. To cut
@@ -399,12 +397,13 @@ device produces the signed PDF.
 | Symptom | Fix |
 |---|---|
 | `mkcert: command not found` right after installing it | Close and reopen the terminal so the new tool is picked up, then retry. |
-| Login says it can't read `localhost+1.pem` (option A) | Run the login command from the `anafpy` folder — that's where `mkcert` wrote the certificate files — or pass their full path. |
+| Login says it can't read `localhost+1.pem` (option A) | Run the login command from the folder where `mkcert` wrote the certificate files — or pass their full path. |
 | *"Connection is not private"* warning at `localhost` (option A) | `mkcert -install` didn't complete (it needs the password/UAC confirmation). Run it again, then retry the login; you can also just click **Advanced → Proceed to localhost** once. |
 | Browser error page after the certificate step (option B) | Normal in `--paste` mode — copy the URL from the address bar into the terminal (step 4). |
 | "expired" / invalid code when pasting | You waited past ~60 s. Run the login command again and paste promptly. |
 | No certificate prompt in the browser | The token's driver/software isn't installed or the browser doesn't see the certificate. Test by logging in to SPV first; fix that, then retry. |
-| Claude Desktop shows the server as failed / `uv` not found | Desktop apps don't always see the terminal's PATH. In the config, replace `"command": "uv"` with the full path — macOS: `/Users/<you>/.local/bin/uv`; Windows: `C:\\Users\\<you>\\.local\\bin\\uv.exe` (run `where.exe uv` / `which uv` to confirm). |
+| `anafpy: command not found` in the terminal | Close and reopen the terminal so the newly installed commands are picked up; if it persists, run `uv tool update-shell`, then reopen again. |
+| Claude Desktop shows the server as failed / `anafpy-mcp` not found | Desktop apps don't always see the terminal's PATH. In the config, `"command"` must be the full path — macOS: `/Users/<you>/.local/bin/anafpy-mcp`; Windows: `C:\\Users\\<you>\\.local\\bin\\anafpy-mcp.exe` (run `which anafpy-mcp` / `where.exe anafpy-mcp` to confirm). |
 | Tools answer "run `anafpy auth login`" | Step 4 wasn't completed on this computer, or the token expired (~1 year). Run step 4 again. |
 | Filing rejected by ANAF | That's ANAF's verdict on the document's content, not an installation problem — the error text comes back in the tool result; fix the data and prepare again. |
 | `anafpy spv login` fails instantly with `SEC_E_UNKNOWN_CREDENTIALS` on a Windows-on-ARM computer (e.g. Parallels on a Mac) | The certificate vendor's software is Intel-only (certSIGN vToken is), so Windows' built-in curl can't use the certificate. Install [Git for Windows](https://git-scm.com/download/win) (the **64-bit** version, not ARM64) and add `"ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` next to the other `env` entries; set the same variable in PowerShell before `anafpy spv login`. |

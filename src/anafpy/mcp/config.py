@@ -45,10 +45,11 @@ class ServerConfig(BaseSettings):
         default_cif: fiscal code used when a tool call omits ``cif`` (``ANAFPY_CIF``).
         docs_dir: directory of the compiled ANAF reference exposed as MCP resources
             (``ANAFPY_DOCS_DIR``); defaults to the repo's ``docs/anaf-reference/``
-            when present.
+            when present, else the copy packaged into the wheel.
         skills_dir: directory of workflow skills exposed as MCP prompts
             (``ANAFPY_SKILLS_DIR``); defaults to the ``anafpy-workflows`` plugin's
-            ``plugins/anafpy-workflows/skills/`` when present.
+            ``plugins/anafpy-workflows/skills/`` when present, else the copy
+            packaged into the wheel.
         spv_session_path: the SPV cookie-session store written by
             ``anafpy spv login`` (``ANAFPY_SPV_SESSION``).
         spv_identity_path: the persisted certificate selection written by

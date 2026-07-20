@@ -260,12 +260,19 @@ pip install 'anafpy[declaratii]' # with declaration signing (pyHanko)
 The distribution offers two extras: `anafpy[mcp]` (the MCP server) and
 `anafpy[declaratii]` (declaration signing).
 
-For the MCP server, prefer running from a **checkout** (as the setup walkthrough
-does): the
-compiled ANAF reference (`docs/anaf-reference/`, served as MCP resources) and the
-workflow skills (`plugins/anafpy-workflows/skills/`, served as MCP prompts) live in
-the repo, not in the wheel. A PyPI-installed server runs fine but serves neither
-unless `ANAFPY_DOCS_DIR` / `ANAFPY_SKILLS_DIR` point at copies. From source:
+For the MCP server, install it as a **uv tool** (what the setup walkthrough
+does) — this puts the `anafpy` CLI and the `anafpy-mcp` server on your machine
+without touching any project environment:
+
+```bash
+uv tool install "anafpy[mcp]"
+```
+
+The wheel bundles the compiled ANAF reference (`docs/anaf-reference/`, served
+as MCP resources) and the workflow skills (`plugins/anafpy-workflows/skills/`,
+served as MCP prompts), so a PyPI-installed server serves the full surface;
+`ANAFPY_DOCS_DIR` / `ANAFPY_SKILLS_DIR` still override the bundled copies.
+From source:
 
 ```bash
 git clone https://github.com/robert-malai/anafpy && cd anafpy
@@ -415,13 +422,13 @@ optional Excel workbook). See the
 [workflow skills](https://anafpy.readthedocs.io/en/latest/mcp/skills/) for the
 full picture.
 
-Register the server with any MCP client — e.g. with Claude Code, from a source
-checkout (locked deps, no PyPI needed):
+Register the server with any MCP client — e.g. with Claude Code, after
+`uv tool install "anafpy[mcp]"`:
 
 ```bash
 claude mcp add anafpy \
   -e ANAFPY_CLIENT_ID=... -e ANAFPY_CLIENT_SECRET=... -e ANAFPY_CIF=... \
-  -- uv run --directory /path/to/anafpy --frozen --extra mcp anafpy-mcp
+  -- anafpy-mcp
 ```
 
 **No credentials yet?** The server still starts; the public `anaf_*` lookups

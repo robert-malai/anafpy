@@ -92,9 +92,14 @@ the OS credential store via `KeyringTokenStore` (`keyring` is a core dependency)
 `file` is the opt-out for Docker/headless hosts without a credential store; the
 CLI honours the same variable and `--store-backend`),
 `ANAFPY_ENV` (`test`/`prod`, default `prod`), `ANAFPY_CIF` (default fiscal code), `ANAFPY_DOCS_DIR`
-(reference resources, defaults to the repo `docs/anaf-reference/`),
+(reference resources, defaults to the repo `docs/anaf-reference/` when present,
+else the copy packaged into the wheel — hatchling force-include, curated
+subtrees enumerated one by one because force-include bypasses `exclude` and
+`_sources/` must stay out; a wheel-map tripwire in `test_mcp_server.py` catches
+a new subtree missing from the map),
 `ANAFPY_SKILLS_DIR` (workflow skills re-served as MCP prompts, defaults to the
-`anafpy-workflows` plugin's `plugins/anafpy-workflows/skills/`),
+`anafpy-workflows` plugin's `plugins/anafpy-workflows/skills/` when present,
+else the wheel-packaged copy),
 `ANAFPY_SPV_SESSION` (SPV cookie-session store, default
 `~/.anafpy/spv-session.json`), `ANAFPY_SPV_IDENTITY_FILE` (persisted SPV
 certificate selection, default `~/.anafpy/spv-identity.json`),

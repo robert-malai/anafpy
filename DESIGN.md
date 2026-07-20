@@ -596,10 +596,16 @@ scope.
 certificate and their own ANAF OAuth app registration, capping the audience at
 people who already deal with ANAF professionally.
 
-**Distribution vehicles:** the MCP server registered
-straight from a source checkout — `claude mcp add anafpy -- uv run --directory
-<checkout> --frozen --extra mcp anafpy-mcp` — so no PyPI release is needed and the
-locked deps travel with the checkout. *(A Claude Code plugin — `.claude-plugin/`
+**Distribution vehicles:** since the PyPI release, the MCP server installs as a
+uv tool — `uv tool install "anafpy[mcp]"`, then
+`claude mcp add anafpy -- anafpy-mcp` or the `anafpy-mcp` binary path in
+`claude_desktop_config.json` (the setup walkthrough and the `anafpy-setup`
+skill both use this; pivoted 2026-07-20 from the earlier
+run-from-checkout registration, which remains the developer path). The wheel
+bundles the compiled ANAF reference and the workflow-skills tree (hatchling
+force-include, same date), so the PyPI install serves the `anafref://`
+resources and the MCP prompts too — the repo trees stay the single source.
+*(A Claude Code plugin — `.claude-plugin/`
 manifests making the repo its own single-plugin marketplace — shipped 2026-07-03
 and was **REMOVED the same day** in favor of plain MCP registration; don't
 reintroduce it without a new decision here.)* The workflow **skills** under

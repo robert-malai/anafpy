@@ -61,24 +61,46 @@ ls -d ~/Library/Application\ Support/Claude 2>/dev/null || ls -d "$APPDATA/Claud
 Run these together and build a picture before touching anything:
 
 ```bash
-git --version; command -v uv && uv --version
-ls -d ~/anafpy ~/Projects/anafpy 2>/dev/null          # common clone locations
+command -v uv && uv --version
+ls ~/.local/bin/anafpy ~/.local/bin/anafpy-mcp 2>/dev/null   # the uv tool install
 cat ~/Library/Application\ Support/Claude/claude_desktop_config.json 2>/dev/null \
   || cat "$APPDATA/Claude/claude_desktop_config.json" 2>/dev/null
 ```
 
-If you find an anafpy folder, probe the install itself from inside it:
+On **Windows**, also probe curl — the certificate logins (SPV, declaration
+portal) go through it, and the wrong curl is a known setup blocker:
 
 ```bash
-cd <anafpy folder> && uv run anafpy auth status
+curl --version | head -1                                  # 8.13–8.15 = known ANAF TLS bug
+ls "C:\Program Files\Git\mingw64\bin\curl.exe" 2>/dev/null  # the replacement, if needed
 ```
+
+The verdict goes on the checklist: Windows' built-in curl **8.13–8.15** breaks
+ANAF's TLS renegotiation ([curl bug #18029](https://github.com/curl/curl/issues/18029)),
+and **Windows on ARM** (e.g. Parallels) needs Git's x64 curl regardless of
+version, because vendor certificate drivers (certSIGN vToken) are x64-only. In
+either case the fix is applied proactively in step 6 — don't wait for a login
+to fail and burn the user's PIN/2FA attempt on it.
+
+If anafpy is installed, probe the login state:
+
+```bash
+~/.local/bin/anafpy auth status
+```
+
+If the config's `anafpy` entry runs `uv run --directory <folder> … anafpy-mcp`,
+that is the **old clone-based install**. It still works — but since you are here
+to fix or change something, migrate it: install from PyPI (step 4), rewrite the
+config entry to the `anafpy-mcp` binary (step 6), and leave the old folder alone
+(it may hold the user's mkcert files). The login tokens live in the system
+credential store, not in that folder, so nothing is lost.
 
 Then give the user a short checklist of what is done and what is missing — six
 lines, not a wall of text. Something like:
 
 > - ANAF application registered: **I need to ask you**
-> - git and uv installed: **yes**
-> - anafpy downloaded: **yes**, at `/Users/ana/anafpy`
+> - uv installed: **yes**
+> - anafpy installed: **yes** (version 0.4.1)
 > - Logged in to ANAF: **no** — token expired
 > - Connected to Claude: **yes**
 > - SPV mailbox: **not set up** (optional)
@@ -106,41 +128,39 @@ visible in this conversation and saved in a settings file on this computer. That
 normal for this setup — it's how Claude authenticates to ANAF — but don't paste it
 anywhere else."* Say this once, then ask.
 
-## Step 3 — git and uv
+## Step 3 — uv
 
-Only install what the probe said is missing.
+Only needed if the probe said it is missing.
 
 **macOS**
 
 ```bash
-xcode-select --install                            # git; skip if `git --version` works
-curl -LsSf https://astral.sh/uv/install.sh | sh   # uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-winget install --id Git.Git -e
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-On Windows, git is usually already there — the Code tab requires Git for Windows
-to run at all. `uv` brings its own Python; do not install Python separately.
+`uv` brings its own Python; do not install Python separately. A freshly
+installed `uv` will not be on this session's `PATH` — use its absolute path
+(`~/.local/bin/uv`) rather than telling the user to restart anything.
 
-A freshly installed `uv` will not be on this session's `PATH`. Use its absolute
-path (`~/.local/bin/uv`) rather than telling the user to restart anything.
+## Step 4 — Install anafpy
 
-## Step 4 — Download anafpy
-
-Ask where they want it, defaulting to `~/anafpy`. If the folder already exists,
-update instead of re-cloning.
+anafpy is on [PyPI](https://pypi.org/project/anafpy/); install it as a uv tool:
 
 ```bash
-git clone https://github.com/robert-malai/anafpy ~/anafpy   # or: cd ~/anafpy && git pull
-cd ~/anafpy && uv sync --frozen --extra mcp
+~/.local/bin/uv tool install "anafpy[mcp]"    # or plain `uv` if the probe found it
 ```
 
-Record the absolute path — step 5 needs it.
+This puts two commands next to `uv` itself — `~/.local/bin/anafpy` (the CLI) and
+`~/.local/bin/anafpy-mcp` (the server Claude starts); on Windows they are
+`%USERPROFILE%\.local\bin\anafpy.exe` / `anafpy-mcp.exe`. Step 6 needs the
+absolute path of `anafpy-mcp`. To update anafpy later:
+`uv tool upgrade anafpy`.
 
 ## Step 5 — Log in to ANAF (the user runs this)
 
@@ -150,7 +170,7 @@ Compose the exact command with their values filled in, then ask them to open the
 integrated terminal (**Views → Terminal**, or `` Ctrl+` ``) and run it there:
 
 ```bash
-cd ~/anafpy && uv run anafpy auth login \
+~/.local/bin/anafpy auth login \
   --client-id <THEIR_CLIENT_ID> --client-secret <THEIR_CLIENT_SECRET> \
   --redirect-uri https://localhost:9002/callback --paste
 ```
@@ -166,7 +186,7 @@ Don't lead with it; paste mode needs no extra install.
 Then verify it yourself:
 
 ```bash
-cd ~/anafpy && uv run anafpy auth status
+~/.local/bin/anafpy auth status
 ```
 
 Tokens refresh automatically for about a year, so this step recurs roughly
@@ -174,8 +194,8 @@ annually.
 
 ## Step 6 — Connect the server to Claude (this is the valuable part)
 
-This is the step that actually needs you: merging JSON, resolving `uv`'s absolute
-path, and getting Windows backslashes right is exactly what an accountant should
+This is the step that actually needs you: merging JSON, resolving absolute
+paths, and getting Windows backslashes right is exactly what an accountant should
 never have to do by hand.
 
 The file is:
@@ -189,20 +209,17 @@ Do this carefully:
    every one of them.
 2. **Back it up** (`claude_desktop_config.json.bak-<something>`) before writing.
 3. **Merge** an `anafpy` entry into `mcpServers`, leaving siblings untouched.
-4. Use the **absolute path to `uv`** (`command -v uv`), not the bare name — Claude
-   Desktop does not inherit the shell `PATH` the way a terminal does, and
-   `"command": "uv"` is the single most common reason the server shows as failed.
-5. On Windows, write paths with **doubled backslashes** in JSON.
+4. Use the **absolute path to `anafpy-mcp`** (from step 4), not the bare name —
+   Claude Desktop does not inherit the shell `PATH` the way a terminal does, and
+   a bare `"command"` is the single most common reason the server shows as failed.
+5. On Windows, write paths with **doubled backslashes** in JSON
+   (`C:\\Users\\ana\\.local\\bin\\anafpy-mcp.exe`).
 
 ```json
 {
   "mcpServers": {
     "anafpy": {
-      "command": "/Users/ana/.local/bin/uv",
-      "args": [
-        "run", "--directory", "/Users/ana/anafpy",
-        "--frozen", "--extra", "mcp", "anafpy-mcp"
-      ],
+      "command": "/Users/ana/.local/bin/anafpy-mcp",
       "env": {
         "ANAFPY_CLIENT_ID": "...",
         "ANAFPY_CLIENT_SECRET": "...",
@@ -216,10 +233,27 @@ Do this carefully:
 `ANAFPY_CIF` is the firm's CUI, digits only. To practice against ANAF's TEST
 environment, add `"ANAFPY_ENV": "test"`.
 
+**Windows, when the step-1 curl probe tripped** (built-in curl 8.13–8.15, or
+Windows on ARM): add to the `env` block, now, proactively —
+
+```json
+        "ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"
+```
+
+One line covers both certificate logins (SPV and the declaration portal — both
+read it). If Git's curl isn't at that path, install it yourself: tell the user
+first — *"I need to install a small tool from Git that talks to ANAF correctly —
+Windows will ask you to confirm"* — then run
+`winget install --id Git.Git -e` and let them answer the UAC prompt. It is
+almost always already there (Claude Code on Windows requires Git for Windows),
+so probe before installing. We want exactly one file out of that package — an
+x64 curl whose TLS stack handles ANAF's login — not git or Git Bash; don't
+remove this dependency as unused.
+
 Before writing, sanity-check that the server actually starts:
 
 ```bash
-cd ~/anafpy && uv run --frozen --extra mcp anafpy-mcp </dev/null; echo "exit: $?"
+~/.local/bin/anafpy-mcp </dev/null; echo "exit: $?"
 ```
 
 It is a stdio server: closing its input makes it start, see end-of-input, and exit
@@ -254,8 +288,8 @@ Only offer this if they want to read their SPV mailbox or pull official reports.
 It is read-only: nothing can be filed through it.
 
 ```bash
-cd ~/anafpy && uv run anafpy spv certs        # you can run this
-cd ~/anafpy && uv run anafpy spv select <thumbprint>
+~/.local/bin/anafpy spv certs                 # you can run this
+~/.local/bin/anafpy spv select <thumbprint>
 ```
 
 `spv login` fires the PIN/2FA prompt on their device. Ask first, then run it and
@@ -263,12 +297,14 @@ let them approve on the token. It can fail on ANAF's side for no reason — just
 it again. SPV sessions idle out in under an hour, which is normal and not a broken
 install; from then on they can just say *"log me in to SPV"* in Cowork.
 
-On **Windows on ARM** (e.g. Parallels), or with curl 8.13–8.15, `spv login` fails
-with `SEC_E_UNKNOWN_CREDENTIALS` or `SEC_E_CONTEXT_EXPIRED`. Both are fixed by
-pointing at Git for Windows' curl — add
-`"ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` to the `env`
-block from step 6. Since the Code tab already required Git for Windows, it is
-almost certainly installed; check before making them install anything.
+On Windows, the curl concern was already handled in steps 1 and 6
+(`ANAFPY_CURL` in the config `env` block). Two loose ends: the config `env`
+reaches only the server, so when the user runs `anafpy spv login` in their own
+terminal, set the variable in that session too
+(`$env:ANAFPY_CURL = "C:\Program Files\Git\mingw64\bin\curl.exe"` in
+PowerShell). And if a login still fails with `SEC_E_UNKNOWN_CREDENTIALS` or
+`SEC_E_CONTEXT_EXPIRED`, that is the same curl bug reaching a login anyway —
+go back and apply the step-6 fix rather than retrying.
 
 ## Step 9 (optional) — Declaration tools
 

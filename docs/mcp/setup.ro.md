@@ -11,8 +11,8 @@ fiecare pas spune ce ar trebui să vezi.
 Vei face cinci lucruri, în ordine:
 
 1. Înregistrezi o aplicație pe portalul ANAF (o singură dată, pe site-ul ANAF).
-2. Instalezi două unelte mici: `git` și `uv`.
-3. Descarci anafpy.
+2. Instalezi o unealtă mică: `uv`.
+3. Instalezi anafpy.
 4. Te autentifici la ANAF o dată, cu certificatul tău calificat.
 5. Conectezi serverul la Claude și verifici că funcționează.
 
@@ -83,7 +83,7 @@ Copiază-le pe amândouă într-un manager de parole (sau notează-le undeva în
 siguranță). Ele identifică aplicația *ta* la ANAF și vei avea nevoie de ele la pașii
 4 și 5. Nu sunt parola ta de SPV și nu înlocuiesc certificatul.
 
-## Pasul 2 — Instalează git și uv
+## Pasul 2 — Instalează uv
 
 Deschide un terminal — **Terminal** pe macOS, **PowerShell** pe Windows (apasă
 Start, scrie „PowerShell") — și rulează:
@@ -91,47 +91,41 @@ Start, scrie „PowerShell") — și rulează:
 **macOS**
 
 ```bash
-xcode-select --install                                 # instalează git (sari peste dacă git --version merge deja)
-curl -LsSf https://astral.sh/uv/install.sh | sh        # instalează uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-winget install --id Git.Git -e
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Închide și redeschide terminalul, apoi verifică că amândouă răspund:
+Închide și redeschide terminalul, apoi verifică că răspunde:
 
 ```bash
-git --version
 uv --version
 ```
 
 `uv` se ocupă de Python în locul tău — **nu** trebuie să instalezi Python separat;
 versiunea potrivită este descărcată automat la prima utilizare.
 
-## Pasul 3 — Descarcă anafpy
+## Pasul 3 — Instalează anafpy
 
 Tot în terminal:
 
 ```bash
-git clone https://github.com/robert-malai/anafpy
-cd anafpy
-uv sync --frozen --extra mcp
+uv tool install "anafpy[mcp]"
 ```
 
-Ultima comandă construiește mediul din lista de dependențe blocată (locked); durează
-un minut prima dată. Ține minte unde a ajuns folderul (rulează `pwd` pe macOS sau
-`cd` pe Windows ca să-l afișezi) — vei lipi calea aceea la pasul 5. Ca să
-actualizezi anafpy mai târziu: `git pull` în acest folder, apoi din nou
-`uv sync --frozen --extra mcp`.
+Comanda descarcă anafpy de pe [PyPI](https://pypi.org/project/anafpy/) și
+instalează două comenzi: `anafpy` (folosită la pasul următor) și `anafpy-mcp`
+(serverul pe care îl pornește Claude). Ele ajung în `~/.local/bin` pe macOS și în
+`%USERPROFILE%\.local\bin` pe Windows — vei lipi calea completă a lui
+`anafpy-mcp` la pasul 5. Ca să actualizezi anafpy mai târziu:
+`uv tool upgrade anafpy`.
 
-(anafpy este și pe PyPI — `pip install 'anafpy[mcp]'` — dar acest ghid folosește
-intenționat folderul descărcat: documentația de referință ANAF și skill-urile de
-flux de lucru pe care serverul le oferă lui Claude vin cu folderul, nu cu pachetul
-de pe PyPI.)
+(Dezvoltatorii care preferă să ruleze dintr-un checkout al sursei: vezi
+[README-ul](https://github.com/robert-malai/anafpy#install).)
 
 ## Pasul 4 — Autentifică-te la ANAF (o singură dată, cu certificatul)
 
@@ -163,8 +157,8 @@ brew install mkcert
 winget install FiloSottile.mkcert
 ```
 
-Apoi — la fel pe ambele sisteme — redeschide terminalul, mergi în folderul `anafpy`
-de la pasul 3 și creează certificatul `localhost` (o singură dată):
+Apoi — la fel pe ambele sisteme — redeschide terminalul și creează certificatul
+`localhost` (o singură dată):
 
 ```bash
 mkcert -install          # o singură dată; adaugă autoritatea mkcert în magazinul de încredere al calculatorului — confirmă solicitarea de parolă/UAC
@@ -175,11 +169,11 @@ Acest lucru scrie `localhost+1.pem` și `localhost+1-key.pem` în folderul curen
 Certificatele pe care le face mkcert sunt de încredere **doar pe acest calculator**
 — nimic nu iese din el.
 
-Apoi conectează token-ul USB și rulează (o singură linie, cu valorile tale de la
-pasul 1):
+Apoi conectează token-ul USB și rulează, din același folder (o singură linie, cu
+valorile tale de la pasul 1):
 
 ```bash
-uv run anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
+anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
   --redirect-uri https://localhost:9002/callback \
   --tls-cert localhost+1.pem --tls-key localhost+1-key.pem
 ```
@@ -194,7 +188,7 @@ comanda revine singură la modul copiere (Varianta B).
 ### Varianta B — mod copiere
 
 ```bash
-uv run anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
+anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
   --redirect-uri https://localhost:9002/callback --paste
 ```
 
@@ -218,7 +212,7 @@ credențiale al calculatorului (macOS Keychain / Windows Credential Manager).
 Verifică dacă a funcționat:
 
 ```bash
-uv run anafpy auth status
+anafpy auth status
 ```
 
 Ar trebui să raporteze un token valid. De aici înainte, totul este automat:
@@ -243,19 +237,15 @@ calculator, așa că configurarea stă în Claude Desktop:
    - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
      (în Claude Desktop: *Settings → Developer → Edit Config*)
    - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-3. Adaugă acest text (înlocuiește cele trei valori `...` și calea folderului de la
-   pasul 3; pe Windows scrie calea cu backslash dublat, de ex.
-   `C:\\Users\\ana\\anafpy`):
+3. Adaugă acest text (înlocuiește cele trei valori `...` și pune în `"command"`
+   calea completă a comenzii `anafpy-mcp` de la pasul 3; pe Windows scrie-o cu
+   backslash dublat, de ex. `C:\\Users\\ana\\.local\\bin\\anafpy-mcp.exe`):
 
 ```json
 {
   "mcpServers": {
     "anafpy": {
-      "command": "uv",
-      "args": [
-        "run", "--directory", "/Users/ana/anafpy",
-        "--frozen", "--extra", "mcp", "anafpy-mcp"
-      ],
+      "command": "/Users/ana/.local/bin/anafpy-mcp",
       "env": {
         "ANAFPY_CLIENT_ID": "...",
         "ANAFPY_CLIENT_SECRET": "...",
@@ -280,7 +270,7 @@ Dacă folosești Claude Code într-un terminal:
 ```bash
 claude mcp add anafpy \
   -e ANAFPY_CLIENT_ID=... -e ANAFPY_CLIENT_SECRET=... -e ANAFPY_CIF=... \
-  -- uv run --directory /Users/ana/anafpy --frozen --extra mcp anafpy-mcp
+  -- anafpy-mcp
 ```
 
 ## Pasul 6 — Verifică că funcționează
@@ -314,12 +304,19 @@ separat, la fel de „aproape o singură dată" — diferența este că sesiunil
 de scurtă durată (sub o oră de inactivitate), așa că refaci autentificarea când ai
 nevoie data viitoare de SPV, nu anual.
 
-Într-un terminal, în folderul anafpy:
+Pe **Windows**, rulează întâi `curl --version`: versiunile **8.13–8.15** ale
+curl-ului încorporat strică autentificarea cu certificat la ANAF, iar
+calculatoarele Windows-on-ARM au nevoie oricum de curl-ul din Git for Windows,
+indiferent de versiune — aplică rezolvarea cu `ANAFPY_CURL` din
+[tabelul de depanare](#depanare) *înainte* de prima încercare de autentificare,
+ca să nu eșueze după ce ai introdus deja PIN-ul.
+
+Într-un terminal:
 
 ```bash
-uv run anafpy spv certs                  # listează certificatele tale
-uv run anafpy spv select <thumbprint>    # alege-l pe al tău (id-ul hex din `certs`)
-uv run anafpy spv login                  # răspunde la solicitarea de PIN / 2FA a token-ului
+anafpy spv certs                  # listează certificatele tale
+anafpy spv select <thumbprint>    # alege-l pe al tău (id-ul hex din `certs`)
+anafpy spv login                  # răspunde la solicitarea de PIN / 2FA a token-ului
 ```
 
 Certificatele de tip token USB și cele din cloud (de ex. certSIGN vToken) apar în
@@ -411,7 +408,7 @@ dispozitivul tău obții PDF-ul semnat.
   `anafpy auth login`" după ~un an, repetă pasul 4. Nimic altceva nu trebuie
   schimbat.
 - **Deautentificare** (când lași un calculator partajat, îl predai către IT): rulează
-  `uv run anafpy auth logout` din folderul `anafpy`. Șterge token-urile de pe acest
+  `anafpy auth logout` într-un terminal. Șterge token-urile de pe acest
   calculator — după aceea uneltele răspund „rulează `anafpy auth login`" până când
   cineva se autentifică din nou cu certificatul. (ANAF nu oferă nicio modalitate ca
   un program să anuleze token-urile din partea sa; ele expiră singure. Ca să
@@ -423,12 +420,13 @@ dispozitivul tău obții PDF-ul semnat.
 | Simptom | Rezolvare |
 |---|---|
 | `mkcert: command not found` imediat după ce l-ai instalat | Închide și redeschide terminalul ca noua unealtă să fie preluată, apoi reîncearcă. |
-| Autentificarea spune că nu poate citi `localhost+1.pem` (varianta A) | Rulează comanda de autentificare din folderul `anafpy` — acolo a scris `mkcert` fișierele de certificat — sau dă calea lor completă. |
+| Autentificarea spune că nu poate citi `localhost+1.pem` (varianta A) | Rulează comanda de autentificare din folderul în care `mkcert` a scris fișierele de certificat — sau dă calea lor completă. |
 | Avertismentul *„Connection is not private"* la `localhost` (varianta A) | `mkcert -install` nu s-a finalizat (are nevoie de confirmarea de parolă/UAC). Rulează-l din nou, apoi reîncearcă autentificarea; poți de asemenea să dai click o dată pe **Advanced → Proceed to localhost**. |
 | Pagină de eroare în browser după pasul cu certificatul (varianta B) | Normal în modul `--paste` — copiază adresa (URL) din bara de adrese în terminal (pasul 4). |
 | Cod „expired" / invalid la lipire | Ai așteptat peste ~60 s. Rulează comanda de autentificare din nou și lipește repede. |
 | Nicio solicitare de certificat în browser | Driverul/software-ul token-ului nu este instalat sau browserul nu vede certificatul. Testează autentificându-te întâi în SPV; rezolvă acolo, apoi reîncearcă. |
-| Claude Desktop arată serverul ca eșuat / `uv` nu este găsit | Aplicațiile desktop nu văd întotdeauna PATH-ul terminalului. În configurare, înlocuiește `"command": "uv"` cu calea completă — macOS: `/Users/<tu>/.local/bin/uv`; Windows: `C:\\Users\\<tu>\\.local\\bin\\uv.exe` (rulează `where.exe uv` / `which uv` ca să confirmi). |
+| `anafpy: command not found` în terminal | Închide și redeschide terminalul ca noile comenzi să fie preluate; dacă persistă, rulează `uv tool update-shell`, apoi redeschide din nou. |
+| Claude Desktop arată serverul ca eșuat / `anafpy-mcp` nu este găsit | Aplicațiile desktop nu văd întotdeauna PATH-ul terminalului. În configurare, `"command"` trebuie să fie calea completă — macOS: `/Users/<tu>/.local/bin/anafpy-mcp`; Windows: `C:\\Users\\<tu>\\.local\\bin\\anafpy-mcp.exe` (rulează `which anafpy-mcp` / `where.exe anafpy-mcp` ca să confirmi). |
 | Uneltele răspund „rulează `anafpy auth login`" | Pasul 4 nu a fost finalizat pe acest calculator, sau token-ul a expirat (~1 an). Rulează din nou pasul 4. |
 | Depunere respinsă de ANAF | Acesta este verdictul ANAF asupra conținutului documentului, nu o problemă de instalare — textul erorii revine în rezultatul uneltei; corectează datele și pregătește din nou. |
 | `anafpy spv login` eșuează instant cu `SEC_E_UNKNOWN_CREDENTIALS` pe un calculator Windows-on-ARM (de ex. Parallels pe un Mac) | Software-ul furnizorului de certificat este doar pentru Intel (certSIGN vToken este), deci curl-ul încorporat în Windows nu poate folosi certificatul. Instalează [Git for Windows](https://git-scm.com/download/win) (versiunea pe **64 de biți**, nu ARM64) și adaugă `"ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` lângă celelalte intrări din `env`; setează aceeași variabilă în PowerShell înainte de `anafpy spv login`. |

@@ -7,6 +7,7 @@ import io
 import json
 import re
 import time
+import tomllib
 import zipfile
 from collections.abc import Iterator
 from datetime import datetime, timedelta
@@ -25,7 +26,7 @@ from _wire import build_flat_transport, credit_note_xml, invoice_xml, transport_
 from anafpy._transport.base import Environment
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenSet
 from anafpy.exceptions import AnafConfigError
-from anafpy.mcp import create_server
+from anafpy.mcp import create_server, prompts, reference
 from anafpy.mcp.config import ServerConfig
 from anafpy.mcp.context import AppContext
 from conftest import FakeKeyring
@@ -1028,6 +1029,44 @@ async def test_declaratie_prepare_skill_uris_are_served(
             assert uri in served, f"{uri} is not served"
 
 
+async def test_packaged_reference_is_the_wheel_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A PyPI install has no repo checkout: with ANAFPY_DOCS_DIR unset and the
+    # repo tree absent, the copy force-included into the wheel is served.
+    monkeypatch.delenv("ANAFPY_DOCS_DIR", raising=False)
+    packaged = tmp_path / "wheel-ref"
+    (packaged / "efactura").mkdir(parents=True)
+    (packaged / "efactura" / "api.md").write_text("# packaged", encoding="utf-8")
+    monkeypatch.setattr(reference, "_REPO_DOCS", tmp_path / "no-repo")
+    monkeypatch.setattr(reference, "_PACKAGED_DOCS", packaged)
+    server = create_server(_config(tmp_path))
+    uris = {str(r.uri) for r in await server.list_resources()}
+    assert "anafref://efactura/api" in uris
+
+
+def test_wheel_force_include_covers_the_reference_tree() -> None:
+    # Drift tripwire: hatchling's force-include bypasses exclude patterns, so
+    # pyproject enumerates the reference's curated subtrees one by one to keep
+    # the raw _sources/ captures out of the wheel. A new top-level entry in
+    # docs/anaf-reference/ must be added to the force-include map.
+    root = Path(__file__).resolve().parents[1]
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    mapping = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
+    packaged = {
+        Path(source).name
+        for source in mapping
+        if source.startswith("docs/anaf-reference/")
+    }
+    on_disk = {
+        entry.name
+        for entry in (root / "docs" / "anaf-reference").iterdir()
+        if not entry.name.startswith((".", "_"))
+    }
+    assert packaged == on_disk
+    assert "plugins/anafpy-workflows/skills" in mapping
+
+
 # --- prompts (workflow skills) --------------------------------------------------------
 
 
@@ -1098,6 +1137,25 @@ async def test_repo_skills_parse_and_list(
     server = create_server(_config(tmp_path))
     names = {p.name for p in await server.list_prompts()}
     assert "etransport-declare" in names
+
+
+async def test_packaged_skills_are_the_wheel_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The prompts sibling of the packaged-reference fallback: a PyPI install
+    # serves the wheel's copy of the workflow skills.
+    monkeypatch.delenv("ANAFPY_SKILLS_DIR", raising=False)
+    packaged = tmp_path / "wheel-skills"
+    (packaged / "demo-flow").mkdir(parents=True)
+    (packaged / "demo-flow" / "SKILL.md").write_text(
+        "---\nname: demo-flow\ndescription: Packaged demo.\n---\n\n# Demo\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(prompts, "_REPO_SKILLS", tmp_path / "no-repo")
+    monkeypatch.setattr(prompts, "_PACKAGED_SKILLS", packaged)
+    server = create_server(_config(tmp_path))
+    (prompt,) = await server.list_prompts()
+    assert prompt.name == "demo-flow"
 
 
 async def test_missing_skills_dir_serves_no_prompts(

@@ -31,6 +31,15 @@ from .config import ServerConfig
 
 __all__ = ["SkillDocument", "load_skills", "register"]
 
+# Default locations, tried in order when ANAFPY_SKILLS_DIR is unset: the
+# anafpy-workflows plugin's live tree in a repo checkout, then the copy the
+# wheel build packages (pyproject's force-include) so a PyPI install serves
+# the prompts too.
+_REPO_SKILLS = (
+    Path(__file__).resolve().parents[3] / "plugins" / "anafpy-workflows" / "skills"
+)
+_PACKAGED_SKILLS = Path(__file__).resolve().parent / "_skills"
+
 
 class SkillDocument(BaseModel):
     """One parsed skill: its identity plus the Markdown playbook body.
@@ -91,11 +100,12 @@ def _required_field(post: frontmatter.Post, key: str, path: Path) -> str:
 
 
 def _skills_dir(cfg: ServerConfig) -> Path | None:
-    default = (
-        Path(__file__).resolve().parents[3] / "plugins" / "anafpy-workflows" / "skills"
-    )
-    skills = cfg.skills_dir or default
-    return skills if skills.is_dir() else None
+    if cfg.skills_dir is not None:
+        return cfg.skills_dir if cfg.skills_dir.is_dir() else None
+    for candidate in (_REPO_SKILLS, _PACKAGED_SKILLS):
+        if candidate.is_dir():
+            return candidate
+    return None
 
 
 def _make_prompt(body: str) -> Callable[..., str]:
