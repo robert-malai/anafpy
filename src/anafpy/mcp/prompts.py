@@ -92,10 +92,7 @@ def _required_field(post: frontmatter.Post, key: str, path: Path) -> str:
 
 def _skills_dir(cfg: ServerConfig) -> Path | None:
     default = (
-        Path(__file__).resolve().parents[3]
-        / "plugins"
-        / "anafpy-workflows"
-        / "skills"
+        Path(__file__).resolve().parents[3] / "plugins" / "anafpy-workflows" / "skills"
     )
     skills = cfg.skills_dir or default
     return skills if skills.is_dir() else None

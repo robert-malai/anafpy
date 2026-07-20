@@ -89,7 +89,7 @@ off itself. The details are in the [error model](errors.md).
 `Environment` enum, `PROD` (default) or `TEST` for ANAF's TEST endpoints:
 
 ```python
-from anafpy._transport.base import Environment
+from anafpy import Environment
 
 async with EFacturaClient(provider, environment=Environment.TEST) as client:
     ...

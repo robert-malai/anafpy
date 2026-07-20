@@ -122,6 +122,8 @@ green and must stay green.
 src/anafpy/
   exceptions.py          # AnafError hierarchy (see "Error model")
   _transport/base.py     # Environment/Service + shared enums/CUI normalization/error raising
+                         # (Environment is re-exported from the top-level `anafpy` —
+                         # it appears in public client signatures)
   _transport/http.py     # HttpClientBase: six clients' owned/injected lifecycle
                          # (owned gets the service base_url; injected is never
                          # mutated — empty base_url raises AnafConfigError)

@@ -3,6 +3,7 @@ no-auth services (registries, financial statements)."""
 
 from __future__ import annotations
 
+from ._transport.base import Environment
 from .exceptions import (
     AnafAuthError,
     AnafConfigError,
@@ -12,7 +13,7 @@ from .exceptions import (
     AnafTransportError,
 )
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 __all__ = [
     "AnafAuthError",
@@ -21,5 +22,6 @@ __all__ = [
     "AnafRateLimitError",
     "AnafResponseError",
     "AnafTransportError",
+    "Environment",
     "__version__",
 ]
