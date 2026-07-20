@@ -260,7 +260,11 @@ plugins/anafpy-setup/    # plugin: an `anafpy-setup` skill that installs + confi
                          # (writes claude_desktop_config.json, which the Cowork tab
                          # reads). Runs in a LOCAL session (needs a shell) — refuses
                          # cloud/remote. Separate from the MCP server because it must
-                         # run BEFORE that server exists.
+                         # run BEFORE that server exists. Split 2026-07-20: SKILL.md
+                         # is the platform-neutral spine (steps, rules, user-facing
+                         # prose); the command blocks live in macos.md / windows.md,
+                         # routed by the step-0 platform probe so the agent never
+                         # sees the other platform's commands.
 plugins/anafpy-workflows/ # plugin: the workflow SKILLS themselves. Its skills/ is
   skills/                #   the SINGLE home of the playbooks (etransport-declare:
                          #   source data -> FlatTransport -> prepare -> approval ->

@@ -25,6 +25,12 @@ This skill is a **diagnostic, not a script**. Probe first, report what is alread
 done, then do only what is missing. A first-time install and a six-months-later
 repair are the same flow.
 
+This file is the **spine**: what each step is for, the rules, and what to tell
+the user. The exact commands live in the platform files — [macos.md](macos.md)
+and [windows.md](windows.md). Step 0 tells you which one applies; read it once,
+in full, and take **every command from that file only**. Never run a command
+block written for the other platform.
+
 ## Rules that override everything else
 
 1. **Never ask for, accept, or echo the certificate PIN.** The USB token's PIN and
@@ -49,7 +55,10 @@ uname -s 2>/dev/null || echo "windows?"
 ls -d ~/Library/Application\ Support/Claude 2>/dev/null || ls -d "$APPDATA/Claude" 2>/dev/null
 ```
 
-- **macOS** (`Darwin`) or **Windows** + a `Claude` config directory → good, continue.
+- **macOS** (`Darwin`) + a `Claude` config directory → read [macos.md](macos.md)
+  now; it supplies every command for the steps below.
+- **Windows** + a `Claude` config directory → read [windows.md](windows.md) now;
+  same deal, and it also carries the Windows-specific curl handling.
 - **`Linux`**, or no `Claude` directory anywhere → you are almost certainly in a
   cloud/remote session. **Stop.** Tell the user: *"This session is running on
   Anthropic's servers, not on your computer, so I can't reach your certificate or
@@ -58,35 +67,16 @@ ls -d ~/Library/Application\ Support/Claude 2>/dev/null || ls -d "$APPDATA/Claud
 
 ## Step 1 — Probe everything, then report
 
-Run these together and build a picture before touching anything:
+Run the platform file's **step-1 probe block** and build a picture before
+touching anything. You are establishing:
 
-```bash
-command -v uv && uv --version
-ls ~/.local/bin/anafpy ~/.local/bin/anafpy-mcp 2>/dev/null   # the uv tool install
-cat ~/Library/Application\ Support/Claude/claude_desktop_config.json 2>/dev/null \
-  || cat "$APPDATA/Claude/claude_desktop_config.json" 2>/dev/null
-```
-
-On **Windows**, also probe curl — the certificate logins (SPV, declaration
-portal) go through it, and the wrong curl is a known setup blocker:
-
-```bash
-curl --version | head -1                                  # 8.13–8.15 = known ANAF TLS bug
-ls "C:\Program Files\Git\mingw64\bin\curl.exe" 2>/dev/null  # the replacement, if needed
-```
-
-The verdict goes on the checklist: Windows' built-in curl **8.13–8.15** breaks
-ANAF's TLS renegotiation ([curl bug #18029](https://github.com/curl/curl/issues/18029)),
-and **Windows on ARM** (e.g. Parallels) needs Git's x64 curl regardless of
-version, because vendor certificate drivers (certSIGN vToken) are x64-only. In
-either case the fix is applied proactively in step 6 — don't wait for a login
-to fail and burn the user's PIN/2FA attempt on it.
-
-If anafpy is installed, probe the login state:
-
-```bash
-~/.local/bin/anafpy auth status
-```
+- is `uv` installed, and is anafpy installed as a uv tool (the `anafpy` and
+  `anafpy-mcp` binaries)?
+- what does the Claude Desktop config already hold (an `anafpy` entry? other
+  connectors that must be preserved)?
+- is the user logged in to ANAF (`auth status`)?
+- **Windows only**: the curl verdict — the platform file explains the known
+  ANAF TLS bug and what to do about it.
 
 If the config's `anafpy` entry runs `uv run --directory <folder> … anafpy-mcp`,
 that is the **old clone-based install**. It still works — but since you are here
@@ -100,7 +90,7 @@ lines, not a wall of text. Something like:
 
 > - ANAF application registered: **I need to ask you**
 > - uv installed: **yes**
-> - anafpy installed: **yes** (version 0.4.1)
+> - anafpy installed: **yes** (version 0.4.2)
 > - Logged in to ANAF: **no** — token expired
 > - Connected to Claude: **yes**
 > - SPV mailbox: **not set up** (optional)
@@ -130,50 +120,26 @@ anywhere else."* Say this once, then ask.
 
 ## Step 3 — uv
 
-Only needed if the probe said it is missing.
-
-**macOS**
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-**Windows (PowerShell)**
-
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-`uv` brings its own Python; do not install Python separately. A freshly
-installed `uv` will not be on this session's `PATH` — use its absolute path
-(`~/.local/bin/uv`) rather than telling the user to restart anything.
+Only needed if the probe said it is missing. Install it with the platform file's
+**step-3 block**. `uv` brings its own Python; do not install Python separately.
+A freshly installed `uv` will not be on this session's `PATH` — use the absolute
+path the platform file gives, rather than telling the user to restart anything.
 
 ## Step 4 — Install anafpy
 
-anafpy is on [PyPI](https://pypi.org/project/anafpy/); install it as a uv tool:
-
-```bash
-~/.local/bin/uv tool install "anafpy[mcp]"    # or plain `uv` if the probe found it
-```
-
-This puts two commands next to `uv` itself — `~/.local/bin/anafpy` (the CLI) and
-`~/.local/bin/anafpy-mcp` (the server Claude starts); on Windows they are
-`%USERPROFILE%\.local\bin\anafpy.exe` / `anafpy-mcp.exe`. Step 6 needs the
-absolute path of `anafpy-mcp`. To update anafpy later:
+anafpy is on [PyPI](https://pypi.org/project/anafpy/); install it as a uv tool
+with the platform file's **step-4 block**. This puts two commands next to `uv`
+itself: `anafpy` (the CLI) and `anafpy-mcp` (the server Claude starts). Record
+the absolute path of `anafpy-mcp` — step 6 needs it. To update anafpy later:
 `uv tool upgrade anafpy`.
 
 ## Step 5 — Log in to ANAF (the user runs this)
 
 This step needs their browser, their certificate, and possibly their PIN, and in
 paste mode it needs a URL pasted back within ~60 seconds. **You cannot drive it.**
-Compose the exact command with their values filled in, then ask them to open the
-integrated terminal (**Views → Terminal**, or `` Ctrl+` ``) and run it there:
-
-```bash
-~/.local/bin/anafpy auth login \
-  --client-id <THEIR_CLIENT_ID> --client-secret <THEIR_CLIENT_SECRET> \
-  --redirect-uri https://localhost:9002/callback --paste
-```
+Compose the exact command from the platform file's **step-5 template** with their
+values filled in, then ask them to open the integrated terminal
+(**Views → Terminal**, or `` Ctrl+` ``) and run it there.
 
 Tell them what to expect: the browser opens on ANAF's login page and asks for the
 certificate; afterwards it lands on **an error page — that is expected**; they copy
@@ -183,25 +149,15 @@ If they'd rather not paste, `mkcert` makes the automatic capture work — see
 [step 4, option A of the guide](https://anafpy.readthedocs.io/en/latest/mcp/setup/#option-a-automatic-capture).
 Don't lead with it; paste mode needs no extra install.
 
-Then verify it yourself:
-
-```bash
-~/.local/bin/anafpy auth status
-```
-
-Tokens refresh automatically for about a year, so this step recurs roughly
-annually.
+Then verify it yourself with the platform file's **auth-status probe**. Tokens
+refresh automatically for about a year, so this step recurs roughly annually.
 
 ## Step 6 — Connect the server to Claude (this is the valuable part)
 
 This is the step that actually needs you: merging JSON, resolving absolute
 paths, and getting Windows backslashes right is exactly what an accountant should
-never have to do by hand.
-
-The file is:
-
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+never have to do by hand. The config file location and the exact JSON shape are
+in the platform file's **step-6 section**.
 
 Do this carefully:
 
@@ -212,53 +168,16 @@ Do this carefully:
 4. Use the **absolute path to `anafpy-mcp`** (from step 4), not the bare name —
    Claude Desktop does not inherit the shell `PATH` the way a terminal does, and
    a bare `"command"` is the single most common reason the server shows as failed.
-5. On Windows, write paths with **doubled backslashes** in JSON
-   (`C:\\Users\\ana\\.local\\bin\\anafpy-mcp.exe`).
-
-```json
-{
-  "mcpServers": {
-    "anafpy": {
-      "command": "/Users/ana/.local/bin/anafpy-mcp",
-      "env": {
-        "ANAFPY_CLIENT_ID": "...",
-        "ANAFPY_CLIENT_SECRET": "...",
-        "ANAFPY_CIF": "12345678"
-      }
-    }
-  }
-}
-```
+5. Apply any platform-specific `env` additions the platform file calls for
+   (e.g. the Windows `ANAFPY_CURL` line when the step-1 curl probe tripped).
 
 `ANAFPY_CIF` is the firm's CUI, digits only. To practice against ANAF's TEST
 environment, add `"ANAFPY_ENV": "test"`.
 
-**Windows, when the step-1 curl probe tripped** (built-in curl 8.13–8.15, or
-Windows on ARM): add to the `env` block, now, proactively —
-
-```json
-        "ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"
-```
-
-One line covers both certificate logins (SPV and the declaration portal — both
-read it). If Git's curl isn't at that path, install it yourself: tell the user
-first — *"I need to install a small tool from Git that talks to ANAF correctly —
-Windows will ask you to confirm"* — then run
-`winget install --id Git.Git -e` and let them answer the UAC prompt. It is
-almost always already there (Claude Code on Windows requires Git for Windows),
-so probe before installing. We want exactly one file out of that package — an
-x64 curl whose TLS stack handles ANAF's login — not git or Git Bash; don't
-remove this dependency as unused.
-
-Before writing, sanity-check that the server actually starts:
-
-```bash
-~/.local/bin/anafpy-mcp </dev/null; echo "exit: $?"
-```
-
-It is a stdio server: closing its input makes it start, see end-of-input, and exit
-**0** with no output. That is success. A traceback or a non-zero exit is not.
-(Don't reach for `timeout` here — macOS doesn't ship it.)
+Before writing, sanity-check that the server actually starts with the platform
+file's **step-6 sanity check**: it is a stdio server, so closing its input makes
+it start, see end-of-input, and exit **0** with no output. That is success. A
+traceback or a non-zero exit is not.
 
 Then tell them: **quit Claude Desktop completely and reopen it** (closing the
 window is not enough), because it reads this file only at startup.
@@ -285,26 +204,16 @@ back here if something breaks or when the yearly ANAF login expires."*
 ## Step 8 (optional) — SPV mailbox
 
 Only offer this if they want to read their SPV mailbox or pull official reports.
-It is read-only: nothing can be filed through it.
-
-```bash
-~/.local/bin/anafpy spv certs                 # you can run this
-~/.local/bin/anafpy spv select <thumbprint>
-```
+It is read-only: nothing can be filed through it. List and select the certificate
+with the platform file's **step-8 commands**.
 
 `spv login` fires the PIN/2FA prompt on their device. Ask first, then run it and
 let them approve on the token. It can fail on ANAF's side for no reason — just run
 it again. SPV sessions idle out in under an hour, which is normal and not a broken
 install; from then on they can just say *"log me in to SPV"* in Cowork.
 
-On Windows, the curl concern was already handled in steps 1 and 6
-(`ANAFPY_CURL` in the config `env` block). Two loose ends: the config `env`
-reaches only the server, so when the user runs `anafpy spv login` in their own
-terminal, set the variable in that session too
-(`$env:ANAFPY_CURL = "C:\Program Files\Git\mingw64\bin\curl.exe"` in
-PowerShell). And if a login still fails with `SEC_E_UNKNOWN_CREDENTIALS` or
-`SEC_E_CONTEXT_EXPIRED`, that is the same curl bug reaching a login anyway —
-go back and apply the step-6 fix rather than retrying.
+On Windows, the platform file has two curl loose ends for this step — read them
+there.
 
 ## Step 9 (optional) — Declaration tools
 
@@ -326,7 +235,9 @@ install for them:
 3. Confirm **Java** is present (`java -version`, JRE/JDK 8+). anafpy only runs DUK's
    *validate*/*render*, which work on any modern JVM.
 
-Then add one line to the `env` block from step 6, pointing at the extracted folder:
+Then add one line to the `env` block from step 6, pointing at the extracted
+folder (on Windows: a doubled-backslash path, e.g.
+`C:\\Users\\ana\\DUKIntegrator\\dist`):
 
 ```json
         "ANAFPY_DUK_DIR": "/Users/you/DUKIntegrator/dist"
