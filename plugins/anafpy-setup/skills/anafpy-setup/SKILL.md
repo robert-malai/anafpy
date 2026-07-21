@@ -135,19 +135,25 @@ the absolute path of `anafpy-mcp` — step 6 needs it. To update anafpy later:
 
 ## Step 5 — Log in to ANAF (the user runs this)
 
-This step needs their browser, their certificate, and possibly their PIN, and in
-paste mode it needs a URL pasted back within ~60 seconds. **You cannot drive it.**
-Compose the exact command from the platform file's **step-5 template** with their
-values filled in, then ask them to open the integrated terminal
-(**Views → Terminal**, or `` Ctrl+` ``) and run it there.
+This step needs their browser, their certificate, and possibly their PIN.
+**You cannot drive it.** Compose the exact command from the platform file's
+**step-5 template** with their values filled in, then ask them to open the
+integrated terminal (**Views → Terminal**, or `` Ctrl+` ``) and run it there.
 
-Tell them what to expect: the browser opens on ANAF's login page and asks for the
-certificate; afterwards it lands on **an error page — that is expected**; they copy
-the full URL from the address bar into the terminal, promptly.
+Tell them what to expect, in order: the browser opens on ANAF's login page and
+asks for the certificate; then it shows a **"connection is not private" warning
+at localhost — that is expected** (the command made a one-time certificate so
+their own computer can catch ANAF's answer; nothing about the warning involves
+ANAF or their data); they click **Advanced → Proceed to localhost** (Firefox:
+*Accept the Risk and Continue*) and the browser lands on a page saying they can
+close the tab — done, nothing to copy.
 
-If they'd rather not paste, `mkcert` makes the automatic capture work — see
-[step 4, option A of the guide](https://anafpy.readthedocs.io/en/latest/mcp/setup/#option-a-automatic-capture).
-Don't lead with it; paste mode needs no extra install.
+If the terminal instead reports it is waiting for a pasted URL (the fallback
+when the listener can't start), they copy the full URL from the browser's
+address bar into the terminal within ~60 seconds. If the once-a-year warning
+click bothers them, the guide's
+[mkcert tip](https://anafpy.readthedocs.io/en/latest/mcp/setup/#step-4-log-in-to-anaf-one-time-with-your-certificate)
+removes it — don't lead with that; the default needs no extra install.
 
 Then verify it yourself with the platform file's **auth-status probe**. Tokens
 refresh automatically for about a year, so this step recurs roughly annually.

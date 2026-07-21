@@ -286,14 +286,16 @@ one-time, interactive bootstrap runs on your machine (the cert lives there):
 
 ```bash
 anafpy auth login --client-id <ID> --client-secret <SECRET> \
-                  --redirect-uri https://localhost:9002/callback --paste
+                  --redirect-uri https://localhost:9002/callback
 anafpy auth status        # show stored token validity
 anafpy auth logout        # remove the stored tokens (signs this machine out)
 ```
 
-This opens your browser for the certificate step, captures the authorization code
-(pasted, or via a local TLS listener), exchanges it for tokens, and stores them in
-the **OS credential store** (macOS Keychain, Windows Credential Manager, Linux
+This opens your browser for the certificate step and captures the authorization
+code on a local TLS listener — by default with a one-time self-signed certificate
+generated on the spot (one expected browser warning to click through; bring your
+own trusted cert via `--tls-cert`/`--tls-key`, or use `--paste`, to avoid it) —
+then exchanges it for tokens and stores them in the **OS credential store** (macOS Keychain, Windows Credential Manager, Linux
 Secret Service/KWallet — the default backend; a JSON-file backend is the opt-out
 for Docker/headless hosts). Tokens then refresh **headlessly** for ~a year (access
 token 90 days, refresh token 365 days), so the cert is needed only about once a

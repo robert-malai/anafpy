@@ -129,67 +129,12 @@ instalează două comenzi: `anafpy` (folosită la pasul următor) și `anafpy-mc
 
 ## Pasul 4 — Autentifică-te la ANAF (o singură dată, cu certificatul)
 
-Acesta este singurul pas care folosește certificatul. După ce confirmi certificatul
-în browser, ANAF trimite calculatorului tău un cod de unică folosință — și există
-două moduri de a-l prinde:
-
-- **Varianta A — automat (recomandat).** O configurare unică a certificatului face
-  `https://localhost` real pe calculatorul tău; autentificarea se finalizează apoi
-  singură în browser, nimic de copiat.
-- **Varianta B — mod copiere (fără configurare).** Browserul ajunge pe o pagină de
-  eroare și tu copiezi adresa ei în terminal în ~60 de secunde.
-
-### Varianta A — captură automată
-
-Întâi, instalează [mkcert](https://github.com/FiloSottile/mkcert) — o unealtă mică
-ce face certificate în care calculatorul tău are încredere:
-
-**macOS** (prin [Homebrew](https://brew.sh); instalează întâi Homebrew dacă
-`brew --version` nu răspunde):
-
-```bash
-brew install mkcert
-```
-
-**Windows (PowerShell)**:
-
-```powershell
-winget install FiloSottile.mkcert
-```
-
-Apoi — la fel pe ambele sisteme — redeschide terminalul și creează certificatul
-`localhost` (o singură dată):
-
-```bash
-mkcert -install          # o singură dată; adaugă autoritatea mkcert în magazinul de încredere al calculatorului — confirmă solicitarea de parolă/UAC
-mkcert localhost 127.0.0.1
-```
-
-Acest lucru scrie `localhost+1.pem` și `localhost+1-key.pem` în folderul curent.
-Certificatele pe care le face mkcert sunt de încredere **doar pe acest calculator**
-— nimic nu iese din el.
-
-Apoi conectează token-ul USB și rulează, din același folder (o singură linie, cu
-valorile tale de la pasul 1):
+Acesta este singurul pas care folosește certificatul. Conectează token-ul USB și
+rulează (o singură linie, cu valorile tale de la pasul 1):
 
 ```bash
 anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
-  --redirect-uri https://localhost:9002/callback \
-  --tls-cert localhost+1.pem --tls-key localhost+1-key.pem
-```
-
-**Browserul se deschide** pe pagina de autentificare ANAF și îți cere
-**certificatul** — alege-l și confirmă (introdu PIN-ul token-ului dacă ți se cere).
-După aceea browserul ajunge pe o pagină care spune **„You can close this tab and
-return to the terminal"** — gata, codul a fost prins automat, fără avertismente,
-nimic de copiat. Dacă ascultătorul (listener) nu poate porni din orice motiv,
-comanda revine singură la modul copiere (Varianta B).
-
-### Varianta B — mod copiere
-
-```bash
-anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
-  --redirect-uri https://localhost:9002/callback --paste
+  --redirect-uri https://localhost:9002/callback
 ```
 
 Ce se întâmplă, în ordine:
@@ -197,13 +142,50 @@ Ce se întâmplă, în ordine:
 1. **Browserul se deschide** pe pagina de autentificare ANAF și îți cere
    **certificatul** — alege-l și confirmă (introdu PIN-ul token-ului dacă ți se
    cere).
-2. Browserul ajunge apoi pe o pagină de eroare („can't connect to localhost" sau
-   ceva similar). **Acest lucru este normal** — nu rulează nimic la adresa aceea;
-   codul de care ai nevoie este în bara de adrese.
-3. **Copiază adresa (URL) completă din bara de adrese a browserului** și
-   **lipește-o în terminal**, care o așteaptă. Fă asta repede — codul expiră în
-   aproximativ **60 de secunde**. (Dacă expiră, rulează pur și simplu comanda din
-   nou.)
+2. Browserul arată apoi un avertisment că conexiunea la `localhost` **nu este
+   privată**. **Acest lucru este normal** — comanda creează un certificat de
+   unică folosință pentru propriul tău calculator, ca să poată prinde răspunsul
+   de la ANAF, iar browserele avertizează despre orice certificat nesemnat de o
+   autoritate publică. Avertismentul nu are nicio legătură cu ANAF sau cu datele
+   tale; este calculatorul tău vorbind cu el însuși.
+3. Apasă **„Advanced"**, apoi **„Proceed to localhost"** (Chrome/Edge; Firefox:
+   „Accept the Risk and Continue"). Browserul ajunge pe o pagină care spune
+   **„You can close this tab and return to the terminal"** — gata, codul a fost
+   prins automat, nimic de copiat.
+
+Dacă ascultătorul (listener) nu poate porni din orice motiv — sau nu sosește
+nimic la timp — comanda revine singură la **modul copiere**: browserul ajunge pe
+o pagină de eroare și tu copiezi adresa (URL) completă din bara de adrese în
+terminalul care o așteaptă, în aproximativ **60 de secunde**. (Poți alege acest
+mod și direct, cu `--paste`.)
+
+??? tip "Opțional: elimină avertismentul din browser (mkcert)"
+
+    Dacă te deranjează click-ul pe avertisment o dată pe an, fă `https://localhost`
+    real pe acest calculator cu [mkcert](https://github.com/FiloSottile/mkcert) —
+    o unealtă mică ce creează certificate în care propriul tău calculator are
+    încredere (sunt valabile **doar pe acest calculator**; nimic nu iese din el):
+
+    **macOS** (prin [Homebrew](https://brew.sh)): `brew install mkcert` —
+    **Windows (PowerShell)**: `winget install FiloSottile.mkcert`
+
+    Apoi, redeschide terminalul și (o singură dată):
+
+    ```bash
+    mkcert -install          # adaugă autoritatea mkcert în magazinul de încredere al calculatorului — confirmă solicitarea de parolă/UAC
+    mkcert localhost 127.0.0.1
+    ```
+
+    Acest lucru scrie `localhost+1.pem` și `localhost+1-key.pem` în folderul
+    curent; adaugă-le la comanda de autentificare, rulată din același folder:
+
+    ```bash
+    anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
+      --redirect-uri https://localhost:9002/callback \
+      --tls-cert localhost+1.pem --tls-key localhost+1-key.pem
+    ```
+
+    Autentificarea se finalizează atunci în browser fără niciun avertisment.
 
 ### În oricare variantă
 
@@ -419,10 +401,10 @@ dispozitivul tău obții PDF-ul semnat.
 
 | Simptom | Rezolvare |
 |---|---|
+| Avertismentul *„Connection is not private"* la `localhost` în timpul autentificării | Normal cu autentificarea implicită — certificatul de unică folosință este al propriului tău calculator. Apasă **Advanced → Proceed to localhost** și autentificarea se finalizează. (Cu certificate mkcert înseamnă că `mkcert -install` nu s-a finalizat — are nevoie de confirmarea de parolă/UAC; rulează-l din nou, apoi reîncearcă.) |
 | `mkcert: command not found` imediat după ce l-ai instalat | Închide și redeschide terminalul ca noua unealtă să fie preluată, apoi reîncearcă. |
-| Autentificarea spune că nu poate citi `localhost+1.pem` (varianta A) | Rulează comanda de autentificare din folderul în care `mkcert` a scris fișierele de certificat — sau dă calea lor completă. |
-| Avertismentul *„Connection is not private"* la `localhost` (varianta A) | `mkcert -install` nu s-a finalizat (are nevoie de confirmarea de parolă/UAC). Rulează-l din nou, apoi reîncearcă autentificarea; poți de asemenea să dai click o dată pe **Advanced → Proceed to localhost**. |
-| Pagină de eroare în browser după pasul cu certificatul (varianta B) | Normal în modul `--paste` — copiază adresa (URL) din bara de adrese în terminal (pasul 4). |
+| Autentificarea spune că nu poate citi `localhost+1.pem` (mkcert) | Rulează comanda de autentificare din folderul în care `mkcert` a scris fișierele de certificat — sau dă calea lor completă. |
+| Pagină de eroare în browser după pasul cu certificatul | Normal în modul `--paste` (sau după ce ascultătorul a revenit singur la el) — copiază adresa (URL) din bara de adrese în terminal (pasul 4). |
 | Cod „expired" / invalid la lipire | Ai așteptat peste ~60 s. Rulează comanda de autentificare din nou și lipește repede. |
 | Nicio solicitare de certificat în browser | Driverul/software-ul token-ului nu este instalat sau browserul nu vede certificatul. Testează autentificându-te întâi în SPV; rezolvă acolo, apoi reîncearcă. |
 | `anafpy: command not found` în terminal | Închide și redeschide terminalul ca noile comenzi să fie preluate; dacă persistă, rulează `uv tool update-shell`, apoi redeschide din nou. |

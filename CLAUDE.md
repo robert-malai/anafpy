@@ -357,10 +357,15 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   qualified-certificate step happens only in the interactive `anafpy auth login` browser
   flow; code-exchange and refresh are headless. Don't add cert/mTLS handling to clients.
   ANAF's portal only registers `https://` callback URLs (an `http://` one 400s —
-  verified 2026-07-02); the login captures the code via `--paste` (no listener, the
-  baseline), a TLS listener (`--tls-cert/--tls-key`), or plain HTTP behind an external
-  TLS terminator — the listener binds *before* the browser opens (a fast redirect must
-  not outrun it) and the CLI falls back to paste if it can't start or times out.
+  verified 2026-07-02), and no public CA issues for localhost, so the **default**
+  login serves the listener with a **per-attempt ephemeral self-signed cert**
+  (`auth/tlscert.py`, `cryptography` core dep since 2026-07-21; one expected
+  browser warning, announced by the CLI; key pair in-memory, PEMs touch disk only
+  inside a deleted-immediately temp dir). Alternatives: `--tls-cert/--tls-key`
+  (user-supplied trusted cert, e.g. mkcert — no warning), `--paste` (no listener),
+  `--no-tls` (plain HTTP behind an external TLS terminator) — the listener binds
+  *before* the browser opens (a fast redirect must not outrun it) and the CLI
+  falls back to paste if it can't start or times out.
   Every login binds a random OAuth `state` (login-CSRF protection, 2026-07-04):
   the listener 400s (and keeps waiting on) redirects that don't echo it, and the
   paste parser rejects a mismatching URL — a pasted bare code is exempt.

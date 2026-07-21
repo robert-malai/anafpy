@@ -43,6 +43,11 @@ dependencies = [
     # natively, help text comes from the Google-style docstrings, env-var
     # fallbacks live on the Parameter annotations.
     "cyclopts>=3.14",
+    # Ephemeral self-signed certificate for the OAuth callback listener — ANAF
+    # registers only https:// callbacks and no public CA may issue for
+    # localhost, so the default login mints a throwaway cert per attempt
+    # (auth/tlscert.py; one expected browser warning, nothing installed).
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

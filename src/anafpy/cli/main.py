@@ -14,6 +14,7 @@ import secrets
 import ssl
 import sys
 import time
+import urllib.parse
 import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
@@ -28,6 +29,7 @@ from ..auth import (
     KeyringTokenStore,
     TokenStore,
     build_authorize_url,
+    ephemeral_server_context,
     exchange_code,
     parse_redirect_url,
 )
@@ -58,6 +60,14 @@ _PASTE_HINT = (
     "After authorizing, your browser will show a connection error — that is\n"
     "expected. Copy the FULL URL from the address bar and paste it below\n"
     "(promptly: ANAF's code expires in ~60 seconds)."
+)
+
+_EPHEMERAL_TLS_HINT = (
+    "Serving the callback with a one-time self-signed certificate.\n"
+    "After authorizing, your browser will warn that the connection is not\n"
+    'private — that is expected. Click "Advanced" and proceed to localhost\n'
+    "to finish the login. (A certificate of your own — e.g. from mkcert —\n"
+    "via --tls-cert/--tls-key avoids the warning.)"
 )
 
 app = App(
@@ -230,10 +240,16 @@ async def auth_login(
     paste: bool = False,
     tls_cert: str | None = None,
     tls_key: str | None = None,
+    no_tls: bool = False,
     store: _StoreOption = DEFAULT_STORE,
     store_backend: _StoreBackendOption = "keyring",
 ) -> int:
     """Interactive OAuth bootstrap (browser + certificate).
+
+    By default the callback listener serves TLS with a one-time self-signed
+    certificate generated on the spot (ANAF registers only ``https://``
+    callbacks, and no public CA issues for localhost) — the browser shows one
+    expected "connection is not private" warning to click through.
 
     Args:
         redirect_uri: Must match the registered Callback URL (ANAF requires
@@ -241,9 +257,14 @@ async def auth_login(
         client_id: OAuth application id from ANAF's portal.
         client_secret: OAuth application secret from ANAF's portal.
         paste: Run no listener; paste the redirect URL from the browser instead.
-        tls_cert: PEM certificate: serve the callback listener over TLS directly.
+        tls_cert: PEM certificate: serve the callback listener with your own
+            trusted certificate (e.g. from mkcert) instead of the generated
+            one — no browser warning.
         tls_key: PEM private key for ``--tls-cert`` (omit if the key is in the
             cert file).
+        no_tls: Serve the listener over plain HTTP despite the ``https://``
+            redirect URI — only useful behind an external TLS terminator that
+            holds the real certificate.
     """
     if not client_id or not client_secret:
         print(
@@ -252,13 +273,35 @@ async def auth_login(
             file=sys.stderr,
         )
         return 2
-    if paste and tls_cert:
-        print("error: --paste and --tls-cert are mutually exclusive", file=sys.stderr)
-        return 2
-    if tls_key and not tls_cert:
-        print("error: --tls-key requires --tls-cert", file=sys.stderr)
-        return 2
-    ssl_context = _load_ssl_context(tls_cert, tls_key) if tls_cert else None
+    parsed_redirect = urllib.parse.urlparse(redirect_uri)
+    ssl_context: ssl.SSLContext | None
+    # The capture mode is one decision over the four flags — a truth table:
+    # invalid combinations first, then each valid row's listener context.
+    match paste, no_tls, tls_cert, tls_key:
+        case (True, True, _, _) | (True, _, str(), _):
+            print(
+                "error: --paste runs no listener — it excludes --tls-cert/--no-tls",
+                file=sys.stderr,
+            )
+            return 2
+        case (_, True, str(), _):
+            print(
+                "error: --no-tls and --tls-cert are mutually exclusive",
+                file=sys.stderr,
+            )
+            return 2
+        case (_, _, None, str()):
+            print("error: --tls-key requires --tls-cert", file=sys.stderr)
+            return 2
+        case (_, _, str() as cert, _):
+            ssl_context = _load_ssl_context(cert, tls_key)
+        case (False, False, _, _) if parsed_redirect.scheme == "https":
+            ssl_context = ephemeral_server_context(
+                parsed_redirect.hostname or "localhost"
+            )
+            print(f"{_EPHEMERAL_TLS_HINT}\n")
+        case _:  # --paste, --no-tls, or a non-https redirect: no TLS context
+            ssl_context = None
     # Build the store before the browser flow so a missing keyring package or
     # backend fails fast, not after the user has authorized with the certificate.
     token_store, store_label = _token_store(store, store_backend)

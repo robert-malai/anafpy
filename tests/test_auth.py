@@ -14,6 +14,7 @@ import httpx
 import keyring
 import pytest
 import respx
+from cryptography import x509
 from keyring.backends import fail
 
 from anafpy.auth import (
@@ -26,7 +27,9 @@ from anafpy.auth import (
     TokenStore,
     build_authorize_url,
     capture_authorization_code,
+    ephemeral_server_context,
     exchange_code,
+    generate_self_signed_cert,
     parse_redirect_url,
     refresh_tokens,
 )
@@ -521,3 +524,53 @@ def test_capture_code_tls_listener() -> None:
     hitter.start()
     code = capture_authorization_code(uri, timeout=10.0, ssl_context=server_ctx)
     assert code == "tls-ok"
+
+
+# --- ephemeral TLS (the default listener certificate) ---------------------------------
+
+
+def test_generate_self_signed_cert_shape() -> None:
+    cert_pem, key_pem = generate_self_signed_cert("localhost")
+    cert = x509.load_pem_x509_certificate(cert_pem)
+    sans = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    # Name coverage: the redirect host plus both loopbacks, no duplicates — the
+    # browser's only complaint must be trust, never a name mismatch.
+    assert sans.get_values_for_type(x509.DNSName) == ["localhost"]
+    assert {str(ip) for ip in sans.get_values_for_type(x509.IPAddress)} == {
+        "127.0.0.1",
+        "::1",
+    }
+    constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+    assert constraints.ca is False
+    assert b"PRIVATE KEY" in key_pem
+
+
+def test_generate_self_signed_cert_ip_hostname_not_duplicated() -> None:
+    cert_pem, _ = generate_self_signed_cert("127.0.0.1")
+    cert = x509.load_pem_x509_certificate(cert_pem)
+    sans = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    assert [str(ip) for ip in sans.get_values_for_type(x509.IPAddress)].count(
+        "127.0.0.1"
+    ) == 1
+
+
+def test_capture_code_ephemeral_tls_listener() -> None:
+    # The default login path: a context minted on the spot serves the callback.
+    client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    client_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    client_ctx.check_hostname = False
+    client_ctx.verify_mode = ssl.CERT_NONE  # self-signed by design
+
+    port = _free_port()
+    uri = f"https://127.0.0.1:{port}/callback"
+    hitter = threading.Thread(
+        target=_hit_callback,
+        args=(f"{uri}?code=eph-ok",),
+        kwargs={"verify": client_ctx},
+        daemon=True,
+    )
+    hitter.start()
+    code = capture_authorization_code(
+        uri, timeout=10.0, ssl_context=ephemeral_server_context("127.0.0.1")
+    )
+    assert code == "eph-ok"

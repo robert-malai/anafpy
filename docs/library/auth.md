@@ -18,7 +18,7 @@ layer by design.
 
 ```bash
 anafpy auth login --client-id <ID> --client-secret <SECRET> \
-                  --redirect-uri https://localhost:9002/callback --paste
+                  --redirect-uri https://localhost:9002/callback
 anafpy auth status        # show stored token validity
 anafpy auth logout        # remove the stored tokens (signs this machine out)
 ```
@@ -31,35 +31,29 @@ use the MCP server or the library).
 ## Capturing the authorization code
 
 Register the callback URL with the **`https://` scheme** — ANAF's developer portal
-rejects `http://` callbacks (HTTP 400 at registration; verified 2026-07-02). The
-callback still doesn't need a public server; pick how the code gets captured:
+rejects `http://` callbacks (HTTP 400 at registration; verified 2026-07-02). No
+public CA may issue a certificate for `localhost` (CA/Browser Forum baseline
+requirements), so a browser-trusted local listener can't exist out of the box —
+the capture modes trade that constraint off differently:
 
-- **`--paste` (recommended default).** No listener runs. After the certificate
-  step the browser shows a connection error — expected — and you paste the
-  redirect URL from the address bar into the CLI. Paste promptly: ANAF's code
-  expires in ~60 seconds.
-- **`--tls-cert` / `--tls-key`.** The local listener serves TLS directly with a
-  certificate you supply — a self-signed one works. Generate it once (browsers
-  require a `subjectAltName`, not just the CN):
-
-  ```bash
-  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-    -keyout ~/.anafpy/callback-key.pem -out ~/.anafpy/callback-cert.pem \
-    -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-  ```
-
-  then pass `--tls-cert ~/.anafpy/callback-cert.pem --tls-key
-  ~/.anafpy/callback-key.pem` instead of `--paste`. The browser shows a one-time
-  "proceed to localhost" warning (click through — it's your own cert on your own
-  loopback); trust the cert in the OS keychain, or use
-  [mkcert](https://github.com/FiloSottile/mkcert), to remove the warning entirely.
-  On **Windows** (no stock OpenSSL), prefer mkcert: `choco install mkcert` (or
-  `scoop install mkcert`), then `mkcert -install` and `mkcert localhost
-  127.0.0.1` — the emitted PEM pair plugs into `--tls-cert`/`--tls-key` unchanged,
-  with no browser warning at all.
-- **Neither flag.** The listener speaks plain HTTP; put your own TLS terminator in
-  front of it. If the listener can't start — or no callback arrives in time — the
-  CLI falls back to paste mode.
+- **No flags (the default).** The listener serves TLS with a **one-time
+  self-signed certificate generated on the spot** — nothing to create, nothing
+  installed, nothing persisted (the key pair lives only for the login attempt).
+  After the certificate step the browser shows a single "connection is not
+  private" warning — **expected**, and announced by the CLI beforehand: click
+  "Advanced" and proceed to localhost, and the code is captured automatically.
+  Since logins recur only ~yearly, that one click is the entire recurring cost.
+- **`--tls-cert` / `--tls-key`.** The listener serves TLS with a certificate you
+  supply — bring one your machine already trusts and the browser warning
+  disappears entirely. [mkcert](https://github.com/FiloSottile/mkcert) is the
+  easy way: `mkcert -install`, then `mkcert localhost 127.0.0.1` — the emitted
+  PEM pair plugs into `--tls-cert`/`--tls-key` unchanged.
+- **`--paste`.** No listener runs. The browser ends on a connection error —
+  expected — and you paste the redirect URL from the address bar into the CLI.
+  Paste promptly: ANAF's code expires in ~60 seconds. This is also the automatic
+  fallback whenever the listener can't start or no callback arrives in time.
+- **`--no-tls`.** The listener speaks plain HTTP; only useful with your own TLS
+  terminator in front of it holding the real certificate.
 
 Every login binds a random OAuth `state` (login-CSRF protection): the listener
 rejects redirects that don't echo it, and the paste parser rejects a mismatching

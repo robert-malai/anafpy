@@ -40,7 +40,7 @@ The binaries land next to `uv`: `~/.local/bin/anafpy` and
 ```bash
 ~/.local/bin/anafpy auth login \
   --client-id <THEIR_CLIENT_ID> --client-secret <THEIR_CLIENT_SECRET> \
-  --redirect-uri https://localhost:9002/callback --paste
+  --redirect-uri https://localhost:9002/callback
 ```
 
 Auth-status probe (you run this to verify):

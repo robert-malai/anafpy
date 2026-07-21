@@ -145,14 +145,28 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
   callbacks with an HTTP 400 at registration (live-verified 2026-07-02; F5 APM
   enforces the scheme) — but needs no public server: only the user's browser hits
   it. Register `https://localhost:PORT/callback` (live-verified registrable
-  2026-06-28) and capture the code one of three ways: **paste mode** (`--paste`,
-  no listener, the security baseline), a **TLS listener** with a user-supplied
-  certificate (`--tls-cert`/`--tls-key`), or the plain HTTP listener behind an
-  external TLS terminator; the CLI falls back to paste when the listener can't
-  start. A denied cert step surfaces as an `access_denied` error redirect, raised
-  cleanly. (Evaluated and rejected: third-party redirect bounces —
-  dangling-domain/custody risks; `localhost.direct`-style public-CA loopback certs
-  — the distributed cert was found expired since 2025-02; structurally unreliable.)
+  2026-06-28). No public CA may issue for localhost (CA/Browser Forum baseline
+  requirements), so a silently-trusted local listener cannot exist; the **default**
+  (decided 2026-07-21) is a TLS listener with a **per-attempt ephemeral
+  self-signed certificate** (`auth/tlscert.py`; key pair in-memory, one expected
+  browser interstitial announced by the CLI — proportionate to the ~yearly login
+  cadence). Alternatives: a **user-supplied trusted certificate**
+  (`--tls-cert`/`--tls-key`, e.g. mkcert — removes the warning, custody stays with
+  the user), **paste mode** (`--paste`, no listener, the security baseline and
+  automatic fallback when the listener can't start), or plain HTTP behind an
+  external TLS terminator (`--no-tls`). A denied cert step surfaces as an
+  `access_denied` error redirect, raised cleanly. (Evaluated and rejected:
+  third-party redirect bounces — dangling-domain/custody risks;
+  `localhost.direct`-style public-CA loopback certs — the distributed cert was
+  found expired since 2025-02; structurally unreliable. Re-evaluated and rejected
+  2026-07-21: shipping any cert+key in the wheel — a distributed private key is
+  compromised by definition, and for a public-CA cert triggers 24h revocation;
+  auto-installing a trust anchor mkcert-style — trust-store mutation on end-user
+  machines, elevated prompts, Firefox/NSS matrix, anchor outlives uninstall; a
+  hosted redirect page or Plex-style per-user cert issuance under a project
+  domain — both put a project-owned domain in every user's ANAF registration
+  (lapsed-domain code interception) and reverse the §11 no-hosted-surface
+  boundary.)
 - **Layered design**: core depends on an abstract **`TokenProvider`**; a
   batteries-included bootstrap ships the authorize-URL builder, callback listener,
   paste parser (`parse_redirect_url`), code→token exchange, `TokenStore`, and

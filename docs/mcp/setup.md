@@ -124,79 +124,60 @@ Claude starts). They land in `~/.local/bin` on macOS and
 
 ## Step 4 — Log in to ANAF (one-time, with your certificate)
 
-This is the only step that uses the certificate. After you confirm the certificate
-in the browser, ANAF sends your computer a one-time code — and there are two ways
-to catch it:
-
-- **Option A — automatic (recommended).** A one-time certificate setup makes
-  `https://localhost` real on your computer; the login then completes in the
-  browser by itself, nothing to copy.
-- **Option B — paste mode (no setup).** The browser ends on an error page and you
-  copy its address into the terminal within ~60 seconds.
-
-### Option A — automatic capture
-
-First, install [mkcert](https://github.com/FiloSottile/mkcert) — a small tool that
-makes certificates your own computer trusts:
-
-**macOS** (via [Homebrew](https://brew.sh); install Homebrew first if
-`brew --version` doesn't answer):
-
-```bash
-brew install mkcert
-```
-
-**Windows (PowerShell)**:
-
-```powershell
-winget install FiloSottile.mkcert
-```
-
-Then — same on both systems — reopen the terminal and create the `localhost`
-certificate (once):
-
-```bash
-mkcert -install          # one-time; adds mkcert's authority to this computer's trust store — confirm the password/UAC prompt
-mkcert localhost 127.0.0.1
-```
-
-This writes `localhost+1.pem` and `localhost+1-key.pem` into the current folder.
-The certificates mkcert makes are trusted **only on this computer** — nothing
-leaves it.
-
-Then plug in the USB token and run, from that same folder (one line, with your
-values from step 1):
+This is the only step that uses the certificate. Plug in the USB token and run
+(one line, with your values from step 1):
 
 ```bash
 anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
-  --redirect-uri https://localhost:9002/callback \
-  --tls-cert localhost+1.pem --tls-key localhost+1-key.pem
-```
-
-Your **browser opens** on ANAF's login page and asks for your **certificate** —
-pick it and confirm (enter the token PIN if prompted). After that the browser lands
-on a page saying **"You can close this tab and return to the terminal"** — done,
-the code was captured automatically, no warnings, nothing to copy. If the listener
-can't start for any reason, the command falls back to paste mode (Option B) by
-itself.
-
-### Option B — paste mode
-
-```bash
-anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
-  --redirect-uri https://localhost:9002/callback --paste
+  --redirect-uri https://localhost:9002/callback
 ```
 
 What happens, in order:
 
 1. Your **browser opens** on ANAF's login page and asks for your **certificate** —
    pick it and confirm (enter the token PIN if prompted).
-2. The browser then lands on an error page ("can't connect to localhost" or
-   similar). **This is expected** — there is nothing running at that address; the
-   code you need is in the address bar.
-3. **Copy the full URL from the browser's address bar** and **paste it into the
-   terminal**, which is waiting for it. Do this promptly — the code expires in
-   about **60 seconds**. (If it expires, just run the command again.)
+2. The browser then shows a warning that the connection to `localhost` is **not
+   private**. **This is expected** — the command creates a one-time certificate
+   for your own computer so it can catch ANAF's answer, and browsers warn about
+   any certificate they haven't seen a public authority sign. Nothing about the
+   warning involves ANAF or your data; it is your machine talking to itself.
+3. Click **"Advanced"**, then **"Proceed to localhost"** (Chrome/Edge; Firefox:
+   "Accept the Risk and Continue"). The browser lands on a page saying **"You can
+   close this tab and return to the terminal"** — done, the code was captured
+   automatically, nothing to copy.
+
+If the listener can't start for any reason — or nothing arrives in time — the
+command falls back to **paste mode** by itself: the browser ends on an error page
+and you copy the full URL from its address bar into the waiting terminal within
+about **60 seconds**. (You can also choose this mode directly with `--paste`.)
+
+??? tip "Optional: remove the browser warning (mkcert)"
+
+    If the once-a-year warning click bothers you, make `https://localhost` real on
+    this computer with [mkcert](https://github.com/FiloSottile/mkcert) — a small
+    tool that creates certificates your own machine trusts (they are valid **only
+    on this computer**; nothing leaves it):
+
+    **macOS** (via [Homebrew](https://brew.sh)): `brew install mkcert` —
+    **Windows (PowerShell)**: `winget install FiloSottile.mkcert`
+
+    Then, reopen the terminal and (once):
+
+    ```bash
+    mkcert -install          # adds mkcert's authority to this computer's trust store — confirm the password/UAC prompt
+    mkcert localhost 127.0.0.1
+    ```
+
+    This writes `localhost+1.pem` and `localhost+1-key.pem` into the current
+    folder; add them to the login command from that same folder:
+
+    ```bash
+    anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
+      --redirect-uri https://localhost:9002/callback \
+      --tls-cert localhost+1.pem --tls-key localhost+1-key.pem
+    ```
+
+    The login then completes in the browser with no warning at all.
 
 ### Either way
 
@@ -396,10 +377,10 @@ device produces the signed PDF.
 
 | Symptom | Fix |
 |---|---|
+| *"Connection is not private"* warning at `localhost` during login | Expected with the default login — the one-time certificate is your machine's own. Click **Advanced → Proceed to localhost** and the login completes. (With mkcert certificates it means `mkcert -install` didn't complete — it needs the password/UAC confirmation; run it again, then retry.) |
 | `mkcert: command not found` right after installing it | Close and reopen the terminal so the new tool is picked up, then retry. |
-| Login says it can't read `localhost+1.pem` (option A) | Run the login command from the folder where `mkcert` wrote the certificate files — or pass their full path. |
-| *"Connection is not private"* warning at `localhost` (option A) | `mkcert -install` didn't complete (it needs the password/UAC confirmation). Run it again, then retry the login; you can also just click **Advanced → Proceed to localhost** once. |
-| Browser error page after the certificate step (option B) | Normal in `--paste` mode — copy the URL from the address bar into the terminal (step 4). |
+| Login says it can't read `localhost+1.pem` (mkcert) | Run the login command from the folder where `mkcert` wrote the certificate files — or pass their full path. |
+| Browser error page after the certificate step | Normal in `--paste` mode (or after the listener fell back to it) — copy the URL from the address bar into the terminal (step 4). |
 | "expired" / invalid code when pasting | You waited past ~60 s. Run the login command again and paste promptly. |
 | No certificate prompt in the browser | The token's driver/software isn't installed or the browser doesn't see the certificate. Test by logging in to SPV first; fix that, then retry. |
 | `anafpy: command not found` in the terminal | Close and reopen the terminal so the newly installed commands are picked up; if it persists, run `uv tool update-shell`, then reopen again. |

@@ -17,6 +17,7 @@ name = "anafpy"
 version = "0.4.3"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "cyclopts" },
     { name = "httpx" },
     { name = "keyring" },
@@ -78,6 +79,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "asn1crypto", marker = "extra == 'declaratii'", specifier = ">=1.5" },
+    { name = "cryptography", specifier = ">=42" },
     { name = "cyclopts", specifier = ">=3.14" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25" },

@@ -1,17 +1,22 @@
-"""Tests for the ``anafpy`` CLI (`auth status`/`logout`; no network, no browser)."""
+"""Tests for the ``anafpy`` CLI (login/status/logout; loopback-only network)."""
 
 from __future__ import annotations
 
 import datetime
 import json
+import socket
+import threading
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 import respx
 
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenSet
+from anafpy.auth.oauth import TOKEN_URL
 from anafpy.cli.main import main
 from conftest import FakeKeyring
 
@@ -635,3 +640,87 @@ def test_declaratii_recipisa_notes_replaced_file(
     output = capsys.readouterr().out
     assert f"replaced existing {out}" in output
     assert out.read_bytes() == b"%PDF-1.7 recipisa"
+
+
+# --- auth login (callback capture modes) ----------------------------------------------
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _login_args(tmp_path: Path, redirect_uri: str) -> list[str]:
+    return [
+        "auth",
+        "login",
+        "--client-id",
+        "CID",
+        "--client-secret",
+        "SECRET",
+        "--redirect-uri",
+        redirect_uri,
+        *_file_args(tmp_path / "tokens.json"),
+    ]
+
+
+def test_login_flag_conflicts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = _login_args(tmp_path, "https://localhost:9002/callback")
+    assert main([*base, "--paste", "--tls-cert", "cert.pem"]) == 2
+    assert main([*base, "--paste", "--no-tls"]) == 2
+    assert main([*base, "--no-tls", "--tls-cert", "cert.pem"]) == 2
+    assert main([*base, "--tls-key", "key.pem"]) == 2
+    err = capsys.readouterr().err
+    assert "--paste runs no listener" in err
+    assert "--no-tls and --tls-cert are mutually exclusive" in err
+    assert "--tls-key requires --tls-cert" in err
+
+
+def test_login_default_serves_ephemeral_tls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # No flags, https:// redirect: the listener must come up with the generated
+    # self-signed certificate, capture the state-bound code from the "browser",
+    # and complete the exchange — the full default login path.
+    port = _free_port()
+    redirect_uri = f"https://127.0.0.1:{port}/callback"
+
+    def fake_browser(url: str) -> bool:
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        state = query["state"][0]
+
+        def hit() -> None:
+            for _ in range(50):
+                try:
+                    httpx.get(
+                        f"{redirect_uri}?code=cli-code&state={state}", verify=False
+                    )
+                    return
+                except httpx.TransportError:  # listener not up yet
+                    time.sleep(0.05)
+
+        threading.Thread(target=hit, daemon=True).start()
+        return True
+
+    monkeypatch.setattr("anafpy.cli.main.webbrowser.open", fake_browser)
+    with respx.mock(assert_all_called=True) as router:
+        router.route(host="127.0.0.1").pass_through()
+        token_route = router.post(TOKEN_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "access_token": "acc",
+                    "refresh_token": "ref",
+                    "token_type": "Bearer",
+                },
+            )
+        )
+        assert main(_login_args(tmp_path, redirect_uri)) == 0
+    assert "self-signed certificate" in capsys.readouterr().out
+    assert "code=cli-code" in token_route.calls.last.request.content.decode()
+    tokens = FileTokenStore(tmp_path / "tokens.json").load()
+    assert tokens is not None
+    assert tokens.access_token == "acc"

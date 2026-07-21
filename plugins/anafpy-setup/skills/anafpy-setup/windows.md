@@ -57,7 +57,7 @@ The binaries land next to `uv`: `%USERPROFILE%\.local\bin\anafpy.exe` and
 ## Step 5 — login template (the user runs this, PowerShell)
 
 ```powershell
-& "$env:USERPROFILE\.local\bin\anafpy.exe" auth login --client-id <THEIR_CLIENT_ID> --client-secret <THEIR_CLIENT_SECRET> --redirect-uri https://localhost:9002/callback --paste
+& "$env:USERPROFILE\.local\bin\anafpy.exe" auth login --client-id <THEIR_CLIENT_ID> --client-secret <THEIR_CLIENT_SECRET> --redirect-uri https://localhost:9002/callback
 ```
 
 Auth-status probe (you run this to verify):
