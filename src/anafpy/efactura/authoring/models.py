@@ -192,10 +192,15 @@ _EXEMPTION_REASON_CATEGORIES = _ZERO_RATE_CATEGORIES - {VatCategory.ZERO_RATED} 
     VatCategory.NOT_SUBJECT
 }
 
-# The RO Schematron's own email/telephone shapes (BR-RO contact rules).
-_EMAIL = re.compile(
-    r"^[0-9a-zA-Z]([0-9a-zA-Z.]*)[^.\s@]@[^.\s@]([0-9a-zA-Z.]*)[0-9a-zA-Z]$"
-)
+# Contact shapes (BT-42/43, BT-57/58). Deliberately permissive: no e-Factura rule
+# constrains the address beyond its 100-char length. The alphanumerics-only
+# RO-EMAIL-REGEX this once mirrored belongs to the *e-Transport* Schematron —
+# where it is a declared-but-never-referenced `let`, so ANAF enforces it in
+# neither service — and ANAF accepts filings whose contact carries `_`, `-` or
+# `+`. The reader must never reject a document ANAF itself validated, so only
+# what is unambiguously malformed is refused: a missing/duplicated `@`,
+# whitespace, an empty side, or a leading/trailing dot on either side.
+_EMAIL = re.compile(r"^[^\s@.](?:[^\s@]*[^\s@.])?@[^\s@.](?:[^\s@]*[^\s@.])?$")
 
 
 def _valid_email(value: str) -> str:

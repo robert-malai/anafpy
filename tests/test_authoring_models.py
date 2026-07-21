@@ -146,6 +146,30 @@ def test_contact_email_and_telephone_shapes() -> None:
         Contact(telephone="abcdef")
 
 
+@pytest.mark.parametrize(
+    "email",
+    [
+        "look_contab@yahoo.com",  # filed and accepted by ANAF (underscore)
+        "contact@firma-x.ro",  # hyphenated domain
+        "a+b@gmail.com",  # plus addressing
+        "office.ro@sub.domain.co.uk",
+        "x@y",
+    ],
+)
+def test_contact_email_accepts_real_world_addresses(email: str) -> None:
+    # The address shape is ours, not ANAF's: nothing constrains BT-43/58 beyond
+    # its length, so the reader must not reject what ANAF validated at filing.
+    assert Contact(email=email).email == email
+
+
+@pytest.mark.parametrize(
+    "email", ["nu-e-email", "x@.ro", "x.@ro.ro", ".x@ro.ro", "a b@c.ro", "a@b@c.ro"]
+)
+def test_contact_email_rejects_malformed_addresses(email: str) -> None:
+    with pytest.raises(ValidationError, match="email"):
+        Contact(email=email)
+
+
 def test_vat_id_requires_country_prefix() -> None:
     # BR-CO-09
     from _authoring import make_seller
