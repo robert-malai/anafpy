@@ -32,7 +32,7 @@ jobs:
       - name: Sync dependencies
         run: uv sync --all-extras
       - name: Tests
-        run: uv run pytest -q --cov --cov-report=xml
+        run: uv run pytest -q --cov --cov-report=xml --junitxml=junit.xml
       # Every leg uploads; Codecov merges them per commit — the macOS/Windows legs
       # cover SPV platform seams the ubuntu leg never executes. A Codecov outage
       # must not break the gates, hence fail_ci_if_error stays off.
@@ -40,6 +40,19 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          flags: ${{ matrix.os }}-py${{ matrix.python-version }}
+          fail_ci_if_error: false
+      # Test Analytics: the JUnit report feeds Codecov's failed-test / flake view.
+      # Unlike coverage this must upload when the suite FAILS — that is the whole
+      # point — so it runs on anything but a cancelled job. Same flags as the
+      # coverage upload keep the six legs distinguishable instead of overwriting
+      # each other.
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./junit.xml
           flags: ${{ matrix.os }}-py${{ matrix.python-version }}
           fail_ci_if_error: false
       # The static gates are platform-independent; run them once per Python.

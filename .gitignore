@@ -19,6 +19,7 @@ uv.lock.bak
 .pytest_cache/
 .coverage
 coverage.xml
+junit.xml
 htmlcov/
 
 # OS / editor

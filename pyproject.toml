@@ -169,6 +169,10 @@ relative_files = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Only consulted when a run passes --junitxml (CI does). Codecov's Test Analytics
+# wants the `legacy` family: it puts the dotted module path in `classname`, which
+# is what renders as a readable test name in the UI.
+junit_family = "legacy"
 markers = [
     "live: exercises real ANAF endpoints — public (no-auth) and authenticated TEST (needs .env + `anafpy auth login`); opt in with ANAFPY_LIVE=1",
 ]

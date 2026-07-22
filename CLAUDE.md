@@ -749,7 +749,13 @@ results.
   push/PR. Every test leg uploads coverage to Codecov (merged per commit —
   the macOS/Windows legs execute SPV platform seams ubuntu never does;
   generated model packages are omitted via `[tool.coverage.run]`; upload
-  failures never fail CI); `release.yml` re-runs them on a `v*` tag, checks the tag against
+  failures never fail CI) **and** the JUnit report for Codecov **Test
+  Analytics** (`codecov/test-results-action`, failed-test + flake view): that
+  second upload runs `if: ${{ !cancelled() }}` — a failing suite is exactly the
+  run whose results must reach Codecov — and both uploads carry the same
+  per-leg `flags` so the six legs don't overwrite each other.
+  `junit_family = "legacy"` in `[tool.pytest.ini_options]` is what Codecov's UI
+  needs for readable test names; `release.yml` re-runs them on a `v*` tag, checks the tag against
   `pyproject.toml`'s version, builds, and publishes to PyPI via trusted
   publishing (OIDC, environment `pypi` — no stored token). The version is
   declared in `pyproject.toml` **and** `anafpy.__version__`;
