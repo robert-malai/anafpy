@@ -688,9 +688,42 @@ in [the DUK reference](docs/anaf-reference/declaratii/duk.md).
 
 **Distribution.** Signing needs the optional `anafpy[declaratii]` extra
 (pyHanko); the tools import-guard and raise a "install anafpy[declaratii]"
-`AnafConfigError` when it is absent, like the `mcp` extra. DUKIntegrator is the
-user's to install (like the OAuth app and the certificate): pointed at via
-`ANAFPY_DUK_DIR`, staleness checked, never auto-installed.
+`AnafConfigError` when it is absent, like the `mcp` extra. DUKIntegrator remains
+**ANAF's software, fetched from ANAF** — anafpy redistributes none of it — but
+since 2026-07-23 assembling it is a command rather than a manual chore:
+`anafpy declaratii duk install|update|forms` (`declaratii/dukdist.py`), still
+pointed at via `ANAFPY_DUK_DIR`.
+
+*Why a CLI command and not a Docker image.* Shipping a prebuilt image was
+considered and rejected. It would make anafpy a **redistributor** of ANAF's jars
+under no license granting that; it would swap a JRE for Docker Desktop, a
+strictly harder dependency for the accountant audience `anafpy-setup` targets;
+and it could never cover more than `-v`/`-p` anyway, since signing
+(Security.framework) and filing (platform curl against the OS key store) are
+irreducibly host-side. The image's one real guarantee — a pinned, complete
+runtime — is delivered instead by the installer's post-install smoke run, and
+`ANAFPY_DUK_JAVA` already pins the JVM. A build-locally `Dockerfile` over this
+same command remains reasonable for CI and Linux; a *published* image does not.
+
+*Why the feed and not the zip.* ANAF's `versiuni.xml` carries **every** file a
+working dist contains, at its current version (verified 2026-07-23 — see the DUK
+reference §1), so assembly never fetches the 2020 zip or its unusable 32-bit
+JRE 6. This is not merely smaller (5.2 MB vs 27 MB): it makes both documented
+breakages *structurally impossible* rather than repair steps — there is no stale
+core to trip the D406 `NoClassDefFoundError`, and `config/` cannot be missing.
+Downloads are pinned to `https://static.anaf.ro` (ANAF publishes no checksums,
+so TLS plus a fixed origin is the whole of the available integrity), each jar is
+magic-byte checked so a 200-with-HTML never lands in `lib/` as an executable,
+and writes are atomic so no truncated jar can masquerade as a broken dist.
+`offLine=Y` is set by default off Windows. **D406T** is absent from the feed and
+comes from ANAF's separate SAF-T zip: kept fetchable so the portal-filing
+rediscovery path stays reproducible, never part of a routine install, and never
+wired into CI — anafpy runs no uploads against ANAF from CI.
+
+*Why no MCP tool.* Installing writes executables to disk, and `anafpy-setup`
+already runs in a local session with a shell, so it invokes the CLI directly.
+That keeps the "no tool writes executables" line intact while still automating
+the end-user setup.
 
 **Status tracking (StareD112).** Recon for M2 (2026-07-16) found that recipisa
 tracking needs no certificate at all: ANAF's `www.anaf.ro/StareD112/` service is

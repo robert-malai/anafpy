@@ -20,11 +20,28 @@ upload (the upload client, or manually) → status/recipisa via StareD112.
 
 ## Prerequisites
 
-- **DUKIntegrator** — download
-  [`dist_javaInclus20200203.zip`](https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip),
-  extract it, and drop the per-form validator jars (e.g. `D300Validator.jar`,
-  `D300Pdf.jar` from ANAF's update feed) into `dist/lib/`. Ignore the bundled
-  32-bit JRE 6 — any modern JVM works.
+- **DUKIntegrator** — one command assembles it:
+
+  ```bash
+  anafpy declaratii duk install D300 D394     # the forms you file
+  ```
+
+  It builds a complete dist at `~/.anafpy/duk-dist` (override with `--dir`) from
+  ANAF's own update feed, then runs a validator to prove the result works on
+  your JVM. Point `ANAFPY_DUK_DIR` at it. Nothing is redistributed by anafpy —
+  every file comes from `static.anaf.ro` over HTTPS at install time.
+
+  Because the feed carries the *current* build of every part, the dist is up to
+  date by construction; the 2020 zip (and its unusable 32-bit JRE 6) is never
+  involved. Command-line DUKIntegrator does not update itself, so refresh it
+  yourself when a form changes:
+
+  ```bash
+  anafpy declaratii duk forms      # what the feed offers, marking installed/stale
+  anafpy declaratii duk update     # refresh the core + every stale form
+  anafpy declaratii duk update D101   # …and add a form while you are there
+  ```
+
 - **A JRE/JDK** (Java 8+) on `PATH`, or set `ANAFPY_DUK_JAVA`.
 - **The `declaratii` extra** for signing: `pip install 'anafpy[declaratii]'`
   (pyHanko). Validation and rendering do not need it.
@@ -38,7 +55,7 @@ CLI contract, the err-file format, and the `nr_evid` layout.
 from pathlib import Path
 from anafpy.declaratii import DukIntegrator
 
-duk = DukIntegrator(Path("~/DUKIntegrator/dist").expanduser())
+duk = DukIntegrator(Path("~/.anafpy/duk-dist").expanduser())
 
 xml = Path("d300.xml").read_bytes()
 result = await duk.validate("D300", xml)
@@ -184,8 +201,9 @@ it is the digitally signed proof of filing.
 ## CLI
 
 ```bash
-anafpy declaratii validate D300 d300.xml --duk-dir ~/DUKIntegrator/dist
-anafpy declaratii render   D300 d300.xml -o d300.pdf --duk-dir ~/DUKIntegrator/dist
+anafpy declaratii duk install D300                       # assemble the dist
+anafpy declaratii validate D300 d300.xml --duk-dir ~/.anafpy/duk-dist
+anafpy declaratii render   D300 d300.xml -o d300.pdf --duk-dir ~/.anafpy/duk-dist
 anafpy declaratii sign     d300.pdf -o d300-semnat.pdf   # fires the PIN/2FA prompt
 anafpy declaratii status   1100000001 99999909           # public — no login
 anafpy declaratii recipisa 1100000001 -o recipisa.pdf    # public — no login

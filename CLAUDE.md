@@ -109,13 +109,23 @@ bootstraps — SPV and the declaration upload portal; read at the shared
 `ANAFPY_SPV_CURL` 2026-07-17, no compat alias; needed
 on Windows-on-ARM, where x64-only vendor KSPs — certSIGN vToken — require an
 x64 Schannel curl such as Git for Windows', see the SPV reference §1.1),
-`ANAFPY_DUK_DIR` (the extracted DUKIntegrator `dist/` folder — enables the
-`declaratie_*` tools; no default), `ANAFPY_DUK_JAVA` (the java binary; optional),
+`ANAFPY_DUK_DIR` (the DUKIntegrator `dist/` folder — enables the
+`declaratie_*` tools; no default, and `anafpy declaratii duk install` builds one
+at `~/.anafpy/duk-dist`), `ANAFPY_DUK_JAVA` (the java binary; optional),
 `ANAFPY_SIGN_IDENTITY` (Keychain identity name to sign declarations with;
 optional — falls back to the persisted SPV certificate selection),
 `ANAFPY_DECLARATII_UPLOAD` (default on; `off` opts out of the declaration
 portal-filing tools — the server then serves authoring/status only and
 `declaratie_sign` guides manual filing).
+
+Assemble the DUKIntegrator dist the `declaratie_*` tools need (feed-only — the
+2020 zip is never fetched; `all` installs every one of the feed's 173 forms):
+
+```bash
+uv run anafpy declaratii duk install D300 D394   # + core, config, offLine=Y
+uv run anafpy declaratii duk update              # refresh whatever is stale
+uv run anafpy declaratii duk forms               # feed inventory, marking stale
+```
 
 Codegen (only when re-vendoring XSDs / Schematron sources — see below):
 
@@ -151,6 +161,7 @@ src/anafpy/
   cli/main.py            # cyclopts CLI: `anafpy auth login|status|logout` +
                          # `anafpy spv certs|select|login|status|logout` +
                          # `anafpy declaratii validate|render|sign|status|recipisa`
+                         # + `anafpy declaratii duk install|update|forms`
   efactura/
     README.md            # module map: layer diagram (flat <-> generated UBL <-> wire),
                          # outbound/inbound flows, who-owns-what table
@@ -195,7 +206,16 @@ src/anafpy/
                          # subprocess + crypto) + StareD112 filing status (public):
     duk.py               # DukIntegrator (async): validate/render via ANAF's DUK
                          # (-v/-p headless; judge by err-file, never exit code),
-                         # installed_forms + free fetch_feed_versions staleness
+                         # installed_forms + free fetch_feed/fetch_feed_versions
+                         # staleness (installed version = the changelog's LAST
+                         # J-token, not its first line — corrected 2026-07-23)
+    dukdist.py           # assemble/refresh a DUK dist from ANAF's update feed
+                         # ALONE (the 2020 zip is never needed — the feed carries
+                         # core+lib+config+forms at current versions, so the
+                         # stale-core and missing-config breakages cannot occur);
+                         # https-pinned downloads, jar magic check, atomic
+                         # writes, offLine=Y default off-Windows, D406T from the
+                         # out-of-feed SAF-T zip
     models.py            # declaration-family value-type home: DUK, upload, PDF-sign
                          # outcomes + DeclarationState/Document/StatusList
     _html.py             # whole-text/accent handling shared by both JSP parsers

@@ -34,6 +34,7 @@ CLI contract facts baked in below (proven 2026-07-15, Oracle Java 26, macOS):
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -44,10 +45,11 @@ from parsel import Selector
 from .._transport.base import raise_for_status
 from .._transport.subprocess import run_subprocess
 from ..exceptions import AnafConfigError, AnafTransportError
-from .models import DukFinding, DukResult
+from .models import DukFeed, DukFeedEntry, DukFinding, DukResult
 
 __all__ = [
     "DukIntegrator",
+    "fetch_feed",
     "fetch_feed_versions",
 ]
 
@@ -68,6 +70,10 @@ _SEVERITY_BY_PREFIX = {"E:": "error", "F:": "error", "W:": "warning", "A:": "war
 # ``DukResult.raw`` — enough for the documented one-line clues (``cod
 # eroare=-5``), bounded so a chatty JVM cannot flood the result.
 _PROCESS_TAIL_CHARS = 2000
+
+# A validator-jar version as it appears in both the feed's ``versiuneJ`` and the
+# installed changelog: ``J`` followed by dotted numbers (``J12.0.1``).
+_VERSION_TOKEN = re.compile(r"J\d+(?:\.\d+)*")
 
 
 def _with_process_tail(result: DukResult, stdout: bytes, stderr: bytes) -> DukResult:
@@ -286,10 +292,8 @@ class DukIntegrator:
             ) from exc
 
 
-async def fetch_feed_versions(
-    http: httpx.AsyncClient | None = None,
-) -> dict[str, str]:
-    """Fetch current per-form validator versions without requiring a DUK install.
+async def fetch_feed(http: httpx.AsyncClient | None = None) -> DukFeed:
+    """Fetch and parse ANAF's ``versiuni.xml`` update feed.
 
     Raises:
         AnafTransportError: a network-level failure reaching the feed.
@@ -305,10 +309,24 @@ async def fetch_feed_versions(
                 f"cannot fetch the DUK update feed {_VERSIONS_FEED_URL}: {exc}"
             ) from exc
         raise_for_status(response)
-        return _parse_versions_feed(response.text)
+        return _parse_feed(response.text)
     finally:
         if owns_http:
             await client.aclose()
+
+
+async def fetch_feed_versions(
+    http: httpx.AsyncClient | None = None,
+) -> dict[str, str]:
+    """Fetch current per-form validator versions without requiring a DUK install.
+
+    The staleness-comparison projection of :func:`fetch_feed`.
+
+    Raises:
+        AnafTransportError: a network-level failure reaching the feed.
+        AnafResponseError: the feed answered a non-success HTTP status.
+    """
+    return (await fetch_feed(http)).versions
 
 
 def _default_java() -> str | None:
@@ -337,32 +355,90 @@ def _read_err(err_path: Path) -> str:
 
 
 def _form_version(lib: Path, form: str) -> str:
+    """The installed validator version from ``<form>IstoriaVersiunilor.txt``.
+
+    The file is a **chronological changelog, oldest first** — so the installed
+    version is its *last* ``J…`` token, not its first line (corrected
+    2026-07-23; the earlier reading returned the 2011 test release for every
+    form, which made every staleness comparison cry wolf). The token's position
+    within its line varies by form — ``22-Apr-2026 publicat versiune J26.0.3``
+    for D112, a trailing ``- publicat versiunea J12.0.1, modificare validari``
+    for D300 — and the newest entry is not always the last line, so the scan is
+    over the whole text. Verified against the feed for 11 of the 12 installed
+    forms; the twelfth disagreed because that validator really was a version
+    behind. A form with no history file (D406T, which ships outside the feed)
+    stays ``"unknown"``.
+    """
     history = lib / f"{form}IstoriaVersiunilor.txt"
-    if history.exists():
-        for line in history.read_text(encoding="utf-8", errors="replace").splitlines():
-            if stripped := line.strip():
-                return stripped
-    return "unknown"
+    if not history.exists():
+        return "unknown"
+    text = history.read_text(encoding="utf-8", errors="replace")
+    found = _VERSION_TOKEN.findall(text)
+    return found[-1] if found else "unknown"
+
+
+def url_basename(url: str) -> str:
+    """The last path segment of *url* (platform-independent, unlike ``Path``)."""
+    return url.rstrip("/").rsplit("/", 1)[-1]
+
+
+def _parse_feed(text: str) -> DukFeed:
+    """Parse ANAF's ``versiuni.xml`` into a :class:`DukFeed`.
+
+    The feed holds an ``<integrator>`` element carrying the whole distribution
+    — the core jar (``zJars``), the shared libraries (``iJars`` + ``sJars``),
+    and the ``config/`` files (``cFisiere``), each an **absolute** ``http://``
+    URL — followed by one container per form (``<D300>``, ``<D112>``, ...)
+    whose ``JURL`` points at the ``<form>Validator.jar`` and whose ``versiuneJ``
+    is that jar's current version — the same ``J…`` string the installed
+    ``<form>IstoriaVersiunilor.txt`` leads with (live shape re-confirmed
+    2026-07-23 over all 173 entries; see the DUK reference §1).
+
+    Non-jar members of ``zJars`` (the Windows ``ajutor.chm`` help file), the
+    GUI updater's ``dJars``, and the documentation set are dropped — a headless
+    dist has no use for them. Unparseable content yields an empty feed
+    (best-effort — parsel's recovering XML mode simply matches nothing).
+    """
+    if not text.strip():  # Selector rejects empty input with an exception
+        return DukFeed(
+            core_version="", root_jars=[], lib_jars=[], config_files=[], forms={}
+        )
+    root = Selector(text=text, type="xml")
+    integrator = root.xpath("//integrator")
+    root_jars = [
+        url
+        for url in integrator.xpath("zJars/jarURL/text()").getall()
+        if url.endswith(".jar")
+    ]
+    lib_jars = integrator.xpath("iJars/jarURL/text() | sJars/jarURL/text()").getall()
+
+    forms: dict[str, DukFeedEntry] = {}
+    for entry in root.xpath("//*[JURL and versiuneJ]"):
+        jar = entry.xpath("JURL/text()").get("")
+        version = entry.xpath("versiuneJ/text()").get("")
+        if not jar.endswith("Validator.jar") or not version:
+            continue
+        form = url_basename(jar).removesuffix("Validator.jar")
+        if not form or form in forms:
+            continue
+        forms[form] = DukFeedEntry(
+            form=form,
+            validator_version=version,
+            pdf_version=entry.xpath("versiuneP/text()").get(""),
+            validator_url=jar,
+            pdf_url=entry.xpath("PURL/text()").get(""),
+            history_url=entry.xpath("DURL/text()").get(""),
+        )
+
+    return DukFeed(
+        core_version=integrator.xpath("versiune/text()").get(""),
+        root_jars=root_jars,
+        lib_jars=lib_jars,
+        config_files=integrator.xpath("cFisiere/fisierURL/text()").getall(),
+        forms=forms,
+    )
 
 
 def _parse_versions_feed(text: str) -> dict[str, str]:
-    """Extract ``{form: version}`` from ANAF's ``versiuni.xml`` feed.
-
-    The feed holds one container per form (``<D300>``, ``<D112>``, ...) whose
-    ``JURL`` child points at the ``<form>Validator.jar`` and whose ``versiuneJ``
-    child is that jar's current version — the same ``J…`` string the installed
-    ``<form>IstoriaVersiunilor.txt`` leads with (live shape, 2026-07-17; see the
-    DUK reference §1). Unparseable content yields an empty mapping (best-effort
-    — parsel's recovering XML mode simply matches nothing).
-    """
-    versions: dict[str, str] = {}
-    if not text.strip():  # Selector rejects empty input with an exception
-        return versions
-    for entry in Selector(text=text, type="xml").xpath("//*[JURL and versiuneJ]"):
-        jar = entry.xpath("JURL/text()").get("")
-        version = entry.xpath("versiuneJ/text()").get("")
-        if jar.endswith("Validator.jar") and version:
-            form = Path(jar).name.removesuffix("Validator.jar")
-            if form:
-                versions.setdefault(form, version)
-    return versions
+    """``{form: version}`` from ANAF's feed — the :func:`_parse_feed` projection."""
+    return _parse_feed(text).versions

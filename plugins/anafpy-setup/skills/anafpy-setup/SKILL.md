@@ -232,26 +232,34 @@ validate/render half and say signing isn't available yet.
 These tools drive ANAF's own desktop validator, **DUKIntegrator**, which you can
 install for them:
 
-1. Download and extract
-   [`dist_javaInclus20200203.zip`](https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip)
-   — it yields a `dist/` folder, which is what the server points at.
-2. For each form they file, drop that form's `…Validator.jar` and `…Pdf.jar` (from
-   ANAF's declaration page, e.g. the D300 page under `static.anaf.ro/.../Declaratii_R/`)
-   into `dist/lib/`. Ask which forms they need before fetching anything.
-3. Confirm **Java** is present (`java -version`, JRE/JDK 8+). anafpy only runs DUK's
-   *validate*/*render*, which work on any modern JVM.
+1. Confirm **Java** is present (`java -version`, JRE/JDK 8+). anafpy only runs DUK's
+   *validate*/*render*, which work on any modern JVM. If it is missing, install it
+   before going further.
+2. **Ask which forms they file** before fetching anything — `anafpy declaratii duk
+   forms` lists everything ANAF offers if they are unsure. Then assemble the dist
+   with those forms:
 
-Then add one line to the `env` block from step 6, pointing at the extracted
-folder (on Windows: a doubled-backslash path, e.g.
-`C:\\Users\\ana\\DUKIntegrator\\dist`):
+   ```bash
+   anafpy declaratii duk install D300 D394
+   ```
+
+   It fetches DUKIntegrator from ANAF's own update feed, builds a complete,
+   current dist at `~/.anafpy/duk-dist`, and finishes by running a validator to
+   prove it works on their machine. Read that verification line back to them — if
+   it reports the dist did not run, do not proceed to the `env` change; fix the
+   Java install first.
+
+Then add one line to the `env` block from step 6, pointing at that folder (on
+Windows: a doubled-backslash path, e.g. `C:\\Users\\ana\\.anafpy\\duk-dist`):
 
 ```json
-        "ANAFPY_DUK_DIR": "/Users/you/DUKIntegrator/dist"
+        "ANAFPY_DUK_DIR": "/Users/you/.anafpy/duk-dist"
 ```
 
 After they restart Claude, verify by asking Cowork *"check the declaration setup"*
 — it runs `declaratie_duk_status`, which confirms the install and flags an
-out-of-date validator (command-line DUK does not auto-update). Signing reuses the
+out-of-date validator (command-line DUK does not auto-update). When it flags one,
+`anafpy declaratii duk update` brings the core and every stale form current. Signing reuses the
 **same qualified certificate** as SPV (step 8): if they selected one there, the
 signer picks it up; otherwise set `"ANAFPY_SIGN_IDENTITY"` to the certificate's
 Keychain name. Signing fires the PIN/2FA on their device — the same human gate as

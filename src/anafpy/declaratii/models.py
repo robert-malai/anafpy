@@ -16,7 +16,10 @@ __all__ = [
     "DeclarationDocument",
     "DeclarationState",
     "DeclarationStatusList",
+    "DukFeed",
+    "DukFeedEntry",
     "DukFinding",
+    "DukInstallReport",
     "DukResult",
     "PdfSignResult",
     "PortalUploadResult",
@@ -60,6 +63,68 @@ class DukResult(BaseModel):
     def warnings(self) -> list[DukFinding]:
         """The informational findings (``severity == "warning"``)."""
         return [f for f in self.findings if f.severity == "warning"]
+
+
+class DukFeedEntry(BaseModel):
+    """One form's entry in ANAF's DUKIntegrator update feed.
+
+    The feed names a container element after the form (``<D300>``) holding the
+    validator/PDF jar versions and the URLs to fetch them from. Every one of
+    the 173 entries carries the full set (live shape, 2026-07-23).
+    """
+
+    form: str
+    validator_version: str
+    pdf_version: str
+    validator_url: str
+    pdf_url: str
+    history_url: str
+
+
+class DukFeed(BaseModel):
+    """ANAF's ``versiuni.xml`` — everything needed to assemble a dist.
+
+    The feed carries not just the per-form jars but the **whole distribution**:
+    the core jar (``zJars``), the shared libraries (``iJars`` + ``sJars``), and
+    the ``config/`` files (``cFisiere``). Fields here are named for where a
+    file lands rather than for the feed element it came from, since placement
+    is what assembly needs. The GUI updater's own jar (``dJars``), the Windows
+    help file, and the documentation set are deliberately not carried — a
+    headless dist has no use for them.
+    """
+
+    core_version: str
+    root_jars: list[str]
+    lib_jars: list[str]
+    config_files: list[str]
+    forms: dict[str, DukFeedEntry]
+
+    @property
+    def versions(self) -> dict[str, str]:
+        """Per-form validator versions — the staleness-comparison projection."""
+        return {form: entry.validator_version for form, entry in self.forms.items()}
+
+
+class DukInstallReport(BaseModel):
+    """What one dist install/update actually changed.
+
+    ``forms_updated`` maps a form to its ``"<old> -> <new>"`` transition;
+    ``forms_unchanged`` lists the forms already at the feed's version (skipped
+    unless forced). ``smoke_ok`` is the post-install liveness verdict — see
+    :func:`~anafpy.declaratii.dukdist.smoke_test`; ``None`` means the check was
+    not run.
+    """
+
+    duk_dir: str
+    core_version: str
+    core_files: int
+    forms_installed: dict[str, str]
+    forms_updated: dict[str, str]
+    forms_unchanged: list[str]
+    offline_mode: bool
+    java_version: str | None = None
+    smoke_ok: bool | None = None
+    smoke_detail: str | None = None
 
 
 class PortalUploadResult(BaseModel):

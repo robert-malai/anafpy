@@ -50,8 +50,13 @@ from ..spv.certs import DEFAULT_IDENTITY_PATH
 
 if TYPE_CHECKING:
     from ..declaratii import DukFinding, DukIntegrator
+    from ..declaratii.models import DukInstallReport
 
 DEFAULT_STORE = "~/.anafpy/tokens.json"
+
+#: Where `duk install` assembles a dist when `--dir` is not given. A sibling of
+#: the token and session stores, so everything anafpy owns lives in one place.
+DEFAULT_DUK_DIR = Path("~/.anafpy/duk-dist")
 
 #: How long the callback listener waits for the redirect before offering paste mode.
 _CALLBACK_TIMEOUT = 180.0
@@ -87,9 +92,14 @@ declaratii_app = App(
     name="declaratii",
     help="tax-declaration validation, rendering, signing, and filing status",
 )
+duk_app = App(
+    name="duk",
+    help="assemble and refresh the DUKIntegrator dist from ANAF's update feed",
+)
 app.command(auth_app)
 app.command(spv_app)
 app.command(declaratii_app)
+declaratii_app.command(duk_app)
 
 # Shared option shapes, mirrored across commands the way argparse's helper
 # functions used to. The env-var fallback lives on the Parameter, read at parse
@@ -752,6 +762,191 @@ async def declaratii_sign(
     if not result.chain_complete and result.warning:
         print(f"  note: {result.warning}")
     print("  File it at anaf.ro → Depunere declarații → Transmitere declarații.")
+    return 0
+
+
+# --- declaratii duk (dist assembly) -----------------------------------------------
+
+
+def _print_install_report(report: DukInstallReport) -> None:
+    """Print what an install/update changed, in the CLI's usual voice."""
+    for form, version in sorted(report.forms_installed.items()):
+        print(f"  + {form} {version}")
+    for form, transition in sorted(report.forms_updated.items()):
+        print(f"  ↑ {form} {transition}")
+    if report.forms_unchanged:
+        print(
+            f"  = {len(report.forms_unchanged)} already current: "
+            f"{', '.join(sorted(report.forms_unchanged))}"
+        )
+
+
+async def _verify_dist(
+    duk_dir: Path, java: str | None, report: DukInstallReport
+) -> None:
+    """Run the post-install checks and fold their verdicts into *report*.
+
+    Copying files is not the claim worth making — "this dist runs on your JVM"
+    is. Failures here are reported, never raised: the files are on disk either
+    way, and the user needs to see what is wrong with them.
+    """
+    from ..declaratii import DukIntegrator
+    from ..declaratii.dukdist import smoke_test
+
+    try:
+        duk = DukIntegrator(duk_dir, java=java)
+    except AnafConfigError as exc:
+        report.smoke_ok = False
+        report.smoke_detail = str(exc)
+        return
+    report.java_version = await duk.java_version()
+    installed = duk.installed_forms()
+    if not installed:
+        report.smoke_detail = "no form validators installed yet — nothing to smoke-test"
+        return
+    form = sorted(installed)[0]
+    report.smoke_ok, report.smoke_detail = await smoke_test(duk, form)
+    report.smoke_detail = f"{form}: {report.smoke_detail}"
+
+
+def _report_verification(report: DukInstallReport) -> int:
+    """Print the verification verdict; returns the command's exit code."""
+    if report.java_version:
+        print(f"  java: {report.java_version}")
+    if report.smoke_ok is None:
+        if report.smoke_detail:
+            print(f"  note: {report.smoke_detail}")
+        return 0
+    if report.smoke_ok:
+        print(f"✓ Verified — the validator runs ({report.smoke_detail}).")
+        return 0
+    print(f"✗ The dist did not run: {report.smoke_detail}")
+    print("  The files are in place but DUK produced no usable output.")
+    return 1
+
+
+@duk_app.command(name="install")
+async def declaratii_duk_install(
+    *forms: str,
+    dir_: Annotated[
+        Path,
+        Parameter(name=["--dir"], help="where to assemble the dist"),
+    ] = DEFAULT_DUK_DIR,
+    java: _JavaOption = None,
+    offline: Annotated[
+        bool | None,
+        Parameter(help="set offLine=Y (default: on everywhere but Windows)"),
+    ] = None,
+    verify: Annotated[
+        bool, Parameter(help="run a validator after installing to prove it works")
+    ] = True,
+) -> int:
+    """Assemble a DUKIntegrator dist from ANAF's update feed.
+
+    Everything is fetched from the feed, so the dist is current by construction
+    — ANAF's 2020 zip (and its unusable 32-bit JRE 6) is never involved. Pass
+    `all` to install every form the feed lists.
+
+    Args:
+        forms: Form names to install, e.g. D300 D394. `all` selects all of them.
+    """
+    from ..declaratii.dukdist import install_dist
+
+    target = dir_.expanduser()
+    report = await install_dist(
+        target, forms=forms, offline=offline, progress=lambda line: print(f"  {line}")
+    )
+    print(f"\n✓ DUKIntegrator {report.core_version} -> {report.duk_dir}")
+    _print_install_report(report)
+    if report.offline_mode:
+        print("  offLine=Y set (no startup update check)")
+    code = 0
+    if verify:
+        await _verify_dist(target, java, report)
+        code = _report_verification(report)
+    if not forms:
+        print("\nNo forms installed yet — add the ones you file, e.g.")
+        print(f"  anafpy declaratii duk update --dir {target} D300 D394")
+    else:
+        print(f"\nPoint the server at it:  export ANAFPY_DUK_DIR={report.duk_dir}")
+    return code
+
+
+@duk_app.command(name="update")
+async def declaratii_duk_update(
+    *forms: str,
+    dir_: Annotated[
+        Path, Parameter(name=["--dir"], help="the dist to refresh")
+    ] = DEFAULT_DUK_DIR,
+    java: _JavaOption = None,
+    force: Annotated[
+        bool, Parameter(help="re-download even forms already at the feed's version")
+    ] = False,
+    verify: Annotated[
+        bool, Parameter(help="run a validator after updating to prove it works")
+    ] = True,
+) -> int:
+    """Refresh the core and every installed form the feed has moved past.
+
+    Command-line DUK never updates itself, so this is the counterpart to the
+    staleness `declaratie_duk_status` reports. Named forms are added if absent.
+
+    Args:
+        forms: Extra form names to add alongside the refresh.
+    """
+    from ..declaratii.dukdist import update_dist
+
+    target = dir_.expanduser()
+    report = await update_dist(
+        target,
+        forms=forms,
+        force=force,
+        progress=lambda line: print(f"  {line}"),
+    )
+    print(f"\n✓ DUKIntegrator {report.core_version} -> {report.duk_dir}")
+    _print_install_report(report)
+    if verify:
+        await _verify_dist(target, java, report)
+        return _report_verification(report)
+    return 0
+
+
+@duk_app.command(name="forms")
+async def declaratii_duk_forms(
+    *,
+    dir_: Annotated[
+        Path, Parameter(name=["--dir"], help="a dist to compare against")
+    ] = DEFAULT_DUK_DIR,
+) -> int:
+    """List the forms ANAF's feed offers, flagging what is installed and stale."""
+    from ..declaratii.duk import _form_version, fetch_feed
+    from ..declaratii.dukdist import OUT_OF_FEED_FORMS
+
+    feed = await fetch_feed()
+    lib = dir_.expanduser() / "lib"
+    installed = (
+        {jar.name.removesuffix("Validator.jar") for jar in lib.glob("*Validator.jar")}
+        if lib.is_dir()
+        else set()
+    )
+    stale = 0
+    for form, entry in sorted(feed.forms.items()):
+        if form not in installed:
+            print(f"    {form:<8} {entry.validator_version}")
+            continue
+        have = _form_version(lib, form)
+        if have == entry.validator_version:
+            print(f"  ✓ {form:<8} {entry.validator_version}")
+        else:
+            stale += 1
+            print(f"  ↑ {form:<8} {have} -> {entry.validator_version}")
+    print(
+        f"\n{len(feed.forms)} forms in the feed, {len(installed)} installed"
+        f"{f', {stale} stale' if stale else ''}."
+    )
+    for form in sorted(OUT_OF_FEED_FORMS):
+        mark = "✓" if form in installed else " "
+        print(f"  {mark} {form:<8} not in the feed (ships in ANAF's SAF-T zip)")
     return 0
 
 

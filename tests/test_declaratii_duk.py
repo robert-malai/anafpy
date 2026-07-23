@@ -272,6 +272,53 @@ def test_installed_forms(duk_dir: Path) -> None:
     assert forms == {"D300": "J12.0.1", "D112": "unknown"}
 
 
+# `IstoriaVersiunilor.txt` as ANAF actually ships it: a changelog in
+# chronological order, so the CURRENT version is its last `J…` token. Reading
+# the first line instead (as anafpy did until 2026-07-23) yields the 2011 test
+# release for every form, which made every staleness comparison cry wolf.
+_D300_HISTORY = """\
+19-Oct-2011 publicat versiunea de test J1.0.0
+
+29-Nov-2011
+\t- publicat versiunea J2.0.0
+11-Feb-2026
+\t- publicat versiunea J12.0.1,  modificare validari rd 26
+"""
+
+# D100's newest entry is followed by a further detail line carrying no version,
+# so "the last line" is as wrong as "the first line" — only the last token works.
+_D100_HISTORY = """\
+19-Oct-2011 publicat versiunea de test J1.0.0
+14-Jul-2026
+\t- publicat versiune J21.0.6
+\t- modificare scadenta pt 131,132
+"""
+
+
+@pytest.mark.parametrize(
+    ("history", "expected"),
+    [(_D300_HISTORY, "J12.0.1"), (_D100_HISTORY, "J21.0.6")],
+)
+def test_installed_version_is_the_changelogs_last_token(
+    duk_dir: Path, history: str, expected: str
+) -> None:
+    lib = duk_dir / "lib"
+    (lib / "D300Validator.jar").write_text("")
+    (lib / "D300IstoriaVersiunilor.txt").write_text(history)
+    assert DukIntegrator(duk_dir, java="java").installed_forms() == {"D300": expected}
+
+
+def test_installed_version_unknown_when_the_changelog_has_no_version(
+    duk_dir: Path,
+) -> None:
+    lib = duk_dir / "lib"
+    (lib / "D406TValidator.jar").write_text("")
+    (lib / "D406TIstoriaVersiunilor.txt").write_text(
+        "Istoria versiunilor pentru D406\n"
+    )
+    assert DukIntegrator(duk_dir, java="java").installed_forms() == {"D406T": "unknown"}
+
+
 # -- feed_versions -----------------------------------------------------------------
 
 

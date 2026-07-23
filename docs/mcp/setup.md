@@ -312,34 +312,34 @@ Signing is macOS-only for now.
 These tools run ANAF's own desktop validator, **DUKIntegrator**, so you install
 it once:
 
-1. Download
-   [`dist_javaInclus20200203.zip`](https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip)
-   and extract it. You get a `dist/` folder — that is what Claude points at.
-2. Add the validator for each form you file. From ANAF's declaration pages (e.g.
-   the D300 page under `static.anaf.ro/.../Declaratii_R/`), download the form's
-   `…Validator.jar` and `…Pdf.jar` and drop them into `dist/lib/`.
-3. Make sure you have **Java** (a JRE/JDK, version 8 or newer) installed —
+1. Make sure you have **Java** (a JRE/JDK, version 8 or newer) installed —
    `java -version` in a terminal should print a version. (anafpy only runs
    DUKIntegrator's *validate* and *render* steps, which work on any modern JVM;
    the Java-8-only limitation you may read about applies to DUK's own signing,
    which anafpy does not use.)
+2. Run one command, naming the forms you file:
 
-   On macOS, the community [nokeect/duk-integrator-macos](https://github.com/nokeect/duk-integrator-macos)
-   project automates this whole install (Java, the kit download, and config fixes)
-   — a useful reference, though anafpy signs through your certificate itself rather
-   than through DUKIntegrator.
+   ```bash
+   anafpy declaratii duk install D300 D394
+   ```
 
-Then point the server at the `dist/` folder by adding one line to the `env` block
-from step 5:
+   It downloads DUKIntegrator from ANAF, assembles it at `~/.anafpy/duk-dist`,
+   and then runs a validator to confirm it works on your machine. If you are not
+   sure which forms you need, `anafpy declaratii duk forms` lists everything ANAF
+   offers.
+
+Then point the server at that folder by adding one line to the `env` block from
+step 5:
 
 ```json
-        "ANAFPY_DUK_DIR": "/Users/you/DUKIntegrator/dist"
+        "ANAFPY_DUK_DIR": "/Users/you/.anafpy/duk-dist"
 ```
 
 Restart Claude and ask *"check the declaration setup"* — Claude runs
 `declaratie_duk_status`, which confirms the install and warns if a validator is
 out of date (the command-line DUKIntegrator does not auto-update, unlike its
-desktop window). Signing uses the **same qualified certificate** as SPV (step 7):
+desktop window). When it does report something stale, `anafpy declaratii duk
+update` brings everything current. Signing uses the **same qualified certificate** as SPV (step 7):
 if you selected one there, the declaration signer reuses it; otherwise set
 `"ANAFPY_SIGN_IDENTITY"` to the certificate's Keychain name. When Claude signs, it
 warns you first, then your token's PIN/2FA prompt fires — approving it on your

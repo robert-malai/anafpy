@@ -23,7 +23,7 @@ sources:
     retrieved: 2026-07-17
 compiled: 2026-07-15
 compiled_by: claude-opus-4-8
-last_verified: 2026-07-17
+last_verified: 2026-07-23
 status: draft
 ---
 
@@ -45,18 +45,47 @@ certSIGN Paperless vToken).
   `https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip`.
   Extract `dist/`; **ignore the bundled 32-bit JRE 6** — a modern JVM (proven on
   Oracle Java 26, macOS arm64) runs `-v`/`-p` fine.
+- **The zip is not required at all** (established 2026-07-23). The update feed
+  carries *every* file a working dist contains, at its current version, so a
+  complete dist can be assembled from the feed alone — which is what
+  `anafpy declaratii duk install` does. A feed-only dist (5.2 MB, versus the
+  zip's 27 MB) validated a D300 nil return clean and rendered its PDF, and a
+  feed-only core ran the **D406T** SAF-T validator clean against
+  `tests/fixtures/declaratii/d406t-minimal.xml` — the exact core-plus-SAF-T
+  combination that fails on the 2020 core (see below). Assembling from the feed
+  therefore makes both documented breakages structurally impossible rather than
+  repair steps: there is no stale core to update, and `config/` cannot be
+  missing. The zip's `config.properties` additionally carries
+  `javaStartPrefix=..\jre6\bin\java.exe` — the hardcoded Windows path implicated
+  in the silent-exit failure — which the feed's copy does not.
 - **Update feed**: `http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml`
   lists the current core jars (`DUKIntegrator.jar`, `DecValidation.jar`,
   `DecPdf.jar`, `Validator.jar`) and per-form jars (e.g. D300 at
   `D300Validator.jar` + `D300Pdf.jar`, version `J12.0.1`/`P9.0.0`). Per-form jars
   go into `dist/lib/`. **The GUI mode auto-updates; the CLI mode does not** —
   staleness must be surfaced (anafpy's `declaratie_duk_status` /
-  `DukIntegrator.feed_versions` compare installed against the feed).
+  `DukIntegrator.feed_versions` compare installed against the feed) and, since
+  2026-07-23, repaired (`anafpy declaratii duk update`).
 
-  **Feed shape** (live-fetched 2026-07-17; no XML namespace): one `<integrator>`
-  element for the core (its `<versiune>` is the DUKIntegrator core version, with
-  `iJars`/`sJars`/`zJars` lists of bare `jarURL`s), then **one container element
-  per form, named after the form**:
+  **Feed shape** (live-fetched 2026-07-17, re-verified across all 173 entries
+  2026-07-23; no XML namespace): one `<integrator>` element for the core (its
+  `<versiune>` is the DUKIntegrator core version), then **one container element
+  per form, named after the form**. Every URL in the feed — core and per-form
+  alike — is **absolute** (and plain `http`; the host serves `https` for the
+  same paths, which is the only integrity available since ANAF publishes no
+  checksums). The `<integrator>` child lists map onto dist locations:
+
+  | element | contents | lands in |
+  | --- | --- | --- |
+  | `zJars` | `DUKIntegrator.jar`, `ajutor.chm` | dist root (the `.chm` is Windows GUI help) |
+  | `iJars` | `iText`, `bcmail`, `bcprov` | `lib/` |
+  | `sJars` | `DecValidation.jar`, `DecPdf.jar`, `Validator.jar` | `lib/` |
+  | `cFisiere` | `config.properties` + the token `.cfg` files | `config/` |
+  | `dJars` | `Download.jar` (the GUI updater) | unused headless |
+  | `documentatie` | `Instructiuni.txt`, FAQ | unused headless |
+
+  Those five locations plus the per-form triples are **exactly** the contents of
+  a working dist — nothing in an installed `dist/` lacks a feed URL.
 
   ```xml
   <versiuni>
@@ -75,9 +104,28 @@ certSIGN Paperless vToken).
   </versiuni>
   ```
 
-  `versiuneJ` is the validator jar's version and `versiuneP` the PDF jar's; the
-  installed `<form>IstoriaVersiunilor.txt` (what `DURL` points at) leads with the
-  same `J…` string, which is what makes installed-vs-feed comparison possible.
+  `versiuneJ` is the validator jar's version and `versiuneP` the PDF jar's.
+
+- **Reading the installed version** (corrected 2026-07-23 — the earlier reading
+  here was wrong). `<form>IstoriaVersiunilor.txt` (what `DURL` points at) is a
+  **changelog in chronological order, oldest first**. It does *not* lead with
+  the current version: every form's file opens with its 2011-era test release
+  (`19-Oct-2011 publicat versiunea de test J1.0.0`). The installed version is
+  the file's **last `J…` token**, and neither "first line" nor "last line" finds
+  it — the token's position within its line varies by form, and the newest entry
+  is not always the final line:
+
+  ```
+  D300:  ...11-Feb-2026 / "\t- publicat versiunea J12.0.1,  modificare validari rd 26"
+  D112:  ..."22-Apr-2026 publicat versiune J26.0.3" / "\t- corectie nomenclator ..."
+  D100:  ..."\t- publicat versiune J21.0.6" / "\t- modificare scadenta pt 131,132"
+  ```
+
+  Verified against the feed for all 12 installed forms on 2026-07-23: 11 matched
+  exactly, and the twelfth (D406) disagreed because that validator genuinely was
+  a version behind (`J2.0.10` installed vs `J2.2.18` in the feed) — which is the
+  staleness comparison working. A form installed without a history file (D406T,
+  which ships outside the feed) reads as `unknown`.
 
 ### The SAF-T module (D406/D406T) — jar sourcing and compatibility
 
@@ -136,6 +184,12 @@ community macOS setup ([nokeect/duk-integrator-macos]), is to disable the check 
 setting `offLine=Y` in a `config/config.properties` and pointing DUK at it with the
 CLI's `-c <configPath>` flag (see §2). If a CLI run ever exits cleanly but produces
 nothing, this is the first thing to try.
+
+`offLine=Y` was **verified harmless** for both operations on 2026-07-23 (`-v`
+still validated clean; `-p` produced a byte-identical PDF), and a dist run from
+its own folder picks the file up without `-c`. anafpy fetches updates itself, so
+the startup check earns nothing even where it works — `anafpy declaratii duk
+install` therefore sets `offLine=Y` by default on every non-Windows host.
 
 [nokeect/duk-integrator-macos]: https://github.com/nokeect/duk-integrator-macos
 

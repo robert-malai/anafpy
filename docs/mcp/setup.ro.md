@@ -329,37 +329,35 @@ doar pe macOS.
 Aceste unelte rulează validatorul desktop al ANAF, **DUKIntegrator**, așa că îl
 instalezi o singură dată:
 
-1. Descarcă
-   [`dist_javaInclus20200203.zip`](https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip)
-   și dezarhivează-l. Obții un folder `dist/` — către acesta va arăta Claude.
-2. Adaugă validatorul pentru fiecare formular pe care îl depui. Din paginile de
-   declarații ale ANAF (de ex. pagina D300 de sub
-   `static.anaf.ro/.../Declaratii_R/`), descarcă fișierele `…Validator.jar` și
-   `…Pdf.jar` ale formularului și pune-le în `dist/lib/`.
-3. Asigură-te că ai **Java** instalat (un JRE/JDK, versiunea 8 sau mai nouă) —
+1. Asigură-te că ai **Java** instalat (un JRE/JDK, versiunea 8 sau mai nouă) —
    `java -version` într-un terminal ar trebui să afișeze o versiune. (anafpy
    rulează doar pașii de *validare* și de *generare a PDF-ului* din
    DUKIntegrator, care funcționează pe orice JVM modern; limitarea „doar Java 8"
    despre care poți citi se referă la semnarea proprie a DUK, pe care anafpy nu
    o folosește.)
+2. Rulează o singură comandă, numind formularele pe care le depui:
 
-   Pe macOS, proiectul comunității
-   [nokeect/duk-integrator-macos](https://github.com/nokeect/duk-integrator-macos)
-   automatizează toată această instalare (Java, descărcarea kitului și corecțiile
-   de configurare) — o referință utilă, deși anafpy semnează prin certificatul
-   tău, nu prin DUKIntegrator.
+   ```bash
+   anafpy declaratii duk install D300 D394
+   ```
 
-Apoi direcționează serverul către folderul `dist/` adăugând o linie în blocul
-`env` de la pasul 5:
+   Descarcă DUKIntegrator de la ANAF, îl asamblează în `~/.anafpy/duk-dist` și
+   apoi rulează un validator ca să confirme că funcționează pe calculatorul tău.
+   Dacă nu ești sigur ce formulare îți trebuie, `anafpy declaratii duk forms`
+   listează tot ce oferă ANAF.
+
+Apoi direcționează serverul către acel folder adăugând o linie în blocul `env`
+de la pasul 5:
 
 ```json
-        "ANAFPY_DUK_DIR": "/Users/ana/DUKIntegrator/dist"
+        "ANAFPY_DUK_DIR": "/Users/ana/.anafpy/duk-dist"
 ```
 
 Repornește Claude și cere-i *„verifică instalarea pentru declarații"* — Claude
 rulează `declaratie_duk_status`, care confirmă instalarea și te avertizează dacă
 un validator este învechit (DUKIntegrator în linie de comandă nu se actualizează
-singur, spre deosebire de fereastra sa desktop). Semnarea folosește **același
+singur, spre deosebire de fereastra sa desktop). Când raportează ceva învechit,
+`anafpy declaratii duk update` aduce totul la zi. Semnarea folosește **același
 certificat calificat** ca SPV (pasul 7): dacă ai selectat unul acolo, semnatarul
 de declarații îl refolosește; altfel setează `"ANAFPY_SIGN_IDENTITY"` la numele
 certificatului din Keychain. Când Claude semnează, te avertizează mai întâi, apoi
