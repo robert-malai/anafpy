@@ -99,18 +99,25 @@ inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; a sync facade
 ```
 src/anafpy/
   exceptions.py    # AnafError hierarchy
-  _transport/      # shared httpx layer; per-service base URL; env (test/prod)
+  _transport/      # shared httpx layer; per-service base URL; env (test/prod);
+                   # subprocess runner + platform-curl bootstrap base
   auth/            # TokenProvider, TokenStore, OAuth bootstrap, callback listener
   efactura/        # generated UBL models (Invoice+CreditNote closure) + client
                    # + authoring/ (bidirectional flat models, rules, build/read)
   etransport/      # generated XSD models + client + bidirectional flat models
   public/          # PublicClient: no-auth lookups + financial statements (§6)
-  cli/             # `anafpy auth login|status|logout`
+  spv/             # read-only mailbox client over the certificate cookie session
+  declaratii/      # declarations: DUK wrapper + managed installer, signing,
+                   # StareD112 status, portal upload (§12)
+  cli/             # `anafpy auth|spv|declaratii|duk ...` command groups
   mcp/             # MCP server (extra: anafpy[mcp]) — split by service
-                   # (efactura/, etransport/, public/, spv/: each owns its tools,
-                   # models, nomenclatures) over a shared core (app, config,
-                   # context, the two-step gate, artifacts, resources, prompts)
-skills/            # workflow skills, served by the MCP server as same-name prompts
+                   # (efactura/, etransport/, public/, spv/, declaratii/: each
+                   # owns its tools, models, nomenclatures) over a shared core
+                   # (app, config, context, the two-step gate, artifacts,
+                   # resources, prompts)
+plugins/anafpy-workflows/skills/  # workflow skills (single home) — Cowork Agent
+                                  # Skills AND the MCP server's same-name prompts
+plugins/anafpy-setup/  # the end-user install/config skill
 docs/anaf-reference/   # agent-compiled local reference (+ _sources/)
 ```
 
@@ -524,9 +531,11 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   `description`), so Romanian conversation quality is unaffected.
 - **ANAF reference exposed as MCP resources** (with draft/Romanian notes) so the
   skill can ground BR-RO explanations and code lists.
-- **Workflow skills served as MCP prompts** (2026-07-03): each `skills/*/SKILL.md`
-  becomes a prompt of the same name — frontmatter `description` as the prompt
-  description, the body as the prompt text, plus an optional `source` argument.
+- **Workflow skills served as MCP prompts** (2026-07-03; the skills' home moved
+  to the `anafpy-workflows` plugin 2026-07-18, see §11): each
+  `plugins/anafpy-workflows/skills/*/SKILL.md` becomes a prompt of the same
+  name — frontmatter `description` as the prompt description, the body as the
+  prompt text, plus an optional `source` argument.
   Prompts are the closest MCP primitive to a skill but **user-invoked** — this is
   how the playbooks reach every MCP consumer. The SKILL.md files stay the single
   source of truth (read at server start via `python-frontmatter`, failing loudly
@@ -542,9 +551,11 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   **mypy `--strict`**, **pytest** + **pytest-asyncio** + **respx**, **pre-commit**.
 - **SemVer**, pre-1.0 (`0.x`). Support + test **3.12 and 3.13** (dev pin 3.13).
 - **License: Apache-2.0** (explicit patent grant; ship `NOTICE`).
-- **CI: GitHub Actions** — `ci.yml` (three gates × 3.12/3.13 on push/PR) and
-  `release.yml` (gates, tag↔version check, build, publish to PyPI via trusted
-  publishing on `v*` tags).
+- **CI: GitHub Actions** — `ci.yml` (pytest × 3.12/3.13 × ubuntu/macos/windows,
+  plus ruff / mypy `--strict` / the strict docs build on the ubuntu leg; every
+  test leg uploads coverage and JUnit results to Codecov under per-leg flags)
+  and `release.yml` (gates, tag↔version check, build, publish to PyPI via
+  trusted publishing on `v*` tags).
 - **Testing (layered)**: respx mock suite as the credential-free CI gate + an
   opt-in live suite (`ANAFPY_LIVE=1`). Mock tiers: (1) golden round-trip on
   generated UBL models (regen/serialization regressions); (2) client behavior via
@@ -558,18 +569,17 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
 Resolved items are folded into their sections: `/token` needs no cert (§3),
 callback UX (§3), keyring default (§3, which also settles token-at-rest for the
 common case — the opt-out `FileTokenStore` remains plain JSON under OS perms),
-public lookups (§6), skills-as-prompts (§8), live shape confirmation (§7).
-Still open:
+public lookups (§6), skills-as-prompts (§8), live shape confirmation (§7), the
+CLI surface (grew organically into the `auth` / `spv` / `declaratii` / `duk`
+command groups), and Cowork local-stdio availability (settled: the connector is
+registered in `claude_desktop_config.json`, which the Cowork tab reads — the
+`anafpy-setup` skill writes it). Still open:
 
-1. **CLI surface beyond `auth login|status|logout`** (e.g. `validate`, `submit`,
-   `status`).
-2. **Cowork local-stdio availability** — whether local connectors run directly in
-   Cowork vs only via Claude Desktop. ANAF's cert forces local execution
-   regardless; affects only which surface hosts it. Verify at build time.
-3. Within the public family: the **async job variant** of the taxpayer lookup
+1. Within the public family: the **async job variant** of the taxpayer lookup
    stays deliberately unwrapped (§6).
-4. **In-session `begin_login`** MCP tool — deferred by design (§8); login stays
-   CLI-side.
+2. **In-session `begin_login`** MCP tool for the OAuth browser flow — deferred
+   by design (§8); that login stays CLI-side (the certificate-only logins,
+   `spv_login` / `declaratie_portal_login`, later became tools — §12).
 
 ## 11. Distribution
 
@@ -619,11 +629,18 @@ run-from-checkout registration, which remains the developer path). The wheel
 bundles the compiled ANAF reference and the workflow-skills tree (hatchling
 force-include, same date), so the PyPI install serves the `anafref://`
 resources and the MCP prompts too — the repo trees stay the single source.
-*(A Claude Code plugin — `.claude-plugin/`
-manifests making the repo its own single-plugin marketplace — shipped 2026-07-03
-and was **REMOVED the same day** in favor of plain MCP registration; don't
-reintroduce it without a new decision here.)* The workflow **skills** under
-`skills/` reach consumers as the MCP server's same-name prompts (§8) — the first
+*(Plugin history — two distinct decisions.* A Claude Code plugin wrapping the
+**MCP server registration** — `.claude-plugin/` as a single-plugin marketplace —
+shipped 2026-07-03 and was **removed the same day** in favor of plain MCP
+registration; that shape stays out. **Superseded in part 2026-07-18**: the repo
+again publishes a `.claude-plugin/` marketplace, now distributing the
+**skills** — `anafpy-workflows` (the playbooks; verified 2026-07-18 that
+claude.ai plugins bring bundled skills into chat + Cowork, unlike Claude Code
+marketplace plugins, which are Code-tab-only) and `anafpy-setup` (the
+installer skill). The MCP *server* still installs via `uv tool install` + plain
+registration, never as a plugin.)* The workflow **skills** under
+`plugins/anafpy-workflows/skills/` reach consumers both as Cowork Agent Skills
+and as the MCP server's same-name prompts (§8) — the first
 is `etransport-declare` (extract transport data from any source → map to
 `FlatTransport` → prepare → human approval → submit → poll), which encodes the
 regulatory guardrails (2.5 t / 500 kg / 10,000 RON scope check, 3-days-before and
@@ -647,10 +664,11 @@ declarations — filing is a portal upload behind the same F5 APM cert wall as S
 So M1 stopped at a signed PDF the user files manually; M2 automated the upload
 (the portal client and the MCP filing gate — see the subsections below).
 
-**Pipeline** (all local, no ANAF host): unstructured info → author the XML from
+**Pipeline**: unstructured info → author the XML from
 the form's XSD → **DUKIntegrator `-v`** (validate-fix loop until `ok`) →
 **DUKIntegrator `-p`** (official PDF with the XML embedded) → **pyHanko + a
-platform raw-signer** (qualified signature) → signed PDF on disk.
+platform raw-signer** (qualified signature) → signed PDF on disk — all local,
+no ANAF host — then the M2 portal upload and StareD112 confirmation (below).
 
 **Must-keep invariants.**
 
