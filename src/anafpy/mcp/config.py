@@ -25,9 +25,25 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from .._transport.base import Environment
 from ..exceptions import AnafConfigError
 
-__all__ = ["ServerConfig"]
+__all__ = ["ServerConfig", "bundled_dir"]
 
 _DEFAULT_STORE = "~/.anafpy/tokens.json"
+
+
+def bundled_dir(configured: Path | None, *candidates: Path) -> Path | None:
+    """Resolve a directory the server serves content from, or ``None``.
+
+    The rule both bundled trees follow (the ANAF reference in
+    :mod:`~anafpy.mcp.reference`, the workflow skills in
+    :mod:`~anafpy.mcp.prompts`): an explicitly configured directory wins and is
+    used **only** if it exists — a stale ``ANAFPY_DOCS_DIR`` silently serving the
+    packaged copy instead would be worse than serving nothing — otherwise the
+    first existing *candidate* (the repo checkout's live tree, then the copy the
+    wheel packages) is taken.
+    """
+    if configured is not None:
+        return configured if configured.is_dir() else None
+    return next((path for path in candidates if path.is_dir()), None)
 
 
 class ServerConfig(BaseSettings):

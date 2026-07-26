@@ -14,14 +14,12 @@ re-saves the session whenever the cookie values change.
 from __future__ import annotations
 
 import os
-import tempfile
 from datetime import datetime
-from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
-from ..exceptions import AnafConfigError
+from .._store import JsonFileStore
 
 __all__ = [
     "DEFAULT_SESSION_PATH",
@@ -82,53 +80,18 @@ class MemorySessionStore:
         self._session = None
 
 
-class FileSessionStore:
-    """JSON-file session store, written atomically with ``0o600`` permissions."""
+class FileSessionStore(JsonFileStore[SpvSession]):
+    """JSON-file session store, written atomically with ``0o600`` permissions.
+
+    The cookie set is a bearer credential, so it gets the OAuth tokens' custody
+    mechanics verbatim — :class:`~anafpy._store.JsonFileStore`.
+    """
 
     def __init__(self, path: str | os.PathLike[str] = DEFAULT_SESSION_PATH) -> None:
-        self.path = Path(path).expanduser()
-
-    def load(self) -> SpvSession | None:
-        """The stored session, or ``None`` when no store file exists.
-
-        Raises:
-            AnafConfigError: the file exists but cannot be read or parsed — stay
-                in the AnafError hierarchy instead of leaking a pydantic/OS error.
-        """
-        if not self.path.exists():
-            return None
-        try:
-            return SpvSession.model_validate_json(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError) as exc:
-            raise AnafConfigError(
-                f"unreadable SPV session store {self.path}: {exc} — "
-                "delete it and log in to SPV again"
-            ) from exc
-
-    def save(self, session: SpvSession) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        data = session.model_dump_json(indent=2)
-        # Write to a temp file in the same dir, fix perms, then atomically replace.
-        fd, tmp_name = tempfile.mkstemp(
-            dir=self.path.parent, prefix=".spv-", suffix=".json"
+        super().__init__(
+            path,
+            model=SpvSession,
+            label="SPV session store",
+            recovery="log in to SPV again",
+            prefix=".spv-",
         )
-        tmp = Path(tmp_name)
-        try:
-            os.write(fd, data.encode("utf-8"))
-        finally:
-            os.close(fd)
-        tmp.chmod(0o600)
-        tmp.replace(self.path)
-
-    def clear(self) -> None:
-        """Delete the store file; a no-op when none exists.
-
-        Raises:
-            AnafConfigError: the file exists but cannot be removed.
-        """
-        try:
-            self.path.unlink(missing_ok=True)
-        except OSError as exc:
-            raise AnafConfigError(
-                f"cannot remove SPV session store {self.path}: {exc}"
-            ) from exc

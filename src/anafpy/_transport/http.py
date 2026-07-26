@@ -8,6 +8,7 @@ from typing import Any, Self
 import httpx
 
 from ..exceptions import AnafConfigError, AnafTransportError
+from .base import raise_for_status
 
 __all__ = ["HttpClientBase"]
 
@@ -81,3 +82,28 @@ class HttpClientBase:
             return await self._http.request(method, url, **kwargs)
         except httpx.HTTPError as exc:
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+
+    async def _request_checked(
+        self,
+        method: str,
+        url: str,
+        *,
+        tolerate: tuple[int, ...] = (),
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """:meth:`_request_http` plus the shared non-success raise.
+
+        The default for every ANAF call: one request, network errors translated,
+        a non-success status raised as :class:`~anafpy.exceptions.AnafResponseError`
+        (429 as :class:`~anafpy.exceptions.AnafRateLimitError`). Status codes in
+        *tolerate* are handed back unraised for the caller to read as a business
+        outcome — the e-Factura register's 404-with-a-``found``-body is the one
+        case in the library.
+
+        Callers that must inspect the raw response first (SPV's auth flow needs
+        to see 302s) use :meth:`_request_http` directly.
+        """
+        response = await self._request_http(method, url, **kwargs)
+        if response.status_code not in tolerate:
+            raise_for_status(response)
+        return response

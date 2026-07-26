@@ -3,8 +3,9 @@
 Design (see ``DESIGN.md`` §4): discrete 1:1 methods are the primary surface and
 do **no transport retry** — a single call, one result-or-raise — so a non-idempotent
 ``upload`` is never silently repeated. ``upload_and_wait`` is the only place that
-loops, polling the processing state with ``tenacity``. HTTP/auth failures raise;
-business outcomes (``nok``, upload rejections) are returned as values.
+loops, polling the processing state through the shared
+:func:`~anafpy._transport.poll.poll_until`. HTTP/auth failures raise; business
+outcomes (``nok``, upload rejections) are returned as values.
 
 Outbound documents arrive two ways: ``upload`` takes complete UBL XML exported by
 the caller's invoicing software (the strongly recommended path when such software
@@ -29,13 +30,6 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 
 import httpx
-from tenacity import (
-    AsyncRetrying,
-    RetryError,
-    retry_if_result,
-    stop_after_delay,
-    wait_exponential_jitter,
-)
 
 from .._transport.base import (
     OAUTH_HOST,
@@ -43,10 +37,10 @@ from .._transport.base import (
     Service,
     as_text,
     is_empty_result_message,
-    raise_for_status,
     service_base_url,
 )
 from .._transport.http import HttpClientBase
+from .._transport.poll import poll_until
 from ..auth.provider import AnafAuth, TokenProvider
 from ..exceptions import (
     AnafConfigError,
@@ -179,23 +173,6 @@ class EFacturaClient(HttpClientBase):
             auth=AnafAuth(provider),
         )
 
-    # -- transport -------------------------------------------------------------------
-
-    async def _request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        content: bytes | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> httpx.Response:
-        response = await self._request_http(
-            method, path, params=params, content=content, headers=headers
-        )
-        raise_for_status(response)
-        return response
-
     # -- operations ------------------------------------------------------------------
 
     async def upload(
@@ -224,7 +201,7 @@ class EFacturaClient(HttpClientBase):
             params["executare"] = "DA"
         body = xml.encode("utf-8") if isinstance(xml, str) else xml
         path = "uploadb2c" if b2c else "upload"
-        response = await self._request(
+        response = await self._request_checked(
             "POST", path, params=params, content=body, headers=_XML_BODY_HEADERS
         )
         return self._parse_upload(response.content)
@@ -276,7 +253,7 @@ class EFacturaClient(HttpClientBase):
 
     async def get_status(self, upload_id: str) -> MessageStatus:
         """Poll the processing state for an ``upload_id`` (``index_incarcare``)."""
-        response = await self._request(
+        response = await self._request_checked(
             "GET", "stareMesaj", params={"id_incarcare": upload_id}
         )
         return self._parse_status(response.content)
@@ -316,7 +293,9 @@ class EFacturaClient(HttpClientBase):
             AnafResponseError: ANAF answered 200 with a non-ZIP body (it reports
                 e.g. an unknown id as an error payload, not an HTTP error).
         """
-        response = await self._request("GET", "descarcare", params={"id": message_id})
+        response = await self._request_checked(
+            "GET", "descarcare", params={"id": message_id}
+        )
         try:
             return DownloadedMessage.from_zip(response.content)
         except zipfile.BadZipFile as exc:
@@ -373,7 +352,7 @@ class EFacturaClient(HttpClientBase):
             }
             if filter is not None:
                 params["filtru"] = filter.value
-            response = await self._request(
+            response = await self._request_checked(
                 "GET", "listaMesajePaginatieFactura", params=params
             )
             messages, total_pages = self._parse_message_page(response.content)
@@ -454,8 +433,7 @@ class EFacturaClient(HttpClientBase):
         # base_url prefix (no FCTEL/rest, no env segment); httpx passes
         # absolute URLs through unmerged.
         url = f"{OAUTH_HOST}/api/validate/signature"
-        response = await self._request_http("POST", url, files=files)
-        raise_for_status(response)
+        response = await self._request_checked("POST", url, files=files)
         return self._parse_signature_validation(response.content)
 
     @staticmethod
@@ -509,24 +487,14 @@ class EFacturaClient(HttpClientBase):
         upload_id = result.upload_id
 
         # Only the processing state is retried; any HTTP/auth exception propagates
-        # immediately (reraise=True), keeping the "single transparent call" contract.
-        last: MessageStatus | None = None
-        try:
-            async for attempt in AsyncRetrying(
-                retry=retry_if_result(lambda s: s.is_processing),
-                wait=wait_exponential_jitter(initial=initial_wait, max=max_wait),
-                stop=stop_after_delay(timeout),
-                reraise=True,
-            ):
-                with attempt:
-                    last = await self.get_status(upload_id)
-                # set_result drives the result-based retry; it must run after the
-                # `with` block so the attempt's outcome is recorded first.
-                if not attempt.retry_state.outcome.failed:  # type: ignore[union-attr]
-                    attempt.retry_state.set_result(last)
-        except RetryError as exc:
-            raise TimeoutError(
+        # immediately, keeping the "single transparent call" contract.
+        return await poll_until(
+            lambda: self.get_status(upload_id),
+            pending=lambda status: status.is_processing,
+            timeout=timeout,
+            timeout_message=(
                 f"e-Factura upload {upload_id} still processing after {timeout}s"
-            ) from exc
-        assert last is not None
-        return last
+            ),
+            initial_wait=initial_wait,
+            max_wait=max_wait,
+        )

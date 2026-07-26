@@ -33,17 +33,15 @@ import httpx
 from pydantic import ValidationError
 from tenacity import (
     AsyncRetrying,
-    RetryError,
     retry_if_exception_type,
     retry_if_not_exception_type,
-    retry_if_result,
     stop_after_attempt,
-    stop_after_delay,
     wait_exponential_jitter,
 )
 
 from .._transport.base import as_text, is_empty_result_message, raise_for_status
 from .._transport.http import HttpClientBase
+from .._transport.poll import poll_until
 from ..exceptions import (
     AnafConfigError,
     AnafResponseError,
@@ -285,25 +283,19 @@ class SpvClient(HttpClientBase):
                     return message
             return None
 
-        found: SpvMessage | None = None
-        try:
-            async for attempt in AsyncRetrying(
-                retry=retry_if_result(lambda m: m is None),
-                wait=wait_exponential_jitter(initial=initial_wait, max=max_wait),
-                stop=stop_after_delay(timeout),
-                reraise=True,
-            ):
-                with attempt:
-                    found = await _find()
-                if not attempt.retry_state.outcome.failed:  # type: ignore[union-attr]
-                    attempt.retry_state.set_result(found)
-        except RetryError:
-            raise TimeoutError(
+        found = await poll_until(
+            _find,
+            pending=lambda message: message is None,
+            timeout=timeout,
+            timeout_message=(
                 f"report for request {wanted} not delivered within {timeout:.0f}s "
                 "— ANAF generates reports asynchronously with no SLA; call "
                 "wait_for_report again later with the same request_id"
-            ) from None
-        assert found is not None
+            ),
+            initial_wait=initial_wait,
+            max_wait=max_wait,
+        )
+        assert found is not None  # `pending` only lets a delivered message through
         return await self.download_document(found.id)
 
     # -- helpers -----------------------------------------------------------------------

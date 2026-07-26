@@ -228,17 +228,15 @@ class PublicClient(HttpClientBase):
         tolerate: tuple[int, ...] = (),
     ) -> httpx.Response:
         await self._pacer.wait()
-        response = await self._request_http(
+        return await self._request_checked(
             method,
             path,
             params=params,
             json=json_body,
             content=content,
             headers=headers,
+            tolerate=tolerate,
         )
-        if response.status_code not in tolerate:
-            raise_for_status(response)
-        return response
 
     # -- operations ------------------------------------------------------------------
 

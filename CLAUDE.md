@@ -105,11 +105,16 @@ Module docstrings carry each file's full contract — this tree is for navigatio
 ```
 src/anafpy/
   exceptions.py          # AnafError hierarchy (see "Error model")
+  _store.py              # JsonFileStore — the 0600 atomic JSON custody shared by
+                         # the OAuth token store and the SPV session store
   _transport/base.py     # Environment/Service, shared enums, CUI normalization,
                          # error raising (Environment re-exported from `anafpy`)
   _transport/http.py     # HttpClientBase: owned/injected httpx lifecycle +
-                         # network-error translation (injected is never mutated;
-                         # empty base_url raises AnafConfigError)
+                         # network-error translation + _request_checked (the
+                         # shared non-success raise); injected is never mutated,
+                         # empty base_url raises AnafConfigError
+  _transport/poll.py     # poll_until — the ONE business-state poll loop behind
+                         # upload_and_wait (both services) and wait_for_report
   _transport/subprocess.py # bounded async runner; kills the process group on
                            # timeout (DUK JVM + platform curl)
   _transport/curl.py     # CurlBootstrapperBase — shared platform-curl machinery
@@ -261,7 +266,8 @@ tests/                   # respx-mocked suite + opt-in live files (filing
 - **Discrete methods do NO transport retry** — one call, one result-or-raise —
   so the non-idempotent `upload` POST is never silently repeated. Consumers
   bring their own retry. `tenacity` appears only in the business-state poll
-  loops (`upload_and_wait`, `wait_for_report`) and the SPV read deviation.
+  loops (`upload_and_wait`, `wait_for_report` — all three go through
+  `_transport/poll.py`'s `poll_until`) and the SPV read deviation.
 - **Module style**: `from __future__ import annotations`, explicit `__all__`,
   module + class docstrings, Google-style docstring sections. Line length 88.
   Keep new code in the voice of the surrounding files.

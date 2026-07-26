@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from .config import ServerConfig
+from .config import ServerConfig, bundled_dir
 
 __all__ = ["register"]
 
@@ -20,7 +20,7 @@ _PACKAGED_DOCS = Path(__file__).resolve().parent / "_reference"
 
 def register(mcp: FastMCP, cfg: ServerConfig) -> None:
     """Expose the compiled ANAF reference Markdown as read-only resources."""
-    docs = _docs_dir(cfg)
+    docs = bundled_dir(cfg.docs_dir, _REPO_DOCS, _PACKAGED_DOCS)
     if docs is None:
         return
     for md in sorted(docs.rglob("*.md")):
@@ -39,15 +39,6 @@ def register(mcp: FastMCP, cfg: ServerConfig) -> None:
             ),
             mime_type="text/markdown",
         )(_make_reader(md))
-
-
-def _docs_dir(cfg: ServerConfig) -> Path | None:
-    if cfg.docs_dir is not None:
-        return cfg.docs_dir if cfg.docs_dir.is_dir() else None
-    for candidate in (_REPO_DOCS, _PACKAGED_DOCS):
-        if candidate.is_dir():
-            return candidate
-    return None
 
 
 def _make_reader(path: Path) -> Callable[[], str]:

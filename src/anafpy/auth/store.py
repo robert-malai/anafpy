@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
-from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from pydantic import ValidationError
 
+from .._store import JsonFileStore
 from ..exceptions import AnafConfigError
 from .models import TokenSet
 
@@ -50,56 +49,21 @@ class MemoryTokenStore:
         self._tokens = None
 
 
-class FileTokenStore:
-    """JSON-file token store, written atomically with ``0o600`` permissions."""
+class FileTokenStore(JsonFileStore[TokenSet]):
+    """JSON-file token store, written atomically with ``0o600`` permissions.
+
+    The Docker/headless opt-out from the keyring default; custody mechanics are
+    :class:`~anafpy._store.JsonFileStore`'s, shared with the SPV session store.
+    """
 
     def __init__(self, path: str | os.PathLike[str]) -> None:
-        self.path = Path(path).expanduser()
-
-    def load(self) -> TokenSet | None:
-        """The stored token set, or ``None`` when no store file exists.
-
-        Raises:
-            AnafConfigError: the file exists but cannot be read or parsed — stay in
-                the AnafError hierarchy instead of leaking a raw pydantic/OS error.
-        """
-        if not self.path.exists():
-            return None
-        try:
-            return TokenSet.model_validate_json(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError) as exc:
-            raise AnafConfigError(
-                f"unreadable token store {self.path}: {exc} — "
-                "delete it and run `anafpy auth login` again"
-            ) from exc
-
-    def save(self, tokens: TokenSet) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        data = tokens.model_dump_json(indent=2)
-        # Write to a temp file in the same dir, fix perms, then atomically replace.
-        fd, tmp_name = tempfile.mkstemp(
-            dir=self.path.parent, prefix=".tok-", suffix=".json"
+        super().__init__(
+            path,
+            model=TokenSet,
+            label="token store",
+            recovery="run `anafpy auth login` again",
+            prefix=".tok-",
         )
-        tmp = Path(tmp_name)
-        try:
-            os.write(fd, data.encode("utf-8"))
-        finally:
-            os.close(fd)
-        tmp.chmod(0o600)
-        tmp.replace(self.path)
-
-    def clear(self) -> None:
-        """Delete the store file; a no-op when none exists.
-
-        Raises:
-            AnafConfigError: the file exists but cannot be removed.
-        """
-        try:
-            self.path.unlink(missing_ok=True)
-        except OSError as exc:
-            raise AnafConfigError(
-                f"cannot remove token store {self.path}: {exc}"
-            ) from exc
 
 
 _KEYRING_HINT = "reinstall anafpy (`keyring` is a core dependency)"
