@@ -1,10 +1,10 @@
 """Read UBL wire XML back into the flat :class:`~.models.InvoiceDocument`.
 
 The inverse of :mod:`.build`, sharing its syntax-mapping conventions (``#CODE#``
-note prefixes, the ``FC`` tax-registration scheme, SEPA-schemed creditor ids,
-type-130/50 document references). Every wire amount — line nets, totals, the VAT
-breakdown — is read into the *explicit* fields, so a round-trip preserves the
-source document's own arithmetic instead of recomputing it; run
+note prefixes, the non-``VAT``-schemed tax registration identifier, SEPA-schemed
+creditor ids, type-130/50 document references). Every wire amount — line nets,
+totals, the VAT breakdown — is read into the *explicit* fields, so a round-trip
+preserves the source document's own arithmetic instead of recomputing it; run
 :func:`~.rules.validate` on the result to judge that arithmetic.
 
 The reader is strict by design: a document that violates the construction-time
@@ -293,12 +293,17 @@ def _party_fields(party: Any, *, drop_sepa: bool = False) -> dict[str, Any]:
     trading = _first(party.party_name)
     vat_id: str | None = None
     tax_registration: str | None = None
+    tax_registration_scheme: str | None = None
     for scheme in party.party_tax_scheme:
         scheme_id = _val(scheme.tax_scheme.id) if scheme.tax_scheme else None
         if scheme_id is not None and scheme_id.upper() == "VAT":
             vat_id = _val(scheme.company_id)
-        else:
-            tax_registration = _val(scheme.company_id)
+        elif (company_id := _val(scheme.company_id)) is not None:
+            # The seller's BT-32 and — CIUS-RO's own reading of the slot — the
+            # bare CIF of a buyer not registered for VAT; the marker rides
+            # along so a re-render reproduces the issuer's own.
+            tax_registration = company_id
+            tax_registration_scheme = scheme_id
     identifiers = []
     for identification in party.party_identification:
         id_ = identification.id
@@ -327,27 +332,22 @@ def _party_fields(party: Any, *, drop_sepa: bool = False) -> dict[str, Any]:
         ),
         "address": _address(_require(party.postal_address, "Party/PostalAddress")),
         "contact": _contact(party.contact),
-        "_tax_registration": tax_registration,
+        "tax_registration_id": tax_registration,
+        "tax_registration_scheme": tax_registration_scheme,
         "_legal_form": _val(legal.company_legal_form) if legal else None,
     }
 
 
 def _party(party: Any, cls: type[Party]) -> Party:
     fields = _party_fields(party)
-    fields.pop("_tax_registration")
-    fields.pop("_legal_form")
+    fields.pop("_legal_form")  # BT-33 is seller-only (UBL-CR-244)
     return cls(**fields)
 
 
 def _seller(party: Any, *, drop_sepa: bool) -> Seller:
     fields = _party_fields(party, drop_sepa=drop_sepa)
-    tax_registration = fields.pop("_tax_registration")
     legal_form = fields.pop("_legal_form")
-    return Seller(
-        **fields,
-        tax_registration_id=tax_registration,
-        additional_legal_info=legal_form,
-    )
+    return Seller(**fields, additional_legal_info=legal_form)
 
 
 def _payee(payee: Any) -> Payee | None:

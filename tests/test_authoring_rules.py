@@ -174,9 +174,13 @@ def test_br51_card_number_is_capped_at_ten_characters() -> None:
 
 
 def test_buyer_with_seller_only_terms_is_flagged() -> None:
-    buyer = make_seller(name="Client SRL", tax_registration_id="87654321")
+    buyer = make_seller(name="Client SRL", additional_legal_info="Capital social")
     doc = make_invoice(buyer=buyer)
-    assert "UBL-CR" in rules_of(doc)
+    assert "UBL-CR-244" in rules_of(doc)
+    # The tax registration identifier is *not* seller-only under CIUS-RO: it is
+    # where a buyer below the VAT threshold carries its bare CIF (BR-RO-120).
+    doc = make_invoice(buyer=make_buyer(tax_registration_id="87654321"))
+    assert "UBL-CR-244" not in rules_of(doc)
 
 
 # --- VAT regime rules --------------------------------------------------------------
@@ -204,6 +208,10 @@ def test_br_ro_120_buyer_needs_identification() -> None:
     doc = make_invoice(
         buyer=make_buyer(vat_id=None, legal_registration_id="J40/1/2019")
     )
+    assert "BR-RO-120" not in rules_of(doc)
+    # The Schematron reads any PartyTaxScheme/CompanyID, VAT-schemed or not, so
+    # a buyer not registered for VAT is identified by its bare CIF alone.
+    doc = make_invoice(buyer=make_buyer(vat_id=None, tax_registration_id="18888888"))
     assert "BR-RO-120" not in rules_of(doc)
 
 

@@ -64,6 +64,25 @@ direct debit), document- and line-level allowances/charges, item
 identifiers/classifications/attributes, attachments, periods, and every
 reference term (contract, order, despatch, ...).
 
+### A party not registered for VAT
+
+`vat_id` (BT-31/48) carries a VAT identifier, country prefix included. A party
+**below the VAT-registration threshold** — a PFA, an ÎI, a micro-entity — has
+none, and identifies itself by its bare CIF in `tax_registration_id` instead:
+
+```python
+buyer = Party(name="Cumparator SRL", tax_registration_id="18888888", address=address)
+```
+
+On the seller that field is BT-32. EN 16931 gives the buyer no BT-32
+counterpart, but CIUS-RO reads the same syntax slot for the buyer too
+(BR-RO-120 accepts any `PartyTaxScheme/CompanyID`, VAT-schemed or not), which is
+how Romanian issuers file to a customer under the threshold — so anafpy surfaces
+the field on both parties. The scheme marker written alongside it defaults to
+`FC` for the seller and `!VAT` for the buyer, each side's market convention;
+`tax_registration_scheme` overrides it, and the reader keeps whatever marker the
+source document used.
+
 ## Two-tier validation
 
 Construction enforces what a single field or model can know unconditionally —

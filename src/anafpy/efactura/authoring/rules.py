@@ -187,14 +187,11 @@ class _Rules:
                 "BR-17",
                 "the payee (BG-10) is only given when different from the seller",
             )
-        if isinstance(doc.buyer, Seller) and (
-            doc.buyer.tax_registration_id or doc.buyer.additional_legal_info
-        ):
+        if isinstance(doc.buyer, Seller) and doc.buyer.additional_legal_info:
             self.flag(
-                "UBL-CR",
-                "the buyer cannot carry a tax registration identifier (BT-32) or "
-                "additional legal information (BT-33) — those are seller-only "
-                "terms in EN 16931",
+                "UBL-CR-244",
+                "the buyer cannot carry additional legal information (BT-33) — "
+                "the syntax binding forbids CompanyLegalForm on the customer party",
             )
         if (instructions := doc.payment_instructions) is not None:
             if (
@@ -313,14 +310,20 @@ class _Rules:
                     "(BT-80): set delivery.address",
                 )
 
-        # BR-RO-120: the buyer must be identifiable whenever VAT applies.
+        # BR-RO-120: the buyer must be identifiable whenever VAT applies. The
+        # Schematron reads PartyLegalEntity/CompanyID or *any* PartyTaxScheme/
+        # CompanyID — no VAT-scheme filter — so the bare CIF of a buyer not
+        # registered for VAT identifies it just as well.
         if _IDENTIFIED_CATEGORIES & set(self.usage):
             buyer = doc.buyer
-            if not (buyer.legal_registration_id or buyer.vat_id):
+            if not (
+                buyer.legal_registration_id or buyer.vat_id or buyer.tax_registration_id
+            ):
                 self.flag(
                     "BR-RO-120",
                     "the buyer needs a legal registration identifier (BT-47) "
-                    "and/or a VAT identifier (BT-48)",
+                    "and/or a VAT identifier (BT-48) — or, for a buyer not "
+                    "registered for VAT, its bare CIF in tax_registration_id",
                 )
 
     def _identifier_rules(self, category: VatCategory, rule: str) -> None:

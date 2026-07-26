@@ -310,6 +310,41 @@ def test_wire_document_shape() -> None:
     assert element_text(raw, "NetworkID", "ZZZ")
 
 
+def test_non_vat_registered_buyer_keeps_its_bare_cif() -> None:
+    """CIUS-RO identifies a buyer below the VAT-registration threshold by its
+    bare CIF in PartyTaxScheme/CompanyID under a non-VAT marker — BR-RO-120
+    reads that slot without a VAT-scheme filter, and EN 16931 gives the buyer no
+    BT-32 counterpart of its own."""
+    doc = make_invoice(
+        seller=make_seller(tax_registration_id="19999999"),
+        buyer=make_buyer(vat_id=None, tax_registration_id="18888888"),
+    )
+    assert validate(doc).ok
+    xml = render_invoice(doc)
+    raw = xml.decode()
+    assert element_text(raw, "CompanyID", "18888888")
+    assert element_text(raw, "ID", "FC")  # the seller's BT-32 keeps CEN's marker
+    assert element_text(raw, "ID", "!VAT")  # the buyer's, what RO issuers file
+
+    back = parse_invoice(xml)
+    assert back.buyer.tax_registration_id == "18888888"
+    assert back.buyer.tax_registration_scheme == "!VAT"
+    assert back.buyer.vat_id is None  # never confused with BT-48
+    assert back.seller.tax_registration_scheme == "FC"
+    assert render_invoice(back) == xml
+
+
+def test_issuers_own_tax_scheme_marker_survives_the_roundtrip() -> None:
+    # Issuers scatter the marker; a re-render reproduces theirs, not the default.
+    doc = make_invoice(
+        buyer=make_buyer(tax_registration_id="18888888", tax_registration_scheme="FC")
+    )
+    xml = render_invoice(doc)
+    back = parse_invoice(xml)
+    assert back.buyer.tax_registration_scheme == "FC"
+    assert render_invoice(back) == xml
+
+
 def test_sepa_creditor_rides_seller_when_no_payee() -> None:
     doc = make_invoice(
         payment_instructions=PaymentInstructions(

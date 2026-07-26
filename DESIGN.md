@@ -264,6 +264,25 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
     check, and `validate()` reports the gap as a fatal `BR-E/AE/IC/G/O-10`
     finding. A hand-written entry still must carry the reason at construction:
     that one *is* data hygiene.
+  - **The tax registration identifier belongs to both parties** (2026-07-26,
+    reversing the original standard-pure reading; issue #7). `Party` was modelled
+    strictly on EN 16931, whose buyer block runs BT-44..49 and has no counterpart
+    to the seller's BT-32 — so `tax_registration_id` lived on `Seller` and the
+    reader dropped the buyer's. But CIUS-RO reuses that syntax slot: BR-RO-120
+    identifies the buyer by `PartyLegalEntity/CompanyID` **or any**
+    `PartyTaxScheme/CompanyID` — no VAT-scheme filter, unlike BR-AE-02/BR-IC-02
+    next to it — and RO issuers put the bare CIF of a buyer below the
+    VAT-registration threshold there, marked `!VAT`. Standard purity therefore
+    cost real data on ordinary documents: the buyer's CIF was parsed and
+    discarded, read→render was lossy, no field could author one, and our
+    BR-RO-120 — translated as `BT-47 or BT-48`, narrower than the Schematron —
+    fatally flagged documents ANAF had accepted, so a re-file failed closed.
+    The field (plus `tax_registration_scheme`, which keeps the issuer's own
+    marker through a round-trip) now sits on `Party`, and BR-RO-120 gained its
+    third limb. BT-33 stays seller-only — UBL-CR-244 genuinely forbids
+    `CompanyLegalForm` on the customer party. Renders default the marker per
+    role: `FC` for the seller's BT-32, unchanged from what has been filed, and
+    `!VAT` for the buyer, matching the market.
 - **The reader is strict and full-fidelity**: `read_invoice`/`parse_invoice`
   land every wire amount in the explicit fields (never recomputed), so
   round-trips are byte-stable and `validate()` can judge an upstream document's

@@ -350,6 +350,27 @@ class Party(BaseModel):
     vat_id: str | None = Field(
         default=None, pattern=r"^[A-Z]{2}", min_length=3
     )  # BT-31/48
+    tax_registration_id: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Tax registration identifier — the CompanyID of a "
+        "PartyTaxScheme whose scheme marker is not 'VAT'. On the seller it is "
+        "BT-32, e.g. the plain CUI of a seller not registered for VAT. EN 16931 "
+        "gives the buyer no BT-32 counterpart, but CIUS-RO reads the same slot "
+        "for the buyer (BR-RO-120 accepts it without a VAT-scheme filter), which "
+        "is how RO issuers identify a buyer below the VAT-registration "
+        "threshold. Distinct from vat_id (BT-31/48), which carries its country "
+        "prefix.",
+    )
+    tax_registration_scheme: str | None = Field(
+        default=None,
+        min_length=1,
+        description="The scheme marker written alongside tax_registration_id "
+        "(TaxScheme/ID). Unconstrained by the code lists — any non-'VAT' value "
+        "does the job; the reader keeps the source document's own marker. Left "
+        "unset, the renderer writes 'FC' for the seller and '!VAT' for the "
+        "buyer, each side's market convention.",
+    )
     electronic_address: ElectronicAddress | None = None  # BT-34/49
     address: PostalAddress  # BG-5/8
     contact: Contact | None = None  # BG-6/9
@@ -360,18 +381,16 @@ class Party(BaseModel):
             raise ValueError(
                 "legal_registration_scheme is set without a legal_registration_id"
             )
+        if self.tax_registration_scheme and self.tax_registration_id is None:
+            raise ValueError(
+                "tax_registration_scheme is set without a tax_registration_id"
+            )
         return self
 
 
 class Seller(Party):
     """The seller (BG-4): a :class:`Party` plus the seller-only terms."""
 
-    tax_registration_id: str | None = Field(
-        default=None,
-        min_length=1,
-        description="Seller tax registration identifier (BT-32) — e.g. the plain "
-        "CUI of a seller not registered for VAT; distinct from vat_id (BT-31).",
-    )
     additional_legal_info: str | None = Field(
         default=None, min_length=1, max_length=1000
     )  # BT-33

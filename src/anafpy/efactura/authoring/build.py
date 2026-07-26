@@ -54,6 +54,8 @@ __all__ = ["build_invoice", "render_invoice"]
 #: TaxScheme/ID marking the seller tax registration identifier (BT-32); any
 #: non-``VAT`` value distinguishes it, ``FC`` is the CEN examples' convention.
 _FISCAL_SCHEME = "FC"
+#: The same slot on the buyer, where RO issuers mark it ``!VAT`` instead.
+_NON_VAT_SCHEME = "!VAT"
 VAT = "VAT"
 
 
@@ -356,11 +358,17 @@ def _party(party: Party, *, sepa_creditor: str | None = None) -> cac.Party:
                 tax_scheme=cac.TaxScheme(id=cbc.Id(value=VAT)),
             )
         )
-    if isinstance(party, Seller) and party.tax_registration_id:
+    if party.tax_registration_id:
+        # Whichever marker the source document used wins; absent one, each side
+        # gets its own convention — ``FC`` from the CEN examples for the
+        # seller's BT-32, ``!VAT`` for the buyer, which is what RO issuers file.
+        scheme = party.tax_registration_scheme or (
+            _FISCAL_SCHEME if isinstance(party, Seller) else _NON_VAT_SCHEME
+        )
         tax_schemes.append(
             cac.PartyTaxScheme(
                 company_id=cbc.CompanyId(value=party.tax_registration_id),
-                tax_scheme=cac.TaxScheme(id=cbc.Id(value=_FISCAL_SCHEME)),
+                tax_scheme=cac.TaxScheme(id=cbc.Id(value=scheme)),
             )
         )
     identifications = [
