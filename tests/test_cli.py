@@ -179,19 +179,28 @@ def test_logout_clears_the_keyring_backend(
 # --- spv ------------------------------------------------------------------------------
 
 
+def _session_args(tmp_path: Path) -> list[str]:
+    return ["--session", str(tmp_path / "spv-session.json")]
+
+
+def _identity_args(tmp_path: Path) -> list[str]:
+    return ["--identity-file", str(tmp_path / "spv-identity.json")]
+
+
 def _spv_args(tmp_path: Path) -> list[str]:
-    return [
-        "--session",
-        str(tmp_path / "spv-session.json"),
-        "--identity-file",
-        str(tmp_path / "spv-identity.json"),
-    ]
+    """Both store flags — for the commands that genuinely read both.
+
+    Commands take only the stores they use (``certs``/``select`` the identity
+    file, ``logout`` the session), so passing a flag a command does not accept
+    is a parse error rather than a silent no-op.
+    """
+    return [*_session_args(tmp_path), *_identity_args(tmp_path)]
 
 
 def test_spv_status_without_session(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["spv", "status", *_spv_args(tmp_path)]) == 1
+    assert main(["spv", "status", *_session_args(tmp_path)]) == 1
     out = capsys.readouterr().out
     assert "anafpy spv login" in out
 
@@ -207,7 +216,7 @@ def test_spv_logout_clears_the_session_file(
     store.save(
         SpvSession(cookies={"MRHSession": "x"}, established_at=datetime.now(tz=UTC))
     )
-    assert main(["spv", "logout", *_spv_args(tmp_path)]) == 0
+    assert main(["spv", "logout", *_session_args(tmp_path)]) == 0
     assert store.load() is None
     assert "removed" in capsys.readouterr().out
 
@@ -226,9 +235,10 @@ def test_spv_select_and_certs_roundtrip(
     )
     monkeypatch.setattr("anafpy.spv.certs.discover_identities", lambda: [identity])
     monkeypatch.setattr("anafpy.cli.main.discover_identities", lambda: [identity])
-    assert main(["spv", "select", identity.sha1_thumbprint, *_spv_args(tmp_path)]) == 0
+    select = ["spv", "select", identity.sha1_thumbprint, *_identity_args(tmp_path)]
+    assert main(select) == 0
     assert "Selected" in capsys.readouterr().out
-    assert main(["spv", "certs", *_spv_args(tmp_path)]) == 0
+    assert main(["spv", "certs", *_identity_args(tmp_path)]) == 0
     out = capsys.readouterr().out
     assert "(selected)" in out
 

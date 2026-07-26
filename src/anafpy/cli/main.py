@@ -386,7 +386,6 @@ def _print_spv_identity(listing: MessageList) -> None:
 @spv_app.command(name="certs")
 def spv_certs(
     *,
-    session: _SessionOption = DEFAULT_SESSION_PATH,
     identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
 ) -> int:
     """List usable certificates."""
@@ -413,7 +412,6 @@ def spv_certs(
 def spv_select(
     thumbprint: str,
     *,
-    session: _SessionOption = DEFAULT_SESSION_PATH,
     identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
 ) -> int:
     """Persist which certificate to use.
@@ -496,7 +494,6 @@ async def spv_login(
 async def spv_status(
     *,
     session: _SessionOption = DEFAULT_SESSION_PATH,
-    identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
 ) -> int:
     """Check the stored SPV session."""
     provider = SpvSessionProvider(store=FileSessionStore(session))
@@ -516,7 +513,6 @@ async def spv_status(
 def spv_logout(
     *,
     session: _SessionOption = DEFAULT_SESSION_PATH,
-    identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
 ) -> int:
     """Remove the stored SPV session."""
     # Purely local, like `auth logout`: the APM session server-side ends by its
