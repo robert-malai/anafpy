@@ -14,7 +14,8 @@ import pytest
 import respx
 
 from anafpy.declaratii import DukIntegrator
-from anafpy.declaratii.duk import _parse_err_file, _parse_versions_feed
+from anafpy.declaratii.duk import _parse_err_file
+from anafpy.declaratii.install import parse_feed
 from anafpy.exceptions import AnafConfigError, AnafResponseError, AnafTransportError
 
 
@@ -419,14 +420,11 @@ def _feed(*forms: tuple[str, str]) -> str:
     )
 
 
-def test_parse_versions_feed() -> None:
+def test_parse_versions_view() -> None:
+    # The staleness-table view over the full feed parse (its detailed tests
+    # live in test_declaratii_install.py).
     xml = _feed(("D300", "J12.0.1"), ("D112", "J5.0.0"))
-    assert _parse_versions_feed(xml) == {"D300": "J12.0.1", "D112": "J5.0.0"}
-
-
-def test_parse_versions_feed_garbage_is_empty() -> None:
-    assert _parse_versions_feed("not xml <<<") == {}
-    assert _parse_versions_feed("") == {}
+    assert parse_feed(xml).validator_versions == {"D300": "J12.0.1", "D112": "J5.0.0"}
 
 
 @respx.mock

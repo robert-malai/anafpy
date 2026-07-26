@@ -49,7 +49,7 @@ from ..spv import (
 from ..spv.certs import DEFAULT_IDENTITY_PATH
 
 if TYPE_CHECKING:
-    from ..declaratii import DukFinding, DukIntegrator
+    from ..declaratii import DukFinding, DukInstallReport, DukIntegrator
 
 DEFAULT_STORE = "~/.anafpy/tokens.json"
 
@@ -87,9 +87,14 @@ declaratii_app = App(
     name="declaratii",
     help="tax-declaration validation, rendering, signing, and filing status",
 )
+duk_app = App(
+    name="duk",
+    help="DUKIntegrator provisioning — managed dist from ANAF's update feed",
+)
 app.command(auth_app)
 app.command(spv_app)
 app.command(declaratii_app)
+app.command(duk_app)
 
 # Shared option shapes, mirrored across commands the way argparse's helper
 # functions used to. The env-var fallback lives on the Parameter, read at parse
@@ -525,15 +530,18 @@ def spv_logout(
 
 
 def _duk(duk_dir: str | None, java: str | None) -> DukIntegrator:
-    """Build the DUKIntegrator wrapper from ``--duk-dir`` / ``ANAFPY_DUK_DIR``."""
-    from ..declaratii import DukIntegrator
+    """Build the DUKIntegrator wrapper: ``--duk-dir`` / ``ANAFPY_DUK_DIR``, else
+    the managed dist."""
+    from ..declaratii import DukIntegrator, default_duk_dir
 
-    if not duk_dir:
+    directory = Path(duk_dir).expanduser() if duk_dir else default_duk_dir()
+    if directory is None:
         raise AnafConfigError(
-            "no DUKIntegrator directory — pass --duk-dir or set ANAFPY_DUK_DIR to "
-            "the extracted dist/ folder"
+            "no DUKIntegrator install — run `anafpy duk install` (managed dist "
+            "at ~/.anafpy/duk-dist), or pass --duk-dir / set ANAFPY_DUK_DIR to "
+            "an extracted dist/ folder"
         )
-    return DukIntegrator(Path(duk_dir).expanduser(), java=java)
+    return DukIntegrator(directory, java=java)
 
 
 def _print_findings(findings: list[DukFinding]) -> None:
@@ -753,6 +761,59 @@ async def declaratii_sign(
         print(f"  note: {result.warning}")
     print("  File it at anaf.ro → Depunere declarații → Transmitere declarații.")
     return 0
+
+
+# --- duk provisioning -------------------------------------------------------------
+
+
+def _print_install_report(report: DukInstallReport) -> None:
+    print(f"✓ DUKIntegrator {report.core_version} at {report.dist_dir}")
+    if report.forms_installed:
+        installed = ", ".join(
+            f"{form} {version}"
+            for form, version in sorted(report.forms_installed.items())
+        )
+        print(f"  installed: {installed}")
+    if report.forms_current:
+        print(f"  already current: {', '.join(sorted(report.forms_current))}")
+    if not report.updated_files:
+        print("  everything was already current — nothing downloaded.")
+    for note in report.notes:
+        print(f"  note: {note}")
+
+
+@duk_app.command(name="install")
+async def duk_install(
+    *forms: str,
+    duk_dir: _DukDirOption = None,
+) -> int:
+    """Install or refresh DUKIntegrator from ANAF's update feed.
+
+    With FORMS named (e.g. ``anafpy duk install D390 D208``), exactly those
+    validators are installed; with none, the common preinstall set plus
+    everything already installed is brought to ANAF's current versions. The
+    dist is assembled at ~/.anafpy/duk-dist unless --duk-dir / ANAFPY_DUK_DIR
+    points elsewhere (an existing dist there is adopted, never wiped).
+
+    Args:
+        forms: Form names as ANAF spells the validators (D300, D112, ...).
+    """
+    from ..declaratii import MANAGED_DUK_DIR, DukInstaller
+
+    target = Path(duk_dir).expanduser() if duk_dir else MANAGED_DUK_DIR.expanduser()
+    report = await DukInstaller(target, progress=print).install(list(forms))
+    _print_install_report(report)
+    return 0
+
+
+@duk_app.command(name="update")
+async def duk_update(*, duk_dir: _DukDirOption = None) -> int:
+    """Bring the installed core and every installed validator up to date.
+
+    Identical to a bare ``anafpy duk install`` — a convergence run — under the
+    name that says what it is for.
+    """
+    return await duk_install(duk_dir=duk_dir)
 
 
 def main(argv: list[str] | None = None) -> int:

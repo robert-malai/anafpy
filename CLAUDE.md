@@ -109,8 +109,10 @@ bootstraps — SPV and the declaration upload portal; read at the shared
 `ANAFPY_SPV_CURL` 2026-07-17, no compat alias; needed
 on Windows-on-ARM, where x64-only vendor KSPs — certSIGN vToken — require an
 x64 Schannel curl such as Git for Windows', see the SPV reference §1.1),
-`ANAFPY_DUK_DIR` (the extracted DUKIntegrator `dist/` folder — enables the
-`declaratie_*` tools; no default), `ANAFPY_DUK_JAVA` (the java binary; optional),
+`ANAFPY_DUK_DIR` (an extracted DUKIntegrator `dist/` folder — overrides the
+managed dist at `~/.anafpy/duk-dist` that `anafpy duk install` /
+`declaratie_duk_install` maintain; with neither, the `declaratie_*` authoring
+tools error with install guidance), `ANAFPY_DUK_JAVA` (the java binary; optional),
 `ANAFPY_SIGN_IDENTITY` (Keychain identity name to sign declarations with;
 optional — falls back to the persisted SPV certificate selection),
 `ANAFPY_DECLARATII_UPLOAD` (default on; `off` opts out of the declaration
@@ -150,7 +152,8 @@ src/anafpy/
   auth/                  # OAuth2 layer: models, store, oauth, provider, callback
   cli/main.py            # cyclopts CLI: `anafpy auth login|status|logout` +
                          # `anafpy spv certs|select|login|status|logout` +
-                         # `anafpy declaratii validate|render|sign|status|recipisa`
+                         # `anafpy declaratii validate|render|sign|status|recipisa` +
+                         # `anafpy duk install|update` (managed DUK provisioning)
   efactura/
     README.md            # module map: layer diagram (flat <-> generated UBL <-> wire),
                          # outbound/inbound flows, who-owns-what table
@@ -199,6 +202,15 @@ src/anafpy/
                          # a DIRECTORY, a file path silently exits — and
                          # -Dfile.encoding=UTF-8 by default),
                          # installed_forms + free fetch_feed_versions staleness
+    install.py           # DukInstaller — managed dist at ~/.anafpy/duk-dist,
+                         # assembled file-by-file from the update feed (the feed
+                         # is SELF-SUFFICIENT, 2026-07-26: core+lib+config all
+                         # listed; legacy zip never downloaded); https +
+                         # static.anaf.ro pinned, manifest-audited, convergent
+                         # (re-run downloads nothing); preinstall = top-2
+                         # buckets of forms/README.md; D406T only when named
+                         # (91MB duk_SAFT zip); default_duk_dir() = fallback
+                         # when ANAFPY_DUK_DIR unset — explicit dir always wins
     models.py            # declaration-family value-type home: DUK, upload, PDF-sign
                          # outcomes + DeclarationState/Document/StatusList
     _html.py             # whole-text/accent handling shared by both JSP parsers
@@ -517,9 +529,12 @@ tests/                   # respx-mocked unit tests incl. test_mcp_spv.py (+ opt-
   exceptions) because it fires the certificate's PIN/2FA, and **no MCP tool ever
   accepts a PIN** — the raw signature is delegated to the OS
   (`KeychainRawSigner`), never entering model context. PDFs land on disk via
-  the shared `write_artifact` collision guard, never base64. Needs
-  `ANAFPY_DUK_DIR`; signing is macOS-only for now (the `RawSigner` protocol is
-  the Windows seam). See the [DUK reference](docs/anaf-reference/declaratii/duk.md).
+  the shared `write_artifact` collision guard, never base64.
+  `declaratie_duk_install` (PROVISIONING annotations, no gate — local,
+  convergent, https-pinned) provisions DUK itself: the tools resolve
+  `ANAFPY_DUK_DIR` first, else the managed dist. Signing is macOS-only for now
+  (the `RawSigner` protocol is the Windows seam). See the
+  [DUK reference](docs/anaf-reference/declaratii/duk.md).
   Two tools close the post-filing loop over the **public, no-auth**
   StareD112 service (added 2026-07-16; they need neither `ANAFPY_DUK_DIR` nor any
   login): `declaratie_status` (READ_ONLY; upload index + CUI → the CUI's

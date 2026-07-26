@@ -12,6 +12,7 @@ __all__ = [
     "ARTIFACT_SAVING",
     "LOCAL_READ_ONLY",
     "MUTATING",
+    "PROVISIONING",
     "READ_ONLY",
     "REQUESTING",
     "check_writable",
@@ -35,6 +36,10 @@ REQUESTING = ToolAnnotations(
 ARTIFACT_SAVING = ToolAnnotations(
     readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True
 )
+# Downloads official ANAF artifacts and converges local install state (the DUK
+# dist): mutating yet idempotent and non-destructive — the ARTIFACT_SAVING hint
+# values under the name that matches the intent.
+PROVISIONING = ARTIFACT_SAVING
 
 
 def _collision_error(path: Path) -> AnafConfigError:

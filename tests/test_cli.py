@@ -470,11 +470,87 @@ def test_declaratii_validate_missing_xml_reports_error(
 def test_declaratii_validate_without_duk_dir_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # No --duk-dir, no env, and (per the autouse conftest isolation) no managed
+    # dist either — the error must point at the installer.
     monkeypatch.delenv("ANAFPY_DUK_DIR", raising=False)
     xml = tmp_path / "d300.xml"
     xml.write_text("<x/>")
     assert main(["declaratii", "validate", "D300", str(xml)]) == 1
-    assert "ANAFPY_DUK_DIR" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "ANAFPY_DUK_DIR" in err
+    assert "anafpy duk install" in err
+
+
+def test_declaratii_validate_resolves_the_managed_dist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    isolated_managed_duk_dir: Path,
+) -> None:
+    # With no --duk-dir/env the managed dist (here: the isolated tmp one) wins.
+    from anafpy.declaratii.duk import DukIntegrator
+
+    monkeypatch.delenv("ANAFPY_DUK_DIR", raising=False)
+    monkeypatch.setenv("ANAFPY_DUK_JAVA", "java")
+    (isolated_managed_duk_dir / "lib").mkdir(parents=True)
+    (isolated_managed_duk_dir / "DUKIntegrator.jar").write_text("")
+    monkeypatch.setattr(DukIntegrator, "_run", _fake_duk_run("ok"))
+    xml = tmp_path / "d300.xml"
+    xml.write_text("<x/>")
+    assert main(["declaratii", "validate", "D300", str(xml)]) == 0
+    assert "valid" in capsys.readouterr().out
+
+
+# --- duk provisioning -------------------------------------------------------------
+
+
+def _fake_installer(captured: dict[str, Any]) -> type:
+    from anafpy.declaratii import DukInstallReport
+
+    class FakeInstaller:
+        def __init__(self, dist_dir: Any = None, *, progress: Any = None, **_: Any):
+            captured["dist_dir"] = Path(dist_dir)
+
+        async def install(self, forms: Any = ()) -> DukInstallReport:
+            captured["forms"] = list(forms)
+            return DukInstallReport(
+                dist_dir=str(captured["dist_dir"]),
+                core_version="1.4.18.3.3",
+                updated_files=["lib/D300Validator.jar"],
+                forms_installed={"D300": "J12.0.1"},
+                notes=["a note"],
+            )
+
+    return FakeInstaller
+
+
+def test_duk_install_named_forms(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import anafpy.declaratii as declaratii
+
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(declaratii, "DukInstaller", _fake_installer(captured))
+    code = main(["duk", "install", "D300", "--duk-dir", str(tmp_path / "dist")])
+    assert code == 0
+    assert captured["forms"] == ["D300"]
+    assert captured["dist_dir"] == tmp_path / "dist"
+    out = capsys.readouterr().out
+    assert "installed: D300 J12.0.1" in out
+    assert "note: a note" in out
+
+
+def test_duk_update_defaults_to_managed_dir(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import anafpy.declaratii as declaratii
+
+    captured: dict[str, Any] = {}
+    monkeypatch.delenv("ANAFPY_DUK_DIR", raising=False)
+    monkeypatch.setattr(declaratii, "DukInstaller", _fake_installer(captured))
+    assert main(["duk", "update"]) == 0
+    assert captured["forms"] == []
+    assert captured["dist_dir"] == Path("~/.anafpy/duk-dist").expanduser()
 
 
 def test_declaratii_status_prints_unclassified_wire_wording(

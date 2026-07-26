@@ -15,7 +15,12 @@ import time
 from pydantic import BaseModel
 
 from ..auth import FileTokenStore, KeyringTokenStore, TokenProvider, TokenStore
-from ..declaratii import DeclarationStatusClient, DeclarationUploadClient, DukIntegrator
+from ..declaratii import (
+    DeclarationStatusClient,
+    DeclarationUploadClient,
+    DukIntegrator,
+    default_duk_dir,
+)
 from ..efactura.client import EFacturaClient
 from ..etransport.client import ETransportClient
 from ..exceptions import AnafConfigError
@@ -33,10 +38,10 @@ _NO_CREDENTIALS = (
 )
 
 _NO_DUK = (
-    "declaration tools need DUKIntegrator — download "
-    "https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip, "
-    "extract it, and set ANAFPY_DUK_DIR to its dist/ folder (add the per-form "
-    "validator jars from ANAF's update feed to dist/lib/)"
+    "declaration tools need DUKIntegrator — call declaratie_duk_install (or "
+    "run `anafpy duk install`) to provision the managed dist at "
+    "~/.anafpy/duk-dist from ANAF's update feed, or set ANAFPY_DUK_DIR to an "
+    "extracted dist/ folder"
 )
 
 
@@ -129,14 +134,20 @@ class AppContext:
     def duk(self) -> DukIntegrator:
         """The DUKIntegrator wrapper (validate / render); built lazily.
 
+        Resolution: ``ANAFPY_DUK_DIR`` when configured, else the managed dist
+        (``~/.anafpy/duk-dist``, provisioned by ``declaratie_duk_install``).
+        A failed resolution is not cached — the next call re-resolves, so the
+        tools pick a freshly installed dist up without a server restart.
+
         Raises:
-            AnafConfigError: ``ANAFPY_DUK_DIR`` is not configured, or points at a
-                path that is not a DUKIntegrator install.
+            AnafConfigError: neither source is available, or the directory is
+                not a DUKIntegrator install.
         """
         if self._duk is None:
-            if self.config.duk_dir is None:
+            directory = self.config.duk_dir or default_duk_dir()
+            if directory is None:
                 raise AnafConfigError(_NO_DUK)
-            self._duk = DukIntegrator(self.config.duk_dir, java=self.config.duk_java)
+            self._duk = DukIntegrator(directory, java=self.config.duk_java)
         return self._duk
 
     def declaration_status(self) -> DeclarationStatusClient:

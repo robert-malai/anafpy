@@ -77,6 +77,7 @@ async def test_tools_registered(tmp_path: Path) -> None:
         "declaratie_render",
         "declaratie_sign",
         "declaratie_nr_evid",
+        "declaratie_duk_install",
         "declaratie_duk_status",
         "declaratie_status",
         "declaratie_recipisa",
@@ -198,11 +199,58 @@ async def test_validate_unparseable_err_explains(
 
 
 async def test_validate_without_duk_configured(tmp_path: Path) -> None:
+    # No ANAFPY_DUK_DIR and (per the autouse conftest isolation) no managed
+    # dist — the error must offer both the install tool and the env override.
     server = create_server(_config(tmp_path, with_duk=False))
-    with pytest.raises(ToolError, match="ANAFPY_DUK_DIR"):
+    with pytest.raises(ToolError, match="declaratie_duk_install"):
         await _call(
             server, "declaratie_validate", document={"xml": "<x/>"}, form="D300"
         )
+
+
+async def test_validate_resolves_the_managed_dist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_managed_duk_dir: Path,
+) -> None:
+    # With no ANAFPY_DUK_DIR configured, the tools fall back to the managed
+    # dist (here: the conftest-isolated tmp one).
+    (isolated_managed_duk_dir / "lib").mkdir(parents=True)
+    (isolated_managed_duk_dir / "DUKIntegrator.jar").write_text("")
+    monkeypatch.setattr(DukIntegrator, "_run", _fake_run("ok"))
+    server = create_server(_config(tmp_path, with_duk=False))
+    result = await _call(
+        server, "declaratie_validate", document={"xml": "<x/>"}, form="D300"
+    )
+    assert result["ok"] is True
+
+
+async def test_duk_install_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from anafpy.declaratii import DukInstallReport
+
+    captured: dict[str, Any] = {}
+
+    class FakeInstaller:
+        def __init__(self, dist_dir: Any = None, **_: Any) -> None:
+            captured["dist_dir"] = Path(dist_dir)
+
+        async def install(self, forms: Any = ()) -> DukInstallReport:
+            captured["forms"] = list(forms)
+            return DukInstallReport(
+                dist_dir=str(captured["dist_dir"]),
+                core_version="1.4.18.3.3",
+                forms_installed={"D390": "J4.1.2"},
+            )
+
+    monkeypatch.setattr("anafpy.mcp.declaratii.tools.DukInstaller", FakeInstaller)
+    server = create_server(_config(tmp_path))
+    result = await _call(server, "declaratie_duk_install", forms=["D390"])
+    assert result["forms_installed"] == {"D390": "J4.1.2"}
+    assert captured["forms"] == ["D390"]
+    # The configured ANAFPY_DUK_DIR is the install target when present.
+    assert captured["dist_dir"] == tmp_path / "dist"
 
 
 # --- render -----------------------------------------------------------------------

@@ -17,6 +17,7 @@ __all__ = [
     "DeclarationState",
     "DeclarationStatusList",
     "DukFinding",
+    "DukInstallReport",
     "DukResult",
     "PdfSignResult",
     "PortalUploadResult",
@@ -63,6 +64,24 @@ class DukResult(BaseModel):
     def warnings(self) -> list[DukFinding]:
         """The informational findings (``severity == "warning"``)."""
         return [f for f in self.findings if f.severity == "warning"]
+
+
+class DukInstallReport(BaseModel):
+    """Outcome of one :class:`~anafpy.declaratii.install.DukInstaller` run.
+
+    ``updated_files`` are the dist-relative paths actually downloaded this run
+    (core, config, and form files alike); ``forms_installed`` /
+    ``forms_current`` split the target forms into freshly fetched versus
+    already-at-feed-version; ``notes`` carries the non-fatal skips (e.g. a
+    lib-scanned form the feed does not list).
+    """
+
+    dist_dir: str
+    core_version: str
+    updated_files: list[str] = []
+    forms_installed: dict[str, str] = {}
+    forms_current: dict[str, str] = {}
+    notes: list[str] = []
 
 
 class PortalUploadResult(BaseModel):

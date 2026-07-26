@@ -10,12 +10,13 @@ macOS the certificate lives behind a CryptoTokenKit extension with no PKCS#11
 dylib, so DUK's signing path cannot reach it; :mod:`signing` + :mod:`pdfsign`
 handle the qualified signature instead.
 
-The distribution is the user's to install (like the OAuth app and the
-certificate): point at the extracted ``dist/`` folder via ``duk_dir`` /
-``ANAFPY_DUK_DIR``. Grab it from
-``https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip``
-(ignore the bundled 32-bit JRE 6 — a modern JVM runs ``-v``/``-p`` fine) and
-drop the per-form validator jars from the update feed into ``dist/lib/``.
+The distribution is provisioned by :mod:`anafpy.declaratii.install` (``anafpy
+duk install`` / the ``declaratie_duk_install`` MCP tool): a managed dist at
+``~/.anafpy/duk-dist``, assembled file by file from ANAF's update feed. An
+explicit ``duk_dir`` / ``ANAFPY_DUK_DIR`` pointing at a hand-assembled
+``dist/`` folder always wins over the managed one. Java stays the user's to
+install (any modern JVM runs ``-v``/``-p``; the 32-bit JRE 6 ANAF bundles is
+never used).
 
 CLI contract facts baked in below (proven 2026-07-15 and 2026-07-26, Oracle
 Java 26, macOS):
@@ -54,22 +55,16 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import httpx
-from parsel import Selector
 
-from .._transport.base import raise_for_status
 from .._transport.subprocess import run_subprocess
-from ..exceptions import AnafConfigError, AnafTransportError
+from ..exceptions import AnafConfigError
+from .install import fetch_feed
 from .models import DukFinding, DukResult
 
 __all__ = [
     "DukIntegrator",
     "fetch_feed_versions",
 ]
-
-_DUK_DOWNLOAD_URL = (
-    "https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip"
-)
-_VERSIONS_FEED_URL = "https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml"
 
 
 # DUK err-file section prefixes mapped to a finding severity. ``E:`` (error) and
@@ -201,8 +196,9 @@ class DukIntegrator:
         if not self.jar.exists() or not self.lib.is_dir():
             raise AnafConfigError(
                 f"{self.duk_dir} is not a DUKIntegrator install "
-                "(expected DUKIntegrator.jar and lib/). Download and extract "
-                f"{_DUK_DOWNLOAD_URL} and point ANAFPY_DUK_DIR at its dist/ folder."
+                "(expected DUKIntegrator.jar and lib/). Run `anafpy duk install` "
+                "to provision the managed dist, or point ANAFPY_DUK_DIR at an "
+                "extracted dist/ folder."
             )
         resolved = java or _default_java()
         if not resolved:
@@ -380,24 +376,14 @@ async def fetch_feed_versions(
 ) -> dict[str, str]:
     """Fetch current per-form validator versions without requiring a DUK install.
 
+    A staleness-table view over :func:`anafpy.declaratii.install.fetch_feed`
+    (the full feed model, with jar URLs — what the installer consumes).
+
     Raises:
         AnafTransportError: a network-level failure reaching the feed.
         AnafResponseError: the feed answered a non-success HTTP status.
     """
-    owns_http = http is None
-    client = http or httpx.AsyncClient(timeout=30.0)
-    try:
-        try:
-            response = await client.get(_VERSIONS_FEED_URL)
-        except httpx.HTTPError as exc:
-            raise AnafTransportError(
-                f"cannot fetch the DUK update feed {_VERSIONS_FEED_URL}: {exc}"
-            ) from exc
-        raise_for_status(response)
-        return _parse_versions_feed(response.text)
-    finally:
-        if owns_http:
-            await client.aclose()
+    return (await fetch_feed(http)).validator_versions
 
 
 def _default_java() -> str | None:
@@ -454,26 +440,3 @@ def _form_version(lib: Path, form: str) -> str:
             if stripped := line.strip():
                 return stripped
     return "unknown"
-
-
-def _parse_versions_feed(text: str) -> dict[str, str]:
-    """Extract ``{form: version}`` from ANAF's ``versiuni.xml`` feed.
-
-    The feed holds one container per form (``<D300>``, ``<D112>``, ...) whose
-    ``JURL`` child points at the ``<form>Validator.jar`` and whose ``versiuneJ``
-    child is that jar's current version — the same ``J…`` string the installed
-    ``<form>IstoriaVersiunilor.txt`` leads with (live shape, 2026-07-17; see the
-    DUK reference §1). Unparseable content yields an empty mapping (best-effort
-    — parsel's recovering XML mode simply matches nothing).
-    """
-    versions: dict[str, str] = {}
-    if not text.strip():  # Selector rejects empty input with an exception
-        return versions
-    for entry in Selector(text=text, type="xml").xpath("//*[JURL and versiuneJ]"):
-        jar = entry.xpath("JURL/text()").get("")
-        version = entry.xpath("versiuneJ/text()").get("")
-        if jar.endswith("Validator.jar") and version:
-            form = Path(jar).name.removesuffix("Validator.jar")
-            if form:
-                versions.setdefault(form, version)
-    return versions

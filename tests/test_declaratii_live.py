@@ -59,6 +59,21 @@ async def test_live_render_nil_d300(tmp_path: Path) -> None:
     assert pdf.exists() and pdf.read_bytes().startswith(b"%PDF")
 
 
+async def test_live_install_assembles_a_working_dist(tmp_path: Path) -> None:
+    """Feed-only assembly, end to end: a fresh dist that actually validates.
+
+    Public no-auth GETs from static.anaf.ro (a few MB), within the live-testing
+    boundaries; needs no DUK install of its own — only Java.
+    """
+    from anafpy.declaratii import DukInstaller
+
+    dist = tmp_path / "duk-dist"
+    report = await DukInstaller(dist).install(["D300"])
+    assert report.forms_installed == {"D300": report.forms_installed["D300"]}
+    result = await DukIntegrator(dist).validate("D300", _D300_NIL)
+    assert result.ok, result.raw
+
+
 # A real production index/CUI pair — StareD112 is public, no-auth, read-only,
 # so a prod query is within the live-testing boundaries. Re-confirms the wire
 # shapes captured 2026-07-16. The pair is a knowledge-based access key to the

@@ -45,7 +45,8 @@ from ...declaratii import (
     special_vat_evidence_number,
 )
 from ...declaratii.duk import fetch_feed_versions
-from ...declaratii.models import DeclarationStatusList
+from ...declaratii.install import MANAGED_DUK_DIR, DukInstaller
+from ...declaratii.models import DeclarationStatusList, DukInstallReport
 from ...declaratii.signing import (
     KeychainRawSigner,
     default_signed_path,
@@ -59,6 +60,7 @@ from ..artifacts import (
     ARTIFACT_SAVING,
     LOCAL_READ_ONLY,
     MUTATING,
+    PROVISIONING,
     READ_ONLY,
     ensure_writable,
     write_artifact,
@@ -441,13 +443,35 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         )
 
     @mcp.tool(
+        title="Declarations: install DUKIntegrator",
+        annotations=PROVISIONING,
+        description="Install or update DUKIntegrator from ANAF's official "
+        "update feed — no manual download. With `forms` named (e.g. ['D390']) "
+        "exactly those validators are installed; without, the common preinstall "
+        "set plus everything already installed is brought to ANAF's current "
+        "versions. Safe to repeat: files already current are skipped, an "
+        "existing dist is adopted in place, never wiped. The target is the "
+        "managed dist (~/.anafpy/duk-dist) unless ANAFPY_DUK_DIR points "
+        "elsewhere. D406T is special: its ~91 MB source archive is downloaded "
+        "only when that form is named explicitly. All downloads come from "
+        "static.anaf.ro over HTTPS and a manifest records each file's source "
+        "URL and SHA-256. Follow up with declaratie_duk_status to confirm.",
+    )
+    async def declaratie_duk_install(
+        forms: list[str] | None = None,
+    ) -> DukInstallReport:
+        target = config.duk_dir or MANAGED_DUK_DIR.expanduser()
+        return await DukInstaller(target).install(forms or ())
+
+    @mcp.tool(
         title="Declarations: DUKIntegrator status",
         annotations=READ_ONLY,
         description="Report the DUKIntegrator installation: its directory, the "
         "Java version, and the per-form validators installed versus ANAF's update "
         "feed (a staleness table). CLI-mode DUK does NOT auto-update, so an "
         "installed validator can lag ANAF's current one — surface that to the "
-        "user. The feed fetch is best-effort; offline, only the installed "
+        "user and offer declaratie_duk_install to fix a stale or missing "
+        "validator. The feed fetch is best-effort; offline, only the installed "
         "versions are reported.",
     )
     async def declaratie_duk_status() -> dict[str, object]:

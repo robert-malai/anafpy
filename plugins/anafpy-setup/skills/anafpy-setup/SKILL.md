@@ -229,29 +229,28 @@ ANAF through these tools — Claude produces a signed PDF they then upload on th
 portal manually. **Signing is macOS-only** right now; on Windows, offer only the
 validate/render half and say signing isn't available yet.
 
-These tools drive ANAF's own desktop validator, **DUKIntegrator**, which you can
-install for them:
+These tools drive ANAF's own desktop validator, **DUKIntegrator**, which anafpy
+installs itself:
 
-1. Download and extract
-   [`dist_javaInclus20200203.zip`](https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip)
-   — it yields a `dist/` folder, which is what the server points at.
-2. For each form they file, drop that form's `…Validator.jar` and `…Pdf.jar` (from
-   ANAF's declaration page, e.g. the D300 page under `static.anaf.ro/.../Declaratii_R/`)
-   into `dist/lib/`. Ask which forms they need before fetching anything.
-3. Confirm **Java** is present (`java -version`, JRE/JDK 8+). anafpy only runs DUK's
-   *validate*/*render*, which work on any modern JVM.
+1. Confirm **Java** is present (`java -version`, JRE/JDK 8+). anafpy only runs
+   DUK's *validate*/*render*, which work on any modern JVM. If Java is missing,
+   guide them to install one (e.g. Temurin) — that is the only manual step.
+2. Run `anafpy duk install`. It assembles DUKIntegrator plus the validators for
+   the common SME forms at `~/.anafpy/duk-dist`, straight from ANAF's official
+   update feed (HTTPS-pinned to `static.anaf.ro`, with an install manifest). A
+   rarer form later is `anafpy duk install <FORM>`, and the connected server can
+   do the same itself via the `declaratie_duk_install` tool.
 
-Then add one line to the `env` block from step 6, pointing at the extracted
-folder (on Windows: a doubled-backslash path, e.g.
-`C:\\Users\\ana\\DUKIntegrator\\dist`):
-
-```json
-        "ANAFPY_DUK_DIR": "/Users/you/DUKIntegrator/dist"
-```
+No `env` entry is needed — the server finds the managed install on its own. Only
+if they already keep a hand-assembled DUKIntegrator `dist/` folder should you
+point `ANAFPY_DUK_DIR` at it in the `env` block from step 6 (an explicit
+directory wins over the managed one; on Windows: a doubled-backslash path, e.g.
+`C:\\Users\\ana\\DUKIntegrator\\dist`).
 
 After they restart Claude, verify by asking Cowork *"check the declaration setup"*
 — it runs `declaratie_duk_status`, which confirms the install and flags an
-out-of-date validator (command-line DUK does not auto-update). Signing reuses the
+out-of-date validator (command-line DUK does not auto-update; `anafpy duk update`
+or the `declaratie_duk_install` tool refreshes it). Signing reuses the
 **same qualified certificate** as SPV (step 8): if they selected one there, the
 signer picks it up; otherwise set `"ANAFPY_SIGN_IDENTITY"` to the certificate's
 Keychain name. Signing fires the PIN/2FA on their device — the same human gate as

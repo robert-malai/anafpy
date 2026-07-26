@@ -125,9 +125,11 @@ filing tools and Claude guides you through manual portal filing instead).
 The portal login is deliberately a separate step from submitting: it fires
 your certificate PIN/2FA once (like `spv_login`), and the session it
 establishes is probed — without any 2FA — before anything is uploaded.
-The authoring tools need `ANAFPY_DUK_DIR` set and signing is macOS-only for
-now; the status/recipisa tools ride ANAF's public StareD112 service and need
-no configuration and no login at all.
+The authoring tools need DUKIntegrator + Java — `declaratie_duk_install`
+provisions DUK itself into `~/.anafpy/duk-dist` (an explicit `ANAFPY_DUK_DIR`
+wins over the managed install) — and signing is macOS-only for now; the
+status/recipisa tools ride ANAF's public StareD112 service and need no
+configuration and no login at all.
 
 | Tool | What it does |
 |---|---|
@@ -135,7 +137,8 @@ no configuration and no login at all.
 | `declaratie_render` | Render the official multi-page PDF (XML embedded) directly to a path you name; validates first, so a failure writes no PDF. Missing DUK/Java configuration is a tool error |
 | `declaratie_sign` | Sign a rendered PDF with your qualified certificate — requires your explicit approval (`confirm=true`) since it fires your PIN/2FA prompt; failures come back as `signed=false` + guidance |
 | `declaratie_nr_evid` | Compose the 23-char `nr_evid` payment-evidence number for the self-assessed forms — `form=` `D300` (needs `tip_decont`), `D100`/`D710` (need `cod_oblig` + `scadenta`), `D101` (adds `in_liquidation`), `D301` (takes `mijl_trans`). It has a check digit — never compute it by hand |
-| `declaratie_duk_status` | The DUKIntegrator install: directory, Java version, and installed-vs-current validator versions (CLI-mode DUK does not auto-update); the current feed is still returned before DUK is installed |
+| `declaratie_duk_install` | Install or update DUKIntegrator from ANAF's official update feed — no manual download. Named forms install exactly those validators; a bare call converges the common preinstall set plus everything already installed. HTTPS-pinned to `static.anaf.ro`, manifest-audited, safe to repeat; the ~91 MB D406T archive downloads only when that form is named |
+| `declaratie_duk_status` | The DUKIntegrator install: directory, Java version, and installed-vs-current validator versions (CLI-mode DUK does not auto-update — `declaratie_duk_install` refreshes it); the current feed is still returned before DUK is installed |
 | `declaratie_portal_status` | Probe whether the filing-portal session is still alive (they die after ~10 idle minutes) — a plain page fetch, never fires your PIN/2FA |
 | `declaratie_portal_login` | Log in to the filing portal with the selected certificate — requires your explicit approval (`confirm=true`) since it fires your PIN/2FA prompt; deliberately outside the submit flow, so one login serves the whole filing |
 | `declaratie_prepare` | STEP 1 of filing: reads the signed PDF and returns a confirmation token bound to its exact bytes (plus a local heads-up if no embedded signature is detected). Nothing is filed |
@@ -166,7 +169,7 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_SKILLS_DIR` | Workflow skills served as prompts (defaults to the repo's `plugins/anafpy-workflows/skills/` when present, else the copy packaged in the wheel) |
 | `ANAFPY_SPV_SESSION` | SPV cookie-session store written by `anafpy spv login` (default `~/.anafpy/spv-session.json`) |
 | `ANAFPY_SPV_IDENTITY_FILE` | Persisted SPV certificate selection (default `~/.anafpy/spv-identity.json`) |
-| `ANAFPY_DUK_DIR` | The extracted DUKIntegrator `dist/` folder — enables the `declaratie_*` tools (no default) |
+| `ANAFPY_DUK_DIR` | An extracted DUKIntegrator `dist/` folder; overrides the managed install that `declaratie_duk_install` maintains at `~/.anafpy/duk-dist` |
 | `ANAFPY_DUK_JAVA` | The `java` binary DUKIntegrator runs under (optional; falls back to `java` on `PATH`) |
 | `ANAFPY_SIGN_IDENTITY` | Keychain identity name to sign declarations with (optional; falls back to the persisted SPV certificate selection) |
 | `ANAFPY_DECLARATII_UPLOAD` | Set to `off` to opt out of automated declaration filing — the portal tools (`declaratie_portal_*`, `declaratie_prepare`, `declaratie_submit`) are then not served and Claude guides manual filing instead (default: on) |

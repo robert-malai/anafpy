@@ -688,9 +688,31 @@ in [the DUK reference](docs/anaf-reference/declaratii/duk.md).
 
 **Distribution.** Signing needs the optional `anafpy[declaratii]` extra
 (pyHanko); the tools import-guard and raise a "install anafpy[declaratii]"
-`AnafConfigError` when it is absent, like the `mcp` extra. DUKIntegrator is the
-user's to install (like the OAuth app and the certificate): pointed at via
-`ANAFPY_DUK_DIR`, staleness checked, never auto-installed.
+`AnafConfigError` when it is absent, like the `mcp` extra.
+
+**DUKIntegrator is managed-installed** (decided 2026-07-26, reversing the
+original "user's to install" stance — the OAuth app and certificate remain the
+user's). The trigger was the accountant-audience install burden: download a
+2020 zip, discard a bundled JRE 6, hand-drop jars, chase the update feed
+manually. The enabler was establishing that **ANAF's update feed is
+self-sufficient**: its `<integrator>` element lists the core jar (`zJars`),
+the shared + third-party lib jars (`sJars`/`iJars`), and the `config/` files
+(`cFisiere`) — everything a working dist contains — so
+`anafpy.declaratii.install.DukInstaller` (`anafpy duk install|update`, MCP
+`declaratie_duk_install`) assembles a dist file by file at `~/.anafpy/duk-dist`
+and the legacy zip is never downloaded. Guardrails for the unsigned feed:
+downloads are pinned to `static.anaf.ro` over HTTPS (foreign hosts refused),
+and a manifest records every file's source URL + SHA-256, making the install
+auditable and the operation **convergent** (current files skipped; a
+hand-assembled dist is adopted in place, never wiped). Resolution order:
+explicit `ANAFPY_DUK_DIR` always wins; the managed dist is only the fallback.
+Scope choices: a bare install covers the top two usage buckets of the form
+inventory plus whatever is already installed; **D406T** (jars only inside the
+~91 MB `duk_SAFT` zip, absent from the feed) downloads only when named
+explicitly; **Java stays guide-only** — anafpy never fetches a JRE. Rejected
+alternatives from the same review: a warm-JVM/shim execution model (fragile
+against `System.exit`, needs ANAF's non-public jar APIs) and a Docker image
+(wrong fit for a local stdio server).
 
 **Status tracking (StareD112).** Recon for M2 (2026-07-16) found that recipisa
 tracking needs no certificate at all: ANAF's `www.anaf.ro/StareD112/` service is

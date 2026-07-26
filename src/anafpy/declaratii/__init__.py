@@ -20,6 +20,10 @@ Public surface:
   payment-evidence composers.
 * :class:`DukIntegrator` (+ :class:`DukResult`, :class:`DukFinding`) — the
   headless DUKIntegrator wrapper (validate / render).
+* :class:`DukInstaller` (+ :class:`DukInstallReport`, :data:`MANAGED_DUK_DIR`,
+  :func:`default_duk_dir`) — managed DUK provisioning from ANAF's update feed
+  (``anafpy duk install``); an explicit ``ANAFPY_DUK_DIR`` wins over the
+  managed dist.
 * :class:`RawSigner` protocol and its macOS :class:`KeychainRawSigner`
   implementation. :func:`load_pdfsign` loads the optional pyHanko embedding
   module with a clear install hint.
@@ -38,11 +42,13 @@ The platform signer imports without optional dependencies; calling
 from __future__ import annotations
 
 from .duk import DukIntegrator, fetch_feed_versions
+from .install import MANAGED_DUK_DIR, DukInstaller, default_duk_dir
 from .models import (
     DeclarationDocument,
     DeclarationState,
     DeclarationStatusList,
     DukFinding,
+    DukInstallReport,
     DukResult,
     PdfSignResult,
     PortalUploadResult,
@@ -58,12 +64,15 @@ from .status import DeclarationStatusClient
 from .upload import DeclarationUploadClient, PortalCurlBootstrapper
 
 __all__ = [
+    "MANAGED_DUK_DIR",
     "DeclarationDocument",
     "DeclarationState",
     "DeclarationStatusClient",
     "DeclarationStatusList",
     "DeclarationUploadClient",
     "DukFinding",
+    "DukInstallReport",
+    "DukInstaller",
     "DukIntegrator",
     "DukResult",
     "KeychainRawSigner",
@@ -71,6 +80,7 @@ __all__ = [
     "PortalCurlBootstrapper",
     "PortalUploadResult",
     "RawSigner",
+    "default_duk_dir",
     "default_signed_path",
     "fetch_feed_versions",
     "load_pdfsign",

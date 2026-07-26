@@ -41,43 +41,61 @@ certSIGN Paperless vToken).
 
 ## 1. Distribution and update feed
 
-- **Distribution**:
-  `https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip`.
-  Extract `dist/`; **ignore the bundled 32-bit JRE 6** — a modern JVM (proven on
-  Oracle Java 26, macOS arm64) runs `-v`/`-p` fine.
+- **Distribution — the feed is self-sufficient** (established 2026-07-26): the
+  update feed lists every file a working dist contains, so anafpy's installer
+  (`anafpy duk install` / `DukInstaller`, managed dist at `~/.anafpy/duk-dist`)
+  assembles the dist file by file from the feed and the legacy
+  `dist_javaInclus20200203.zip` is **never needed**. (That zip remains the
+  manual path: extract `dist/` and **ignore the bundled 32-bit JRE 6** — a
+  modern JVM, proven on Oracle Java 26 / macOS arm64, runs `-v`/`-p` fine.) A
+  minimal working dist is exactly: `DUKIntegrator.jar` at the root, `lib/` with
+  the three core jars + the three third-party jars + the per-form jar pairs,
+  and `config/`.
 - **Update feed**: `http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml`
-  lists the current core jars (`DUKIntegrator.jar`, `DecValidation.jar`,
-  `DecPdf.jar`, `Validator.jar`) and per-form jars (e.g. D300 at
-  `D300Validator.jar` + `D300Pdf.jar`, version `J12.0.1`/`P9.0.0`). Per-form jars
-  go into `dist/lib/`. **The GUI mode auto-updates; the CLI mode does not** —
-  staleness must be surfaced (anafpy's `declaratie_duk_status` /
-  `DukIntegrator.feed_versions` compare installed against the feed).
+  (also served over https — anafpy pins https and the `static.anaf.ro` host;
+  the feed itself is unsigned) lists the current core jars and per-form jars
+  (e.g. D300 at `D300Validator.jar` + `D300Pdf.jar`, version
+  `J12.0.1`/`P9.0.0`). Per-form jars go into `dist/lib/`. **The GUI mode
+  auto-updates; the CLI mode does not** — staleness must be surfaced (anafpy's
+  `declaratie_duk_status` / `DukIntegrator.feed_versions` compare installed
+  against the feed; `declaratie_duk_install` / `anafpy duk update` refresh).
 
-  **Feed shape** (live-fetched 2026-07-17; no XML namespace): one `<integrator>`
-  element for the core (its `<versiune>` is the DUKIntegrator core version, with
-  `iJars`/`sJars`/`zJars` lists of bare `jarURL`s), then **one container element
-  per form, named after the form**:
+  **Feed shape** (live-fetched 2026-07-17, wrapper + integrator lists confirmed
+  2026-07-26; no XML namespace): one `<integrator>` element for the core, then
+  **one container element per form, named after the form** (D-series and
+  S-series — 237 containers, 173 distinct validator jars), inside a
+  `<declaratii>` wrapper:
 
   ```xml
   <versiuni>
     <integrator>
       <versiune>1.4.18.3.3</versiune>
-      ...
+      <iJars>…iText-5.0.4.jar, bcmail-jdk15-145.jar, bcprov-jdk15-145.jar…</iJars>
+      <sJars>…ss8/DecValidation.jar, DecPdf.jar, Validator.jar…</sJars>
+      <zJars>…zz9/DUKIntegrator.jar, ajutor.chm…</zJars>
+      <dJars>…dd5/Download.jar…</dJars>
+      <cFisiere>…cc2/config.properties + the smart-card vendor .cfg files…</cFisiere>
     </integrator>
-    <D300>
-      <versiuneJ>J12.0.1</versiuneJ>
-      <versiuneP>P9.0.0</versiuneP>
-      <JURL>http://static.anaf.ro/static/10/Anaf/update5/D300/D300Validator.jar</JURL>
-      <PURL>http://static.anaf.ro/static/10/Anaf/update5/D300/D300Pdf.jar</PURL>
-      <DURL>http://static.anaf.ro/static/10/Anaf/update5/D300/D300IstoriaVersiunilor.txt</DURL>
-    </D300>
-    ...
+    <declaratii>
+      <D300>
+        <versiuneJ>J12.0.1</versiuneJ>
+        <versiuneP>P9.0.0</versiuneP>
+        <JURL>http://static.anaf.ro/static/10/Anaf/update5/D300_27/D300Validator.jar</JURL>
+        <PURL>http://static.anaf.ro/static/10/Anaf/update5/D300_27/D300Pdf.jar</PURL>
+        <DURL>http://static.anaf.ro/static/10/Anaf/update5/D300_27/D300IstoriaVersiunilor.txt</DURL>
+      </D300>
+      ...
+    </declaratii>
   </versiuni>
   ```
 
-  `versiuneJ` is the validator jar's version and `versiuneP` the PDF jar's; the
-  installed `<form>IstoriaVersiunilor.txt` (what `DURL` points at) leads with the
-  same `J…` string, which is what makes installed-vs-feed comparison possible.
+  The integrator lists map onto the dist: `zJars` → the root (`DUKIntegrator.jar`;
+  `ajutor.chm` is the GUI help file), `sJars` + `iJars` → `lib/` (core + the
+  third-party iText/BouncyCastle jars), `cFisiere` → `config/`, and `dJars`
+  (the GUI updater) is not needed for CLI use. `versiuneJ` is the validator
+  jar's version and `versiuneP` the PDF jar's; the installed
+  `<form>IstoriaVersiunilor.txt` (what `DURL` points at) leads with the same
+  `J…` string, which is what makes installed-vs-feed comparison possible.
 
 ### The SAF-T module (D406/D406T) — jar sourcing and compatibility
 

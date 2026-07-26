@@ -44,6 +44,17 @@ class FakeKeyring(keyring.backend.KeyringBackend):
 
 
 @pytest.fixture(autouse=True)
+def isolated_managed_duk_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the managed DUK dist at the test's tmp dir for EVERY test (autouse):
+    ``default_duk_dir()`` is the implicit fallback of the DUK resolution, so
+    without this a test on a developer machine with a real ``~/.anafpy/duk-dist``
+    would silently resolve it (and behave differently than in CI)."""
+    managed = tmp_path / "managed-duk-dist"
+    monkeypatch.setattr("anafpy.declaratii.install.MANAGED_DUK_DIR", managed)
+    return managed
+
+
+@pytest.fixture(autouse=True)
 def fake_keyring() -> Iterator[FakeKeyring]:
     """In-memory keyring for EVERY test (autouse): keyring is the default token
     store backend, so without this a test that forgets to pick a backend would

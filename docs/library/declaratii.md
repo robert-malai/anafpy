@@ -20,11 +20,14 @@ upload (the upload client, or manually) → status/recipisa via StareD112.
 
 ## Prerequisites
 
-- **DUKIntegrator** — download
-  [`dist_javaInclus20200203.zip`](https://static.anaf.ro/static/DUKIntegrator/dist_javaInclus20200203.zip),
-  extract it, and drop the per-form validator jars (e.g. `D300Validator.jar`,
-  `D300Pdf.jar` from ANAF's update feed) into `dist/lib/`. Ignore the bundled
-  32-bit JRE 6 — any modern JVM works.
+- **DUKIntegrator** — provisioned by anafpy itself: `anafpy duk install`
+  assembles the managed dist at `~/.anafpy/duk-dist` from ANAF's official
+  update feed (core, config, and the common forms' validators; add rarer ones
+  with `anafpy duk install <FORM>`, refresh everything with
+  `anafpy duk update`). Programmatically that is
+  `await DukInstaller().install()`. A hand-assembled `dist/` folder keeps
+  working — pass its path to `DukIntegrator` (or set `ANAFPY_DUK_DIR`) and it
+  wins over the managed install.
 - **A JRE/JDK** (Java 8+) on `PATH`, or set `ANAFPY_DUK_JAVA`.
 - **The `declaratii` extra** for signing: `pip install 'anafpy[declaratii]'`
   (pyHanko). Validation and rendering do not need it.
@@ -36,9 +39,9 @@ CLI contract, the err-file format, and the `nr_evid` layout.
 
 ```python
 from pathlib import Path
-from anafpy.declaratii import DukIntegrator
+from anafpy.declaratii import DukIntegrator, default_duk_dir
 
-duk = DukIntegrator(Path("~/DUKIntegrator/dist").expanduser())
+duk = DukIntegrator(default_duk_dir())  # the managed dist; or pass a dist/ path
 
 xml = Path("d300.xml").read_bytes()
 result = await duk.validate("D300", xml)
@@ -184,22 +187,27 @@ it is the digitally signed proof of filing.
 ## CLI
 
 ```bash
-anafpy declaratii validate D300 d300.xml --duk-dir ~/DUKIntegrator/dist
-anafpy declaratii render   D300 d300.xml -o d300.pdf --duk-dir ~/DUKIntegrator/dist
+anafpy duk install                       # provision the managed DUKIntegrator
+anafpy duk install D208                  # add a rarer form's validator
+anafpy duk update                        # refresh core + installed validators
+
+anafpy declaratii validate D300 d300.xml
+anafpy declaratii render   D300 d300.xml -o d300.pdf
 anafpy declaratii sign     d300.pdf -o d300-semnat.pdf   # fires the PIN/2FA prompt
 anafpy declaratii status   1100000001 99999909           # public — no login
 anafpy declaratii recipisa 1100000001 -o recipisa.pdf    # public — no login
 ```
 
-`--duk-dir` defaults to `ANAFPY_DUK_DIR`, `--java` to `ANAFPY_DUK_JAVA`. `sign`
-resolves the certificate from `--identity`, then `ANAFPY_SIGN_IDENTITY`, then the
-persisted SPV selection.
+`--duk-dir` defaults to `ANAFPY_DUK_DIR`, falling back to the managed install;
+`--java` defaults to `ANAFPY_DUK_JAVA`. `sign` resolves the certificate from
+`--identity`, then `ANAFPY_SIGN_IDENTITY`, then the persisted SPV selection.
 
 ## Using it through Claude (MCP)
 
 The same operations are MCP tools (`declaratie_validate`, `declaratie_render`,
-`declaratie_sign`, `declaratie_nr_evid`, `declaratie_duk_status`,
-`declaratie_status`, `declaratie_recipisa`) and a `declaratie-prepare` skill —
+`declaratie_sign`, `declaratie_nr_evid`, `declaratie_duk_install`,
+`declaratie_duk_status`, `declaratie_status`, `declaratie_recipisa`) and a
+`declaratie-prepare` skill —
 see the [MCP tools](../mcp/tools.md) and [setup](../mcp/setup.md) pages.
 Missing DUK/Java configuration is a tool error for validate/render, distinct
 from a real DUK verdict with `ok=false`. Status/config/network failures use the
