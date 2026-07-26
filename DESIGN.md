@@ -288,6 +288,18 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
   local `validate()` verdicts track ANAF's both ways, so a CIUS-RO revision
   announces itself (the step-by-step re-vendor/regenerate/re-align playbook is
   `schemas/README.md`).
+  - **The exemption reason is tier 2, not tier 1** (2026-07-26). The BR-*-10
+    reason (BT-120/121) on categories E/AE/K/G/O looked like a single-model fact
+    and was enforced only at construction — but the breakdown entry is *computed*
+    when the author supplies none, and a computed entry has nowhere to get a
+    reason. So an ordinary reverse-charge or intra-community invoice made
+    `compute_vat_breakdown()` raise a raw pydantic `ValidationError` from inside
+    `validate()` / `render_invoice()` / `compute_totals()` — out of the
+    `AnafError` hierarchy, from a function documented never to raise. Computed
+    entries are now built through a validation context that skips just that
+    check, and `validate()` reports the gap as a fatal `BR-E/AE/IC/G/O-10`
+    finding. A hand-written entry still must carry the reason at construction:
+    that one *is* data hygiene.
 - **The reader is strict and full-fidelity**: `read_invoice`/`parse_invoice`
   land every wire amount in the explicit fields (never recomputed), so
   round-trips are byte-stable and `validate()` can judge an upstream document's
