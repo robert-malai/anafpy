@@ -684,14 +684,16 @@ no ANAF host — then the M2 portal upload and StareD112 confirmation (below).
 **Must-keep invariants.**
 
 1. **anafpy never touches key material.** The raw RSASSA-PKCS1-v1_5/SHA-256
-   signature is delegated to the OS (Security.framework on macOS; CNG or
-   DUK+PKCS#11 on Windows later); the PIN/2FA is owned by the token middleware.
-   **No MCP tool accepts a PIN — ever** (it would enter model context). The raw
-   signer is a `RawSigner` protocol (`certificate()` + async `sign()`); its macOS
-   implementation is `KeychainRawSigner`, ctypes against Security.framework
-   (`SecKeyCreateSignature`), chosen over a compiled Swift helper (a toolchain
-   dependency) and over `pyobjc` (a heavy runtime dependency; kept as the
-   documented fallback).
+   signature is delegated to the OS (Security.framework on macOS, the certificate
+   store on Windows); the PIN/2FA is owned by the token middleware. **No MCP tool
+   accepts a PIN — ever** (it would enter model context). The raw signer is a
+   `RawSigner` protocol (`certificate()` + async `sign()`) with one
+   implementation per platform, chosen by `platform_raw_signer` — the only
+   platform branch in the strand. macOS is `KeychainRawSigner`, ctypes against
+   Security.framework (`SecKeyCreateSignature`), chosen over a compiled Swift
+   helper (a toolchain dependency) and over `pyobjc` (a heavy runtime dependency;
+   kept as the documented fallback); Windows is `WindowsStoreRawSigner` (the
+   subsection below).
 2. **Validation authority is ANAF's.** DUK's per-form validator jars *are* ANAF's
    code; anafpy runs them and never re-implements a rule. The composed values —
    the `nr_evid` payment-evidence numbers of the self-assessed forms
@@ -712,9 +714,9 @@ CryptoTokenKit extension with **no PKCS#11 dylib**, so DUK's `sunpkcs11` signing
 path (and Windows-only `mscapi`) cannot reach the key — it is reachable only
 through Security.framework, and CPython's `ssl` cannot present a non-exportable
 platform-store key. This is why signing is a separate pyHanko + raw-signer path
-rather than DUK `-s`, and why M1 signing is **macOS-only**; Windows follows over
-the same `RawSigner` seam. Details and the proven Swift reference semantics live
-in [the DUK reference](docs/anaf-reference/declaratii/duk.md).
+rather than DUK `-s`, and why M1 signing shipped **macOS-only** (Windows is the
+subsection below). Details and the proven Swift reference semantics live in
+[the DUK reference](docs/anaf-reference/declaratii/duk.md).
 
 **Distribution.** Signing needs the optional `anafpy[declaratii]` extra
 (pyHanko); the tools import-guard and raise a "install anafpy[declaratii]"
@@ -819,3 +821,44 @@ informational only, per the prepare-never-blocks rule. A mid-upload APM bounce
 (the portal redirecting the POST) is reported as "nothing was filed"; any other
 upload failure is an UNKNOWN outcome that directs the model to check
 StareD112 before re-preparing, so a filing is never silently repeated.
+
+**Windows signing (code landed 2026-07-26; live verification pending).**
+`WindowsStoreRawSigner` closes the last macOS-only seam in the strand: everything
+downstream of `RawSigner` was already platform-neutral, so the work was one class
+plus making label resolution and signer construction platform-aware
+(`resolve_signing_label` now returns
+`SelectedIdentity.bootstrap_identity` — the Keychain **name** on macOS, the SHA-1
+**thumbprint** on Windows — and ignores a selection made on the other platform,
+which a synced home directory can carry across). Decisions:
+
+- **PowerShell over ctypes.** The signer drives `powershell.exe` over
+  `Cert:\CurrentUser\My` (the store `spv/certs.py` already enumerates) rather
+  than binding `ncrypt.dll`/`crypt32.dll`:
+  `RSACertificateExtensions.GetRSAPrivateKey(...).SignData(...)` covers a CNG/KSP
+  key **and** a legacy CSP key in one call, where the ctypes route needs a
+  `CERT_NCRYPT_KEY_SPEC` branch with `NCryptSignHash` on one side and
+  `CryptSignHash` on the other. Same bytes, half the surface, and it reuses the
+  PowerShell-discovery pattern already in the repo. .NET Framework 4.6+ (so
+  Windows PowerShell 5.1) is the floor for that `SignData` overload.
+- **Thumbprint, not name.** A thumbprint cannot be ambiguous, so the macOS
+  namesake refusal (a renewed certificate beside the old one) has no Windows
+  counterpart. Selectors are shape-checked to 40 hex digits.
+- **Everything through the environment.** Both scripts read their inputs from
+  `ANAFPY_SIGN_*` variables and answer with one compact JSON object, so there is
+  no argv quoting or injection surface; an expected condition is
+  `{"error": "<slug>"}` at exit 0, leaving a non-zero exit to mean "PowerShell
+  itself failed". A test pins the referenced variable set.
+- **Bounded like the rest.** The signing run goes through
+  `_transport/subprocess.py`, so an unanswered PIN dialog is killed at the
+  `_SIGN_TIMEOUT` deadline instead of hanging (the macOS `asyncio.to_thread`
+  path can only abandon its thread).
+- **DUK `-s`/`mscapi` stays rejected** — it would route the PIN through DUK's
+  process, against invariant 1.
+
+Both signers are covered on **every** CI leg by a fake of their own platform seam
+(`_Frameworks`; the two PowerShell runners). What remains is hardware:
+whether certSIGN's Windows vToken packaging exposes the key through CNG or a CSP
+at all is only answerable on a real box, and the same box owes the strand's two
+other unverified Windows legs — a live DUK `-v`/`-p` run, and the portal curl
+bootstrap (Schannel by thumbprint, never yet exercised). The D406T live filing is
+the end-to-end proof.

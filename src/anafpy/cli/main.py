@@ -724,17 +724,18 @@ async def declaratii_sign(
     identity: str | None = None,
     identity_file: _IdentityFileOption = DEFAULT_IDENTITY_PATH,
 ) -> int:
-    """Sign a rendered PDF with the qualified certificate (macOS).
+    """Sign a rendered PDF with the qualified certificate (macOS or Windows).
 
     Args:
         pdf: Path to the rendered PDF to sign.
-        identity: Keychain identity name to sign with; overrides
+        identity: Certificate to sign with — the Keychain identity name on
+            macOS, the SHA-1 thumbprint on Windows; overrides
             ANAFPY_SIGN_IDENTITY and the persisted SPV certificate selection.
     """
     from ..declaratii.signing import (
-        KeychainRawSigner,
         default_signed_path,
         load_pdfsign,
+        platform_raw_signer,
         resolve_signing_label,
     )
 
@@ -749,7 +750,7 @@ async def declaratii_sign(
         raise AnafConfigError(f"output directory {str(out.parent)!r} does not exist")
     print(f"Signing with identity {label!r}.")
     print("Answer the certificate PIN / 2FA prompt when it appears.", flush=True)
-    signer = KeychainRawSigner(label)
+    signer = platform_raw_signer(label)
     result = await pdfsign.sign_pdf(pdf_bytes, signer)
     _write_bytes(out, result.pdf, "signed PDF")
     print(f"\n✓ Signed -> {out}")

@@ -86,9 +86,10 @@ class ServerConfig(BaseSettings):
             without OAuth credentials.
         duk_java: the ``java`` binary DUKIntegrator runs under (``ANAFPY_DUK_JAVA``);
             optional — falls back to ``java`` on ``PATH``, then to ``JAVA_HOME``.
-        sign_identity: the Keychain identity name to sign declarations with
-            (``ANAFPY_SIGN_IDENTITY``); optional — falls back to the persisted SPV
-            certificate selection (the same qualified certificate).
+        sign_identity: the platform-store certificate to sign declarations with
+            (``ANAFPY_SIGN_IDENTITY``) — the Keychain identity name on macOS, the
+            SHA-1 thumbprint on Windows; optional — falls back to the persisted
+            SPV certificate selection (the same qualified certificate).
         declaratii_upload: whether the declaration portal-upload tools
             (``declaratie_portal_login`` / ``declaratie_portal_status`` /
             ``declaratie_prepare`` / ``declaratie_submit``) are served

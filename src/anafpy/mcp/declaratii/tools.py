@@ -54,9 +54,9 @@ from ...declaratii.duk import fetch_feed_versions
 from ...declaratii.install import MANAGED_DUK_DIR, DukInstaller
 from ...declaratii.models import DeclarationStatusList, DukInstallReport
 from ...declaratii.signing import (
-    KeychainRawSigner,
     default_signed_path,
     load_pdfsign,
+    platform_raw_signer,
     resolve_signing_label,
 )
 from ...declaratii.upload import PortalCurlBootstrapper
@@ -268,10 +268,10 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         annotations=MUTATING,
         description=cleandoc(f"""
             Sign a rendered declaration PDF with the user's qualified
-            certificate (macOS only in this release). THIS FIRES THE USER'S
-            PIN/2FA APPROVAL PROMPT on their token or phone — warn them it is
-            coming, and call this only after they explicitly approve, passing
-            confirm=true.
+            certificate from the platform key store (macOS Keychain or the
+            Windows certificate store). THIS FIRES THE USER'S PIN/2FA APPROVAL
+            PROMPT on their token or phone — warn them it is coming, and call
+            this only after they explicitly approve, passing confirm=true.
 
             `pdf_path` is a declaratie_render output; the signed PDF defaults
             to '<name>-semnat.pdf' next to it, or set `save_as`. One attempt
@@ -312,7 +312,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             label = resolve_signing_label(
                 config.sign_identity, identity_path=config.spv_identity_path
             )
-            signer = await asyncio.to_thread(KeychainRawSigner, label)
+            signer = await asyncio.to_thread(platform_raw_signer, label)
             signed = await pdfsign.sign_pdf(pdf_bytes, signer)
             path = await asyncio.to_thread(
                 write_artifact, target, signed.pdf, overwrite=overwrite

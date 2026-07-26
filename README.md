@@ -106,7 +106,8 @@ no-auth services):
 - **See exactly which companies your certificate can query** — SPV reports the
   authorization inventory on every call.
 
-**Prepare and sign a tax declaration** (local; signing is macOS-only for now):
+**Prepare and sign a tax declaration** (local; signing needs your certificate in
+the macOS Keychain or the Windows certificate store):
 
 - **Fill in, validate, render, and sign a declaration** from unstructured info —
   an accountant's email, a spreadsheet, "file my VAT return for March": Claude

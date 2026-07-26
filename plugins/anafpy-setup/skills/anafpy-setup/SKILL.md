@@ -226,8 +226,8 @@ there.
 Only offer this if they want Claude to fill in, validate, render, and **sign** a
 tax declaration (D300 VAT return first) on this computer. Nothing is filed with
 ANAF through these tools — Claude produces a signed PDF they then upload on the
-portal manually. **Signing is macOS-only** right now; on Windows, offer only the
-validate/render half and say signing isn't available yet.
+portal manually. Signing works on **macOS and Windows**, using the qualified
+certificate in the system's own certificate store.
 
 These tools drive ANAF's own desktop validator, **DUKIntegrator**, which anafpy
 installs itself:
@@ -252,8 +252,9 @@ After they restart Claude, verify by asking Cowork *"check the declaration setup
 out-of-date validator (command-line DUK does not auto-update; `anafpy duk update`
 or the `declaratie_duk_install` tool refreshes it). Signing reuses the
 **same qualified certificate** as SPV (step 8): if they selected one there, the
-signer picks it up; otherwise set `"ANAFPY_SIGN_IDENTITY"` to the certificate's
-Keychain name. Signing fires the PIN/2FA on their device — the same human gate as
+signer picks it up; otherwise set `"ANAFPY_SIGN_IDENTITY"` — on macOS the
+certificate's Keychain name, on Windows its thumbprint (what `anafpy spv certs`
+lists). Signing fires the PIN/2FA on their device — the same human gate as
 everywhere else; you never handle the PIN.
 
 ## When something fails

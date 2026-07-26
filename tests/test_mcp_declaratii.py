@@ -367,7 +367,7 @@ async def test_sign_refuses_collision_before_constructing_signer(
             constructed = True
 
     monkeypatch.setattr(
-        "anafpy.mcp.declaratii.tools.KeychainRawSigner", UnexpectedSigner
+        "anafpy.mcp.declaratii.tools.platform_raw_signer", UnexpectedSigner
     )
     server = create_server(_config(tmp_path))
     source = tmp_path / "d300.pdf"
@@ -416,7 +416,7 @@ async def test_sign_write_failure_names_target(
         lambda *args, **kwargs: "Test Identity",
     )
     monkeypatch.setattr(
-        "anafpy.mcp.declaratii.tools.KeychainRawSigner", lambda label: object()
+        "anafpy.mcp.declaratii.tools.platform_raw_signer", lambda label: object()
     )
     monkeypatch.setattr("anafpy.mcp.declaratii.tools.write_artifact", denied_write)
     server = create_server(_config(tmp_path))

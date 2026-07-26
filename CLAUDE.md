@@ -164,8 +164,11 @@ src/anafpy/
     upload.py            # portal filing (WAS6DUS): PortalCurlBootstrapper +
                          # DeclarationUploadClient (rejection page = returned
                          # outcome; probe() = no-2FA session check)
-    signing.py           # RawSigner protocol + KeychainRawSigner (macOS,
-                         # ctypes -> Security.framework; no key material)
+    signing.py           # RawSigner protocol + one signer per platform, picked
+                         # by platform_raw_signer: KeychainRawSigner (macOS,
+                         # ctypes -> Security.framework) / WindowsStoreRawSigner
+                         # (powershell -> Cert:\CurrentUser\My by thumbprint);
+                         # no key material either way
     pdfsign.py           # sign_pdf via pyHanko — needs anafpy[declaratii]
   mcp/                   # MCP server — split BY SERVICE; the shared core is
                          # only what 2+ services genuinely use

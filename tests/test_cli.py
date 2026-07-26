@@ -394,6 +394,36 @@ def test_declaratii_render_writes_pdf(
     assert out.read_bytes().startswith(b"%PDF")
 
 
+def test_declaratii_sign_writes_the_signed_pdf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Both platform signers fire a real approval prompt, so the seam is faked;
+    # what this covers is the CLI wiring — the platform dispatch is reached, the
+    # certificate is named BEFORE the prompt, and the '-semnat' convention holds.
+    class FakeResult:
+        pdf = b"%PDF-1.7 signed"
+        chain_complete = True
+        warning: str | None = None
+
+    class FakePdfSign:
+        async def sign_pdf(self, pdf: bytes, signer: object, **_: Any) -> FakeResult:
+            return FakeResult()
+
+    monkeypatch.setenv("ANAFPY_SIGN_IDENTITY", "Test Identity")
+    monkeypatch.setattr("anafpy.declaratii.signing.load_pdfsign", lambda: FakePdfSign())
+    monkeypatch.setattr(
+        "anafpy.declaratii.signing.platform_raw_signer", lambda label: object()
+    )
+    pdf = tmp_path / "d300.pdf"
+    pdf.write_bytes(b"%PDF-1.7\n")
+
+    code = main(["declaratii", "sign", str(pdf)])
+
+    assert code == 0
+    assert "Test Identity" in capsys.readouterr().out
+    assert (tmp_path / "d300-semnat.pdf").read_bytes() == b"%PDF-1.7 signed"
+
+
 def test_declaratii_validate_prints_warnings_on_ok(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

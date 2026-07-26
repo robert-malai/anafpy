@@ -323,8 +323,8 @@ D112 și orice alt formular acoperit de validatorul ANAF). Depunerea merge pe
 portalul real al ANAF (declarațiile nu au un mediu de test) printr-un flux de
 confirmare în doi pași, iar dacă preferi poți dezactiva depunerea complet cu
 `ANAFPY_DECLARATII_UPLOAD: "off"` în blocul `env` — Claude îți predă atunci
-PDF-ul semnat, iar tu îl încarci pe portal. Semnarea funcționează deocamdată
-doar pe macOS.
+PDF-ul semnat, iar tu îl încarci pe portal. Semnarea funcționează pe macOS și pe
+Windows, cu certificatul din magazinul de certificate al sistemului.
 
 Aceste unelte rulează validatorul desktop al ANAF, **DUKIntegrator**, așa că îl
 instalezi o singură dată:
@@ -361,8 +361,10 @@ rulează `declaratie_duk_status`, care confirmă instalarea și te avertizează 
 un validator este învechit (DUKIntegrator în linie de comandă nu se actualizează
 singur, spre deosebire de fereastra sa desktop). Semnarea folosește **același
 certificat calificat** ca SPV (pasul 7): dacă ai selectat unul acolo, semnatarul
-de declarații îl refolosește; altfel setează `"ANAFPY_SIGN_IDENTITY"` la numele
-certificatului din Keychain. Când Claude semnează, te avertizează mai întâi, apoi
+de declarații îl refolosește; altfel setează `"ANAFPY_SIGN_IDENTITY"` — pe macOS
+la numele certificatului din Keychain, pe Windows la amprenta lui (codul de 40 de
+caractere pe care îl listează `anafpy spv certs`). Când Claude semnează, te
+avertizează mai întâi, apoi
 se declanșează solicitarea de PIN/2FA a token-ului tău — aprobând-o pe
 dispozitivul tău obții PDF-ul semnat.
 

@@ -127,7 +127,8 @@ your certificate PIN/2FA once (like `spv_login`), and the session it
 establishes is probed — without any 2FA — before anything is uploaded.
 The authoring tools need DUKIntegrator + Java — `declaratie_duk_install`
 provisions DUK itself into `~/.anafpy/duk-dist` (an explicit `ANAFPY_DUK_DIR`
-wins over the managed install) — and signing is macOS-only for now; the
+wins over the managed install) — and signing needs your qualified certificate in
+the platform key store (macOS Keychain or the Windows certificate store); the
 status/recipisa tools ride ANAF's public StareD112 service and need no
 configuration and no login at all.
 
@@ -171,7 +172,7 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_SPV_IDENTITY_FILE` | Persisted SPV certificate selection (default `~/.anafpy/spv-identity.json`) |
 | `ANAFPY_DUK_DIR` | An extracted DUKIntegrator `dist/` folder; overrides the managed install that `declaratie_duk_install` maintains at `~/.anafpy/duk-dist` |
 | `ANAFPY_DUK_JAVA` | The `java` binary DUKIntegrator runs under (optional; falls back to `java` on `PATH`, then to `JAVA_HOME`) |
-| `ANAFPY_SIGN_IDENTITY` | Keychain identity name to sign declarations with (optional; falls back to the persisted SPV certificate selection) |
+| `ANAFPY_SIGN_IDENTITY` | Certificate to sign declarations with — the Keychain identity name on macOS, the SHA-1 thumbprint on Windows (optional; falls back to the persisted SPV certificate selection) |
 | `ANAFPY_DECLARATII_UPLOAD` | Set to `off` to opt out of automated declaration filing — the portal tools (`declaratie_portal_*`, `declaratie_prepare`, `declaratie_submit`) are then not served and Claude guides manual filing instead (default: on) |
 
 The OAuth certificate/browser login stays host-side (`anafpy auth login` —

@@ -87,16 +87,15 @@ async def test_live_validate_and_render_d406t(tmp_path: Path) -> None:
     "2FA twice — set ANAFPY_LIVE_FILE_D406T=1 to run it",
 )
 async def test_live_file_d406t_on_portal(tmp_path: Path) -> None:
-    if sys.platform != "darwin":
-        pytest.skip("signing and the portal bootstrap are macOS-only for now")
+    if sys.platform not in ("darwin", "win32"):
+        pytest.skip("signing and the portal bootstrap need macOS or Windows")
     from anafpy.declaratii import (
         DeclarationStatusClient,
         DeclarationUploadClient,
-        KeychainRawSigner,
         PortalCurlBootstrapper,
         pdfsign,
     )
-    from anafpy.declaratii.signing import resolve_signing_label
+    from anafpy.declaratii.signing import platform_raw_signer, resolve_signing_label
 
     duk = _duk()
     xml = _d406t_xml()
@@ -105,9 +104,12 @@ async def test_live_file_d406t_on_portal(tmp_path: Path) -> None:
     pdf_path = tmp_path / "d406t.pdf"
     assert (await duk.render("D406T", xml, pdf_path)).ok, "DUK render failed"
 
-    # 2FA #1: the qualified signature.
+    # 2FA #1: the qualified signature. The one selector serves both steps — the
+    # signer and the portal bootstrap take the same per-platform form.
     identity = resolve_signing_label()
-    signed = await pdfsign.sign_pdf(pdf_path.read_bytes(), KeychainRawSigner(identity))
+    signed = await pdfsign.sign_pdf(
+        pdf_path.read_bytes(), platform_raw_signer(identity)
+    )
     assert signed.pdf.startswith(b"%PDF")
     (tmp_path / "d406t-semnat.pdf").write_bytes(signed.pdf)
 

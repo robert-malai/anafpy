@@ -104,8 +104,9 @@ later, 'Documentul este valid' means accepted) and
 `declaratie_recipisa` saves the signed filing receipt PDF to disk — recipisas
 are only available ~60 days, so advise archiving it promptly.
 `declaratie_duk_status` reports the DUKIntegrator install and validator
-staleness. The authoring tools need ANAFPY_DUK_DIR set (signing is macOS-only
-for now); the status/recipisa tools need nothing; the portal-filing tools can
+staleness. The authoring tools need ANAFPY_DUK_DIR set (signing needs the
+qualified certificate in the platform key store — macOS or Windows); the
+status/recipisa tools need nothing; the portal-filing tools can
 be opted out with ANAFPY_DECLARATII_UPLOAD=off (then guide the user through
 manual filing at anaf.ro → Depunere declarații).
 

@@ -276,7 +276,9 @@ Romanian CUI check digit uses key `753217532` (sum of digit-products, ×10 mod 1
 10→0). The CUI comes from the user and DUK validates it, so anafpy needs no CUI
 helper.
 
-## 5. Signing on macOS — the CryptoTokenKit finding
+## 5. Signing (platform findings)
+
+### 5.1 macOS — the CryptoTokenKit finding
 
 - certSIGN Paperless vToken on macOS is a **CryptoTokenKit extension**
   (`ro.certsign.vtoken.ctke`; visible via `security list-smartcards`). There is
@@ -299,8 +301,6 @@ helper.
   answered with the success page + upload index — see the
   [portal-upload reference](portal-upload.md) §4/§5. (Acceptance of a
   **leaf-only** CMS — the AIA-fetch-failed fallback — remains unverified.)
-- Windows follows in a later milestone (a `CngRawSigner` via CNG, or DUK `-s`
-  with `mscapi`), over the same raw-signer seam.
 - **Why not DUK's own `-s` on macOS?** The community setup
   ([nokeect/duk-integrator-macos]) does sign through DUK, by wiring `safeNet.cfg`'s
   `library=` at a **SafeNet** PKCS#11 dylib (`/usr/local/lib/libeTPkcs11.dylib`).
@@ -314,6 +314,36 @@ helper.
 anafpy ports the raw-signing semantics to **ctypes against Security.framework**
 (no build step, no new dependency) in `anafpy.declaratii.signing`. The proven
 Swift reference program is preserved below as the semantic spec.
+
+### 5.2 Windows — the certificate store
+
+> Code landed 2026-07-26; **live verification on a real Windows box is pending**,
+> so everything here is the reasoned design, not a confirmed wire fact. Mark it
+> confirmed only after a signature from an actual token.
+
+- Same pipeline as macOS — DUK `-p` renders, **pyHanko** embeds the
+  `adbe.pkcs7.detached` CMS — with the raw operation delegated to
+  `Cert:\CurrentUser\My`, the store `anafpy.spv.certs` already enumerates for
+  SPV. The selector is the certificate's **SHA-1 thumbprint** (Schannel's
+  cert-store syntax uses it too, so one selector serves both signing and the
+  portal login).
+- The raw signature is
+  `[Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)`
+  followed by `.SignData($bytes, SHA256, Pkcs1)`, run under
+  `powershell.exe -NoProfile -NonInteractive`. That one call covers both key
+  kinds — a **CNG/KSP** key (`RSACng`) and a **legacy CSP** key
+  (`RSACryptoServiceProvider`) — which is why anafpy binds no `ncrypt.dll`. The
+  `SignData(byte[], HashAlgorithmName, RSASignaturePadding)` overload needs
+  .NET Framework 4.6+, i.e. Windows PowerShell 5.1 as shipped.
+- The key stays **non-exportable**: signing happens inside the middleware, and
+  its PIN dialog is raised on the user's desktop — so this, like `spv login`, is
+  a host-side interactive step and cannot run headless.
+- **Why not DUK `-s` with `mscapi`?** It would route the PIN through DUK's
+  process, which the strand's first invariant forbids. (Its `sunpkcs11` sibling
+  is separately dead on macOS — §5.1.)
+- **Open questions for the live run**: whether certSIGN's Windows vToken
+  packaging registers a CSP/KSP that surfaces the key here at all; and whether
+  the middleware's approval fits inside the 110 s signing budget.
 
 ### Appendix A — proven raw-signer semantics (Swift reference)
 

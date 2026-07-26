@@ -79,21 +79,27 @@ an explicit due date), `profit_tax_evidence_number` (D101 — prefix `11`, a
 liquidation flag), and `special_vat_evidence_number` (D301 — the new-means-of-
 transport flag).
 
-## Signing (macOS)
+## Signing (macOS, Windows)
 
 anafpy never touches key material: the raw RSA signature is delegated to the OS,
-and the token middleware owns the PIN/2FA. On macOS the qualified certificate
-lives behind a CryptoTokenKit extension (no PKCS#11 dylib), so the key is reached
-through Security.framework via `KeychainRawSigner`; **each signature fires the
-token's approval prompt**.
+and the token middleware owns the PIN/2FA — **each signature fires the token's
+approval prompt**. `platform_raw_signer` picks the implementation, so calling code
+is the same on both platforms:
+
+- **macOS** — the qualified certificate lives behind a CryptoTokenKit extension
+  (no PKCS#11 dylib), so the key is reached through Security.framework via
+  `KeychainRawSigner`. The selector is the Keychain identity **name**.
+- **Windows** — `WindowsStoreRawSigner` signs through `Cert:\CurrentUser\My`,
+  the same store SPV uses. The selector is the certificate's SHA-1
+  **thumbprint**.
 
 ```python
-from anafpy.declaratii import KeychainRawSigner, load_pdfsign
+from anafpy.declaratii import load_pdfsign, platform_raw_signer
 from anafpy.declaratii.signing import resolve_signing_label
 
 pdfsign = load_pdfsign()                 # clear install hint if the extra is absent
 label = resolve_signing_label()          # ANAFPY_SIGN_IDENTITY / persisted SPV cert
-signer = KeychainRawSigner(label)        # same qualified certificate as SPV
+signer = platform_raw_signer(label)      # same qualified certificate as SPV
 result = await pdfsign.sign_pdf(Path("d300.pdf").read_bytes(), signer)
 Path("d300-semnat.pdf").write_bytes(result.pdf)
 ```
@@ -107,10 +113,12 @@ is embedded — deeper intermediates are not chased. If fetching or parsing fail
 the CMS is leaf-only and `result.chain_complete` is `False` (portal acceptance
 of a leaf-only chain is unverified). The identity defaults to the persisted SPV certificate selection
 (`anafpy spv select`) — the same qualified certificate — or set
-`ANAFPY_SIGN_IDENTITY`.
+`ANAFPY_SIGN_IDENTITY` to the Keychain name (macOS) or the thumbprint (Windows).
+A selection made on the *other* platform is ignored rather than mistranslated, so
+a home directory synced across machines cannot pick the wrong selector.
 
-**Windows signing is not in this release**; the `RawSigner` protocol is the seam
-a `CngRawSigner` will slot into.
+The Windows path is **not yet live-verified** on a real certificate store; the
+macOS one is (a D406T filed 2026-07-17 was accepted by the portal).
 
 ## Filing on the portal
 

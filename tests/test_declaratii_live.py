@@ -114,14 +114,14 @@ async def test_live_stared112_status_and_recipisa(tmp_path: Path) -> None:
 async def test_live_sign_nil_d300(tmp_path: Path) -> None:
     import sys
 
-    if sys.platform != "darwin":
-        pytest.skip("signing is macOS-only in this release")
+    if sys.platform not in ("darwin", "win32"):
+        pytest.skip("signing needs a platform key store — macOS or Windows")
     from anafpy.declaratii import pdfsign
-    from anafpy.declaratii.signing import KeychainRawSigner, resolve_signing_label
+    from anafpy.declaratii.signing import platform_raw_signer, resolve_signing_label
 
     pdf = tmp_path / "d300.pdf"
     assert (await _duk().render("D300", _D300_NIL, pdf)).ok
-    signer = KeychainRawSigner(resolve_signing_label())
+    signer = platform_raw_signer(resolve_signing_label())
     result = await pdfsign.sign_pdf(pdf.read_bytes(), signer)
     assert result.pdf.startswith(b"%PDF")
     (tmp_path / "d300-semnat.pdf").write_bytes(result.pdf)

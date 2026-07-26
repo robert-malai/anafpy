@@ -307,7 +307,8 @@ validator covers). Filing goes to ANAF's real declaration portal (declarations
 have no test environment) through a two-step confirmation flow, and you can
 opt out of it entirely with `ANAFPY_DECLARATII_UPLOAD: "off"` in the `env`
 block — Claude then hands you the signed PDF to upload on the portal yourself.
-Signing is macOS-only for now.
+Signing works on macOS and Windows, with your certificate in the system's own
+certificate store.
 
 These tools run ANAF's own desktop validator, **DUKIntegrator** — and anafpy
 installs it for you:
@@ -339,9 +340,10 @@ desktop window — Claude fixes that with `declaratie_duk_install`, and the
 terminal equivalent is `anafpy duk update`). Signing uses the **same qualified
 certificate** as SPV (step 7):
 if you selected one there, the declaration signer reuses it; otherwise set
-`"ANAFPY_SIGN_IDENTITY"` to the certificate's Keychain name. When Claude signs, it
-warns you first, then your token's PIN/2FA prompt fires — approving it on your
-device produces the signed PDF.
+`"ANAFPY_SIGN_IDENTITY"` — on macOS to the certificate's Keychain name, on
+Windows to its thumbprint (the 40-character code `anafpy spv certs` lists). When
+Claude signs, it warns you first, then your token's PIN/2FA prompt fires —
+approving it on your device produces the signed PDF.
 
 ## Good to know
 

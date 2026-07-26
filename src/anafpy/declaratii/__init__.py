@@ -24,9 +24,10 @@ Public surface:
   :func:`default_duk_dir`) — managed DUK provisioning from ANAF's update feed
   (``anafpy duk install``); an explicit ``ANAFPY_DUK_DIR`` wins over the
   managed dist.
-* :class:`RawSigner` protocol and its macOS :class:`KeychainRawSigner`
-  implementation. :func:`load_pdfsign` loads the optional pyHanko embedding
-  module with a clear install hint.
+* :class:`RawSigner` protocol with a :class:`KeychainRawSigner` (macOS) and a
+  :class:`WindowsStoreRawSigner` (Windows) implementation, chosen by
+  :func:`platform_raw_signer`. :func:`load_pdfsign` loads the optional pyHanko
+  embedding module with a clear install hint.
 * :class:`DeclarationStatusClient` (+ :class:`DeclarationStatusList`,
   :class:`DeclarationDocument`, :class:`DeclarationState`) — filing status and
   recipisa download over the public StareD112 service.
@@ -59,7 +60,14 @@ from .nr_evid import (
     profit_tax_evidence_number,
     special_vat_evidence_number,
 )
-from .signing import KeychainRawSigner, RawSigner, default_signed_path, load_pdfsign
+from .signing import (
+    KeychainRawSigner,
+    RawSigner,
+    WindowsStoreRawSigner,
+    default_signed_path,
+    load_pdfsign,
+    platform_raw_signer,
+)
 from .status import DeclarationStatusClient
 from .upload import DeclarationUploadClient, PortalCurlBootstrapper
 
@@ -80,12 +88,14 @@ __all__ = [
     "PortalCurlBootstrapper",
     "PortalUploadResult",
     "RawSigner",
+    "WindowsStoreRawSigner",
     "default_duk_dir",
     "default_signed_path",
     "fetch_feed_versions",
     "load_pdfsign",
     "obligation_evidence_number",
     "payment_evidence_number",
+    "platform_raw_signer",
     "profit_tax_evidence_number",
     "special_vat_evidence_number",
 ]

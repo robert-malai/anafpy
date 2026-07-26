@@ -130,9 +130,22 @@ browser). Two curl loose ends:
 
 ## Step 9 — declarations
 
-Signing is **not available on Windows** yet: offer the validate/render half
-plus the no-login status/recipisa tools, and say plainly that signing, and
-therefore the signed-PDF filing flow, need a Mac for now.
+The full flow is available here — validate, render, **sign**, and the
+no-login status/recipisa tools. Signing goes through the **Windows certificate
+store** (`Cert:\CurrentUser\My`, the same certificates step 8 lists), so it needs
+nothing installed beyond the token's own middleware, and the PIN prompt is the
+middleware's own — you never handle it.
+
+Two things to tell the user plainly:
+
+- Windows signing is **newer than the macOS path and not yet confirmed against
+  every token**. If `anafpy declaratii sign` reports that the key is not
+  reachable as an RSA key, that is their middleware not exposing it through
+  CNG/CSP — not a configuration mistake they can fix. Fall back to offering the
+  validate/render half plus manual portal filing, and say so directly.
+- The signer selects the certificate by **thumbprint**, not by name. A step-8
+  `anafpy spv select` covers it; otherwise set `"ANAFPY_SIGN_IDENTITY"` in the
+  `env` block to the 40-character thumbprint that `anafpy spv certs` prints.
 
 Java probe (JRE/JDK 8+; DUKIntegrator needs it):
 
