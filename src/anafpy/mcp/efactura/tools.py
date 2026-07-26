@@ -71,7 +71,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
             ) from exc
         messages = [
             m
-            async for m in ctx.efactura().list_messages(
+            async for m in ctx.efactura.list_messages(
                 cif=resolved,
                 days=days,
                 start=_parse_window_dt(start, field="start"),
@@ -112,7 +112,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         save_zip_as: str | None = None,
         overwrite: bool = False,
     ) -> dict[str, object]:
-        msg = await ctx.efactura().download(message_id)
+        msg = await ctx.efactura.download(message_id)
         content = (
             msg.content_xml.decode("utf-8", errors="replace")
             if msg.content_xml is not None
@@ -161,7 +161,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         mime_type="application/pdf",
     )
     async def efactura_message_pdf(message_id: str) -> bytes:
-        msg = await ctx.efactura().download(message_id)
+        msg = await ctx.efactura.download(message_id)
         if msg.content_xml is None:
             raise AnafResponseError(
                 "the message has no XML content to render", status_code=200
@@ -184,7 +184,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     )
     async def efactura_validate(document: UblXmlInput) -> dict[str, object]:
         xml = document.resolve()
-        result = await ctx.public().validate_invoice(
+        result = await ctx.public.validate_invoice(
             xml, standard=transform_standard(xml)
         )
         return {
@@ -205,7 +205,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         """),
     )
     async def efactura_get_status(upload_id: str) -> dict[str, object]:
-        status = await ctx.efactura().get_status(upload_id)
+        status = await ctx.efactura.get_status(upload_id)
         return {
             "state": status.state.value,
             "errors": status.errors,
@@ -347,7 +347,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
             prepare_tools="efactura_prepare*",
             check_hint="efactura_list_messages, or efactura_get_status "
             "if an upload id is known",
-            client=ctx.efactura,
+            client=lambda: ctx.efactura,
             upload=_upload,
         )
 

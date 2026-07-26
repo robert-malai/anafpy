@@ -50,8 +50,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     async def etransport_list(days: int, cif: str | None = None) -> dict[str, object]:
         resolved = cfg.require_cif(cif)
         notifications = [
-            n
-            async for n in ctx.etransport().list_notifications(days=days, cif=resolved)
+            n async for n in ctx.etransport.list_notifications(days=days, cif=resolved)
         ]
         return {
             "notifications": [n.model_dump() for n in notifications],
@@ -67,7 +66,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         """),
     )
     async def etransport_get_status(upload_id: str) -> dict[str, object]:
-        status = await ctx.etransport().get_status(upload_id)
+        status = await ctx.etransport.get_status(upload_id)
         return {
             "state": status.state.value,
             "errors": status.errors,
@@ -88,7 +87,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         uit: str | None = None,
         declarant_ref: str | None = None,
     ) -> dict[str, object]:
-        result = await ctx.etransport().info(
+        result = await ctx.etransport.info(
             organizer_cui=organizer_cui,
             declarant_cui=declarant_cui,
             uit=uit,
@@ -272,7 +271,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
             prepare_tools="etransport_prepare",
             check_hint="etransport_list, or etransport_get_status "
             "if an upload id is known",
-            client=ctx.etransport,
+            client=lambda: ctx.etransport,
             upload=_upload,
         )
 

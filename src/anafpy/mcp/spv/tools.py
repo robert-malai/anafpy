@@ -208,7 +208,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         # (observed live 2026-07-13: the probe raised right after a good login).
         result: dict[str, object] = {"logged_in": True, "identity": selected.name}
         try:
-            listing = await ctx.spv().list_messages(60)
+            listing = await ctx.spv.list_messages(60)
         except AnafError as exc:
             result["probe_error"] = (
                 f"session established, but the identity probe failed: {exc} — "
@@ -236,7 +236,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         try:
             # 60-day window: ANAF's no-results shape omits the identity fields,
             # so the widest window gives the best chance of reporting them.
-            listing = await ctx.spv().list_messages(60)
+            listing = await ctx.spv.list_messages(60)
         except (AnafAuthError, AnafConfigError) as exc:
             return {
                 "reachable": False,
@@ -282,7 +282,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         offset: int = 0,
         limit: int = _PAGE_LIMIT,
     ) -> dict[str, object]:
-        listing = await ctx.spv().list_messages(zile, cif=cif)
+        listing = await ctx.spv.list_messages(zile, cif=cif)
         messages = listing.messages
         if tip is not None:
             wanted = tip.strip()
@@ -323,7 +323,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         overwrite: bool = False,
     ) -> dict[str, object]:
         target = _save_target(save_as, dest_dir, f"spv-{mesaj_id}.pdf")
-        document = await ctx.spv().download_document(mesaj_id)
+        document = await ctx.spv.download_document(mesaj_id)
         path = write_artifact(target, document.content, overwrite=overwrite)
         return {
             "saved_as": path,
@@ -343,7 +343,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         mime_type="application/pdf",
     )
     async def spv_message_pdf(mesaj_id: str) -> bytes:
-        return (await ctx.spv().download_document(mesaj_id)).content
+        return (await ctx.spv.download_document(mesaj_id)).content
 
     @mcp.tool(
         title="SPV: Code lists",
@@ -439,7 +439,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
                     "detail": "an identical request was already filed today; "
                     "reusing its id_solicitare (pass force=true to file again)",
                 }
-        result = await ctx.spv().request_report(request)
+        result = await ctx.spv.request_report(request)
         ctx.spv_request_log[key] = (result.request_id, today)
         return {
             "id_solicitare": result.request_id,
@@ -484,7 +484,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         check_writable(target, overwrite=overwrite)
         timeout_s = min(timeout_s, 900.0)  # keep one tool call bounded
         try:
-            document = await ctx.spv().wait_for_report(
+            document = await ctx.spv.wait_for_report(
                 id_solicitare,
                 cif=cif,
                 days=zile,

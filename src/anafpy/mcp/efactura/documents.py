@@ -57,7 +57,7 @@ async def render_pdf(ctx: AppContext, xml: bytes) -> bytes:
     ``transformare`` still answers 200 with a JSON error body when it cannot render,
     so a non-PDF response is raised as :class:`AnafResponseError`, not written out.
     """
-    pdf = await ctx.public().render_invoice_pdf(
+    pdf = await ctx.public.render_invoice_pdf(
         xml, standard=transform_standard(xml), validate=False
     )
     if not pdf.startswith(b"%PDF"):

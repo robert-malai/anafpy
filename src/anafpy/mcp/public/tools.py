@@ -38,7 +38,7 @@ def register(mcp: FastMCP, ctx: AppContext) -> None:
     async def anaf_lookup_taxpayers(
         cuis: list[str | int], date: str | None = None
     ) -> dict[str, object]:
-        result = await ctx.public().lookup_taxpayers(cuis, date=date)
+        result = await ctx.public.lookup_taxpayers(cuis, date=date)
         return _lookup_payload(result)
 
     @mcp.tool(
@@ -56,7 +56,7 @@ def register(mcp: FastMCP, ctx: AppContext) -> None:
     async def anaf_lookup_efactura_register(
         cuis: list[str | int], date: str | None = None
     ) -> dict[str, object]:
-        result = await ctx.public().lookup_efactura_register(cuis, date=date)
+        result = await ctx.public.lookup_efactura_register(cuis, date=date)
         return _lookup_payload(result)
 
     @mcp.tool(
@@ -73,7 +73,7 @@ def register(mcp: FastMCP, ctx: AppContext) -> None:
     async def anaf_lookup_farmers(
         cuis: list[str | int], date: str | None = None
     ) -> dict[str, object]:
-        result = await ctx.public().lookup_farmers(cuis, date=date)
+        result = await ctx.public.lookup_farmers(cuis, date=date)
         return _lookup_payload(result)
 
     @mcp.tool(
@@ -88,7 +88,7 @@ def register(mcp: FastMCP, ctx: AppContext) -> None:
     async def anaf_lookup_cult_entities(
         cuis: list[str | int], date: str | None = None
     ) -> dict[str, object]:
-        result = await ctx.public().lookup_cult_entities(cuis, date=date)
+        result = await ctx.public.lookup_cult_entities(cuis, date=date)
         return _lookup_payload(result)
 
     @mcp.tool(
@@ -101,7 +101,7 @@ def register(mcp: FastMCP, ctx: AppContext) -> None:
         """),
     )
     async def anaf_financial_statement(cui: str | int, year: int) -> dict[str, object]:
-        statement = await ctx.public().get_financial_statement(cui, year)
+        statement = await ctx.public.get_financial_statement(cui, year)
         return statement.model_dump(mode="json", exclude={"raw"})
 
 

@@ -198,7 +198,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     ) -> ValidationResult:
         try:
             xml = document.resolve()
-            result = await ctx.duk().validate(form, xml, option=option)
+            result = await ctx.duk.validate(form, xml, option=option)
         except AnafConfigError:
             raise
         except AnafError as exc:
@@ -242,7 +242,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             xml = document.resolve()
             # Fail a name collision BEFORE running DUK.
             target = ensure_writable(save_pdf_as, overwrite=overwrite)
-            result = await ctx.duk().render(form, xml, target, option=option)
+            result = await ctx.duk.render(form, xml, target, option=option)
             if not result.ok:
                 return RenderResult(
                     ok=False,
@@ -365,7 +365,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         index: str, cui: str | None = None, filed_at_counter: bool = False
     ) -> DeclarationStatusList:
         try:
-            return await ctx.declaration_status().check_status(
+            return await ctx.declaration_status.check_status(
                 index, config.require_cif(cui), filed_at_counter=filed_at_counter
             )
         except AnafError as exc:
@@ -393,7 +393,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         index: str, save_pdf_as: str, overwrite: bool = False
     ) -> ReceiptResult:
         try:
-            pdf = await ctx.declaration_status().download_receipt(index)
+            pdf = await ctx.declaration_status.download_receipt(index)
             if pdf is None:
                 return ReceiptResult(
                     ok=False,
@@ -527,7 +527,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     )
     async def declaratie_duk_status() -> dict[str, object]:
         try:
-            duk = ctx.duk()
+            duk = ctx.duk
         except AnafConfigError as exc:
             result: dict[str, object] = {
                 "installed_forms": {},
@@ -598,7 +598,7 @@ def _register_upload_tools(mcp: FastMCP, ctx: AppContext, config: ServerConfig) 
     )
     async def declaratie_portal_status() -> PortalStatusResult:
         try:
-            active = await ctx.declaration_upload().probe()
+            active = await ctx.declaration_upload.probe()
         except AnafError as exc:
             return PortalStatusResult(
                 session_active=False,
@@ -669,7 +669,7 @@ def _register_upload_tools(mcp: FastMCP, ctx: AppContext, config: ServerConfig) 
                 "then (with the user's go-ahead) call declaratie_portal_login "
                 "again — their PIN/2FA prompt fires on every attempt",
             )
-        ctx.declaration_upload().install_session(cookies)
+        ctx.declaration_upload.install_session(cookies)
         return PortalLoginResult(
             logged_in=True,
             identity=selected.name,
@@ -785,7 +785,7 @@ def _register_upload_tools(mcp: FastMCP, ctx: AppContext, config: ServerConfig) 
             )
         except ConfirmationError as exc:
             return UploadSubmitResult(accepted=False, message=str(exc))
-        client = ctx.declaration_upload()
+        client = ctx.declaration_upload
         # Probe BEFORE consuming the token: a dead session is a deterministic
         # pre-condition failure and must not burn the human's approval.
         try:
