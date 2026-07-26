@@ -10,6 +10,7 @@ explicit ``confirm=True``. The STEP-2 skeleton is the shared
 from __future__ import annotations
 
 from collections.abc import Callable
+from inspect import cleandoc
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -41,14 +42,15 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: List notifications",
         annotations=READ_ONLY,
-        description="List e-Transport notifications from the last `days` (1-60) for a "
-        "fiscal code.",
+        description=cleandoc("""
+            List e-Transport notifications from the last `days` (1-60) for a
+            fiscal code.
+        """),
     )
     async def etransport_list(days: int, cif: str | None = None) -> dict[str, object]:
         resolved = cfg.require_cif(cif)
         notifications = [
-            n
-            async for n in ctx.etransport().list_notifications(days=days, cif=resolved)
+            n async for n in ctx.etransport.list_notifications(days=days, cif=resolved)
         ]
         return {
             "notifications": [n.model_dump() for n in notifications],
@@ -58,11 +60,13 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: Upload status",
         annotations=READ_ONLY,
-        description="Get the processing state of an e-Transport upload by its upload "
-        "id (index_incarcare).",
+        description=cleandoc("""
+            Get the processing state of an e-Transport upload by its upload id
+            (index_incarcare).
+        """),
     )
     async def etransport_get_status(upload_id: str) -> dict[str, object]:
-        status = await ctx.etransport().get_status(upload_id)
+        status = await ctx.etransport.get_status(upload_id)
         return {
             "state": status.state.value,
             "errors": status.errors,
@@ -72,8 +76,10 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: Look up active declarations",
         annotations=READ_ONLY,
-        description="Look up active e-Transport declarations where a fiscal code is "
-        "the transport organiser (the `info` endpoint).",
+        description=cleandoc("""
+            Look up active e-Transport declarations where a fiscal code is the
+            transport organiser (the `info` endpoint).
+        """),
     )
     async def etransport_lookup(
         organizer_cui: str,
@@ -81,7 +87,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
         uit: str | None = None,
         declarant_ref: str | None = None,
     ) -> dict[str, object]:
-        result = await ctx.etransport().info(
+        result = await ctx.etransport.info(
             organizer_cui=organizer_cui,
             declarant_cui=declarant_cui,
             uit=uit,
@@ -95,14 +101,20 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: Code lists",
         annotations=READ_ONLY,
-        description="List one e-Transport nomenclature (code list) as "
-        "{name, code[, label]} entries. `kind` is one of: operation_types, "
-        "operation_scopes, counties, border_points, customs_offices, countries, "
-        "document_types, confirmation_types, unit_codes. The names are accepted "
-        "anywhere the etransport_prepare_* tools take an enum-coded field. "
-        "unit_codes is code-only: the closed UN/ECE Rec 20/21 list ANAF accepts "
-        "for a goods line's unit_code — check it before guessing a unit (kilogram "
-        "is KGM, piece is H87; 'KG'/'PCS' are not on the list).",
+        description=cleandoc("""
+            List one e-Transport nomenclature (code list) as {name, code[,
+            label]} entries. `kind` is one of: operation_types,
+            operation_scopes, counties, border_points, customs_offices,
+            countries, document_types, confirmation_types, unit_codes.
+
+            The names are accepted anywhere the etransport_prepare_* tools take
+            an enum-coded field.
+
+            unit_codes is code-only: the closed UN/ECE Rec 20/21 list ANAF
+            accepts for a goods line's unit_code — check it before guessing a
+            unit (kilogram is KGM, piece is H87; 'KG'/'PCS' are not on the
+            list).
+        """),
     )
     def etransport_nomenclature(kind: str) -> dict[str, object]:
         return {"kind": kind, "entries": nomenclature_entries(kind)}
@@ -110,14 +122,20 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: Prepare declaration",
         annotations=MUTATING,
-        description="STEP 1 of filing an e-Transport declaration from STRUCTURED "
-        "fields — no XML needed: compose the ANAF declaration XML from the given "
-        "fields (set correction_of_uit to file a correction of an issued UIT) and "
-        "return the exact XML + an easy-to-read preview + a confirmation token. "
-        "Show the preview for approval; then call etransport_submit with "
-        "document={'xml': <the returned xml>}, the token, and confirm=True. Does "
-        "NOT file. Enum-coded fields accept ANAF codes or member names (see "
-        "etransport_nomenclature).",
+        description=cleandoc("""
+            STEP 1 of filing an e-Transport declaration from STRUCTURED fields —
+            no XML needed: compose the ANAF declaration XML from the given
+            fields (set correction_of_uit to file a correction of an issued UIT)
+            and return the exact XML + an easy-to-read preview + a confirmation
+            token.
+
+            Show the preview for approval; then call etransport_submit with
+            document={'xml': <the returned xml>}, the token, and confirm=True.
+            Does NOT file.
+
+            Enum-coded fields accept ANAF codes or member names (see
+            etransport_nomenclature).
+        """),
     )
     async def etransport_prepare_declaration(
         declaration: FlatTransport, cif: str | None = None
@@ -127,10 +145,13 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: Prepare deletion",
         annotations=MUTATING,
-        description="STEP 1 of deleting an issued e-Transport UIT: compose the "
-        "stergere XML and return it + a preview + a confirmation token. Then call "
-        "etransport_submit with document={'xml': <the returned xml>}, the token, "
-        "and confirm=True.",
+        description=cleandoc("""
+            STEP 1 of deleting an issued e-Transport UIT: compose the stergere
+            XML and return it + a preview + a confirmation token.
+
+            Then call etransport_submit with document={'xml': <the returned
+            xml>}, the token, and confirm=True.
+        """),
     )
     async def etransport_prepare_deletion(
         uit: str, cif: str | None = None, declarant_ref: str | None = None
@@ -142,11 +163,15 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: Prepare confirmation",
         annotations=MUTATING,
-        description="STEP 1 of confirming an issued e-Transport UIT: compose the "
-        "confirmare XML and return it + a preview + a confirmation token. "
-        "confirmation_type is CONFIRMAT (10), CONFIRMAT_PARTIAL (20) or INFIRMAT "
-        "(30). Then call etransport_submit with document={'xml': <the returned "
-        "xml>}, the token, and confirm=True.",
+        description=cleandoc("""
+            STEP 1 of confirming an issued e-Transport UIT: compose the
+            confirmare XML and return it + a preview + a confirmation token.
+            confirmation_type is CONFIRMAT (10), CONFIRMAT_PARTIAL (20) or
+            INFIRMAT (30).
+
+            Then call etransport_submit with document={'xml': <the returned
+            xml>}, the token, and confirm=True.
+        """),
     )
     async def etransport_prepare_confirmation(
         uit: str,
@@ -168,10 +193,14 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: Prepare vehicle change",
         annotations=MUTATING,
-        description="STEP 1 of changing the vehicle on an issued e-Transport UIT: "
-        "compose the modifVehicul XML and return it + a preview + a confirmation "
-        "token. Then call etransport_submit with document={'xml': <the returned "
-        "xml>}, the token, and confirm=True.",
+        description=cleandoc("""
+            STEP 1 of changing the vehicle on an issued e-Transport UIT: compose
+            the modifVehicul XML and return it + a preview + a confirmation
+            token.
+
+            Then call etransport_submit with document={'xml': <the returned
+            xml>}, the token, and confirm=True.
+        """),
     )
     async def etransport_prepare_vehicle_change(
         uit: str,
@@ -197,13 +226,16 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: Prepare XML filing",
         annotations=MUTATING,
-        description="STEP 1 of filing an e-Transport document the caller already "
-        "has as XML: parse it and return an easy-to-read preview + a confirmation "
-        "token bound to this document and CIF. (To file from structured fields, "
-        "use etransport_prepare_declaration and friends instead.) Show the preview "
-        "for approval; then call etransport_submit with the token and the same "
-        "cif. Does NOT file. (There is no standalone validator — ANAF validates "
-        "the declaration on upload.)",
+        description=cleandoc("""
+            STEP 1 of filing an e-Transport document the caller already has as
+            XML: parse it and return an easy-to-read preview + a confirmation
+            token bound to this document and CIF. (To file from structured
+            fields, use etransport_prepare_declaration and friends instead.)
+
+            Show the preview for approval; then call etransport_submit with the
+            token and the same cif. Does NOT file. (There is no standalone
+            validator — ANAF validates the declaration on upload.)
+        """),
     )
     async def etransport_prepare(
         document: EtransportXmlInput, cif: str | None = None
@@ -213,10 +245,14 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: Submit filing",
         annotations=MUTATING,
-        description="STEP 2 of filing any e-Transport document: file the supplied "
-        "XML with ANAF and return the UIT code. Requires the confirmation_token "
-        "from an etransport_prepare* tool for the SAME document (for the composing "
-        "tools, document={'xml': <the xml they returned>}) and confirm=True.",
+        description=cleandoc("""
+            STEP 2 of filing any e-Transport document: file the supplied XML
+            with ANAF and return the UIT code.
+
+            Requires the confirmation_token from an etransport_prepare* tool for
+            the SAME document (for the composing tools, document={'xml': <the
+            xml they returned>}) and confirm=True.
+        """),
     )
     async def etransport_submit(
         document: EtransportXmlInput,
@@ -235,7 +271,7 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
             prepare_tools="etransport_prepare",
             check_hint="etransport_list, or etransport_get_status "
             "if an upload id is known",
-            client=ctx.etransport,
+            client=lambda: ctx.etransport,
             upload=_upload,
         )
 

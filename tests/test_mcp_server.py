@@ -1189,7 +1189,7 @@ def test_signing_key_never_read_from_env(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("ANAFPY_CLIENT_SECRET", "S")
     monkeypatch.setenv("SIGNING_KEY", "weakkey")
     monkeypatch.setenv("signing_key", "weakkey")
-    cfg = ServerConfig.from_env()
+    cfg = ServerConfig()
     assert cfg.signing_key != b"weakkey"
     assert len(cfg.signing_key) == 32
 
@@ -1202,10 +1202,10 @@ def test_signing_key_unique_per_config() -> None:
 
 def test_store_backend_read_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "file")
-    assert ServerConfig.from_env().store_backend == "file"
+    assert ServerConfig().store_backend == "file"
     # Unset/blank falls back to the default backend: the OS credential store.
     monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "")
-    assert ServerConfig.from_env().store_backend == "keyring"
+    assert ServerConfig().store_backend == "keyring"
 
 
 def test_invalid_store_backend_raises_config_error(
@@ -1213,7 +1213,19 @@ def test_invalid_store_backend_raises_config_error(
 ) -> None:
     monkeypatch.setenv("ANAFPY_TOKEN_STORE_BACKEND", "vault")
     with pytest.raises(AnafConfigError, match="ANAFPY_TOKEN_STORE_BACKEND"):
-        ServerConfig.from_env()
+        ServerConfig()
+
+
+def test_invalid_explicit_value_raises_config_error() -> None:
+    # The translation covers construction itself, not just the env-driven path:
+    # `ServerConfig()` IS the environment, so there is no second door left that
+    # would surface pydantic's own ValidationError instead. The report names the
+    # door the value came through — the field for a kwarg, the ANAFPY_* alias for
+    # an env value (above) — so it never points at a variable the caller didn't set.
+    # The ignore is the point: pydantic's synthesized constructor still catches
+    # this statically, so only a cast-away or a runtime value reaches the raise.
+    with pytest.raises(AnafConfigError, match="environment"):
+        ServerConfig(environment="staging")  # type: ignore[arg-type]
 
 
 def test_keyring_backend_builds_a_keyring_store(fake_keyring: FakeKeyring) -> None:

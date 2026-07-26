@@ -11,6 +11,8 @@ fail, with a :class:`~anafpy.exceptions.AnafConfigError` saying how to enable th
 from __future__ import annotations
 
 import time
+from functools import cached_property
+from typing import Protocol, cast
 
 from pydantic import BaseModel
 
@@ -43,6 +45,25 @@ _NO_DUK = (
     "~/.anafpy/duk-dist from ANAF's update feed, or set ANAFPY_DUK_DIR to an "
     "extracted dist/ folder"
 )
+
+#: The lazily-built clients that hold a connection, in the order shutdown closes
+#: them. Each is a :func:`~functools.cached_property`, so its presence in the
+#: instance ``__dict__`` is exactly "was it ever built?" — the others were never
+#: touched and have nothing to close.
+_LAZY_CLIENTS = (
+    "efactura",
+    "etransport",
+    "public",
+    "spv",
+    "declaration_status",
+    "declaration_upload",
+)
+
+
+class _AsyncCloseable(Protocol):
+    """What :meth:`AppContext.aclose` needs of a built client."""
+
+    async def aclose(self) -> None: ...
 
 
 class AuthStatus(BaseModel):
@@ -77,13 +98,6 @@ class AppContext:
                 client_secret=config.client_secret,
                 store=store,
             )
-        self._efactura: EFacturaClient | None = None
-        self._etransport: ETransportClient | None = None
-        self._public: PublicClient | None = None
-        self._spv: SpvClient | None = None
-        self._duk: DukIntegrator | None = None
-        self._declaration_status: DeclarationStatusClient | None = None
-        self._declaration_upload: DeclarationUploadClient | None = None
         #: Redeemed confirmation tokens (single-use gate for the submit tools).
         self.token_ledger = TokenLedger()
         #: Same-day `cerere` dedupe for agent loops: canonical params -> the
@@ -99,25 +113,19 @@ class AppContext:
             raise AnafConfigError(_NO_CREDENTIALS)
         return self._provider
 
+    @cached_property
     def efactura(self) -> EFacturaClient:
-        if self._efactura is None:
-            self._efactura = EFacturaClient(
-                self.provider, environment=self.config.environment
-            )
-        return self._efactura
+        return EFacturaClient(self.provider, environment=self.config.environment)
 
+    @cached_property
     def etransport(self) -> ETransportClient:
-        if self._etransport is None:
-            self._etransport = ETransportClient(
-                self.provider, environment=self.config.environment
-            )
-        return self._etransport
+        return ETransportClient(self.provider, environment=self.config.environment)
 
+    @cached_property
     def public(self) -> PublicClient:
-        if self._public is None:
-            self._public = PublicClient()
-        return self._public
+        return PublicClient()
 
+    @cached_property
     def spv(self) -> SpvClient:
         """The SPV client over the persisted cookie session.
 
@@ -125,37 +133,35 @@ class AppContext:
         interactive and stays host-side (``anafpy spv login``), like the OAuth
         browser flow.
         """
-        if self._spv is None:
-            self._spv = SpvClient(
-                SpvSessionProvider(store=FileSessionStore(self.config.spv_session_path))
-            )
-        return self._spv
+        return SpvClient(
+            SpvSessionProvider(store=FileSessionStore(self.config.spv_session_path))
+        )
 
+    @cached_property
     def duk(self) -> DukIntegrator:
         """The DUKIntegrator wrapper (validate / render); built lazily.
 
         Resolution: ``ANAFPY_DUK_DIR`` when configured, else the managed dist
         (``~/.anafpy/duk-dist``, provisioned by ``declaratie_duk_install``).
-        A failed resolution is not cached — the next call re-resolves, so the
-        tools pick a freshly installed dist up without a server restart.
+        A failed resolution is not cached — ``cached_property`` stores nothing
+        when the getter raises, so the next call re-resolves and the tools pick
+        a freshly installed dist up without a server restart.
 
         Raises:
             AnafConfigError: neither source is available, or the directory is
                 not a DUKIntegrator install.
         """
-        if self._duk is None:
-            directory = self.config.duk_dir or default_duk_dir()
-            if directory is None:
-                raise AnafConfigError(_NO_DUK)
-            self._duk = DukIntegrator(directory, java=self.config.duk_java)
-        return self._duk
+        directory = self.config.duk_dir or default_duk_dir()
+        if directory is None:
+            raise AnafConfigError(_NO_DUK)
+        return DukIntegrator(directory, java=self.config.duk_java)
 
+    @cached_property
     def declaration_status(self) -> DeclarationStatusClient:
         """The StareD112 status client (public, no auth — needs no configuration)."""
-        if self._declaration_status is None:
-            self._declaration_status = DeclarationStatusClient()
-        return self._declaration_status
+        return DeclarationStatusClient()
 
+    @cached_property
     def declaration_upload(self) -> DeclarationUploadClient:
         """The portal upload client, carrying the in-process APM session.
 
@@ -165,9 +171,7 @@ class AppContext:
         session is deliberately in-memory only — portal sessions die after ~10
         idle minutes, so unlike SPV's there is nothing worth persisting.
         """
-        if self._declaration_upload is None:
-            self._declaration_upload = DeclarationUploadClient()
-        return self._declaration_upload
+        return DeclarationUploadClient()
 
     def auth_status(self) -> AuthStatus:
         """Report whether a usable ANAF session is present (read-only)."""
@@ -209,17 +213,8 @@ class AppContext:
         )
 
     async def aclose(self) -> None:
-        if self._efactura is not None:
-            await self._efactura.aclose()
-        if self._etransport is not None:
-            await self._etransport.aclose()
-        if self._public is not None:
-            await self._public.aclose()
-        if self._spv is not None:
-            await self._spv.aclose()
-        if self._declaration_status is not None:
-            await self._declaration_status.aclose()
-        if self._declaration_upload is not None:
-            await self._declaration_upload.aclose()
+        for name in _LAZY_CLIENTS:
+            if (client := self.__dict__.get(name)) is not None:
+                await cast(_AsyncCloseable, client).aclose()
         if self._provider is not None:
             await self._provider.aclose()

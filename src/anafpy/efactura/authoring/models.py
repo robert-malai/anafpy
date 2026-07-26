@@ -37,6 +37,7 @@ from pydantic import (
     BaseModel,
     BeforeValidator,
     Field,
+    ValidationInfo,
     model_validator,
 )
 
@@ -191,6 +192,17 @@ _ZERO_RATE_CATEGORIES = frozenset(
 _EXEMPTION_REASON_CATEGORIES = _ZERO_RATE_CATEGORIES - {VatCategory.ZERO_RATED} | {
     VatCategory.NOT_SUBJECT
 }
+
+#: Validation context marking an entry that
+#: :meth:`InvoiceDocument.compute_vat_breakdown` derived from the lines. The
+#: BR-*-10 exemption reason is the one thing a computed entry cannot know, so
+#: requiring it at construction would make a *correctly authored* exempt document
+#: (category E/AE/K/G/O with no explicit ``vat_breakdown``) fail with a raw
+#: pydantic error deep inside ``compute_totals``/``render_invoice`` — outside the
+#: AnafError hierarchy, and from a function documented never to raise. Computed
+#: entries skip only that check; :func:`~.rules.validate` reports the gap as a
+#: proper ``BR-*-10`` finding instead.
+_COMPUTED_ENTRY_CONTEXT = {"computed_breakdown": True}
 
 # Contact shapes (BT-42/43, BT-57/58). Deliberately permissive: no e-Factura rule
 # constrains the address beyond its 100-char length. The alphanumerics-only
@@ -605,8 +617,12 @@ class VatBreakdownEntry(BaseModel):
 
     Amounts left ``None`` are computed from the lines and document-level
     allowances/charges of the same category and rate. Exemption reasons cannot be
-    computed: categories E/AE/K/G/O require one here (BR-E/AE/IC/G/O-10), which is
-    the main reason to pass explicit entries when authoring an exempt invoice.
+    computed: categories E/AE/K/G/O require one (BR-E/AE/IC/G/O-10), which is the
+    main reason to pass explicit entries when authoring an exempt invoice. An entry
+    written by hand must carry it — that is data hygiene, enforced here; an entry
+    :meth:`InvoiceDocument.compute_vat_breakdown` derived has nowhere to get it, so
+    it is built without one and :func:`~.rules.validate` reports the missing reason
+    as a fatal ``BR-*-10`` finding.
     """
 
     category: _VatCategory  # BT-118
@@ -619,7 +635,7 @@ class VatBreakdownEntry(BaseModel):
     )  # BT-120
 
     @model_validator(mode="after")
-    def _shape(self) -> VatBreakdownEntry:
+    def _shape(self, info: ValidationInfo) -> VatBreakdownEntry:
         self.rate = _check_vat_rate_shape(self.category, self.rate, required=True)
         zero_tax = self.category in _ZERO_RATE_CATEGORIES | {VatCategory.NOT_SUBJECT}
         if zero_tax and self.tax_amount:
@@ -627,7 +643,12 @@ class VatBreakdownEntry(BaseModel):
                 f"VAT category {self.category.value} carries a zero tax amount"
             )
         has_reason = self.exemption_reason or self.exemption_reason_code
-        if self.category in _EXEMPTION_REASON_CATEGORIES and not has_reason:
+        computed = bool((info.context or {}).get("computed_breakdown"))
+        if (
+            self.category in _EXEMPTION_REASON_CATEGORIES
+            and not has_reason
+            and not computed
+        ):
             raise ValueError(
                 f"VAT category {self.category.value} requires an exemption reason "
                 "text or code (BT-120/121)"
@@ -868,15 +889,21 @@ class InvoiceDocument(BaseModel):
             )
             match = explicit.get(key)
             entries.append(
-                VatBreakdownEntry(
-                    category=category,
-                    rate=rate,
-                    taxable_amount=taxable,
-                    tax_amount=tax,
-                    exemption_reason=match.exemption_reason if match else None,
-                    exemption_reason_code=(
-                        match.exemption_reason_code if match else None
-                    ),
+                # Built through the computed context: an exempt-style group with
+                # no matching explicit entry has no reason to carry, and that is
+                # rules.validate()'s BR-*-10 finding to report, not a crash here.
+                VatBreakdownEntry.model_validate(
+                    {
+                        "category": category,
+                        "rate": rate,
+                        "taxable_amount": taxable,
+                        "tax_amount": tax,
+                        "exemption_reason": match.exemption_reason if match else None,
+                        "exemption_reason_code": (
+                            match.exemption_reason_code if match else None
+                        ),
+                    },
+                    context=_COMPUTED_ENTRY_CONTEXT,
                 )
             )
         return entries

@@ -68,21 +68,18 @@ ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
   uv run python -m anafpy.mcp        # stdio; or the `anafpy-mcp` console script
 ```
 
-Server config is env-only — `ServerConfig.from_env()`; full semantics live in
-[mcp/config.py](src/anafpy/mcp/config.py)'s docstrings and the
-[docs/mcp/tools.md](docs/mcp/tools.md) table. In brief: `ANAFPY_CLIENT_ID` /
-`ANAFPY_CLIENT_SECRET` (optional — without them the public `anaf_*` tools still
-serve), `ANAFPY_TOKEN_STORE`, `ANAFPY_TOKEN_STORE_BACKEND` (`keyring` default,
-`file` for Docker/headless), `ANAFPY_ENV` (`test`/`prod`, default `prod`),
-`ANAFPY_CIF`, `ANAFPY_DOCS_DIR` (anafref resources; the wheel copy is a curated
-hatchling force-include — a wheel-map tripwire in `test_mcp_server.py` catches
-a subtree missing from the map), `ANAFPY_SKILLS_DIR` (skills-as-prompts
-source), `ANAFPY_SPV_SESSION`, `ANAFPY_SPV_IDENTITY_FILE`, `ANAFPY_CURL` (the
-curl of both certificate bootstraps; needed on Windows-on-ARM — SPV reference
-§1.1), `ANAFPY_DUK_DIR` (overrides the managed `~/.anafpy/duk-dist`),
-`ANAFPY_DUK_JAVA` (else `java` on PATH, else `JAVA_HOME`),
-`ANAFPY_SIGN_IDENTITY`, `ANAFPY_DECLARATII_UPLOAD` (default on; `off` strips
-the portal-filing tools).
+Server config is env-only — `ServerConfig()` **is** the environment (a
+`BaseSettings`; kwargs override it, which is how the tests inject values), and an
+invalid value raises `AnafConfigError`, not pydantic's `ValidationError`, so a
+misconfiguration stays inside the `AnafError` hierarchy. The variable-by-variable
+semantics live in [mcp/config.py](src/anafpy/mcp/config.py)'s docstrings and the
+[docs/mcp/tools.md](docs/mcp/tools.md) table — don't retell them here. The
+cross-cutting facts: credentials are optional (without them the public `anaf_*`
+tools still serve); `ANAFPY_DOCS_DIR`'s wheel copy is a curated hatchling
+force-include (a wheel-map tripwire in `test_mcp_server.py` catches a subtree
+missing from the map); `ANAFPY_CURL` (both certificate bootstraps; needed on
+Windows-on-ARM — SPV reference §1.1) is read at the transport layer, not by
+`ServerConfig`; `ANAFPY_DECLARATII_UPLOAD=off` strips the portal-filing tools.
 
 Codegen (only when re-vendoring XSDs / Schematron sources — see "Generated code"):
 
@@ -102,18 +99,24 @@ Module docstrings carry each file's full contract — this tree is for navigatio
 ```
 src/anafpy/
   exceptions.py          # AnafError hierarchy (see "Error model")
+  _store.py              # JsonFileStore — the 0600 atomic JSON custody shared by
+                         # the OAuth token store and the SPV session store
   _transport/base.py     # Environment/Service, shared enums, CUI normalization,
                          # error raising (Environment re-exported from `anafpy`)
   _transport/http.py     # HttpClientBase: owned/injected httpx lifecycle +
-                         # network-error translation (injected is never mutated;
-                         # empty base_url raises AnafConfigError)
+                         # network-error translation + _request_checked (the
+                         # shared non-success raise); injected is never mutated,
+                         # empty base_url raises AnafConfigError
+  _transport/poll.py     # poll_until — the ONE business-state poll loop behind
+                         # upload_and_wait (both services) and wait_for_report
   _transport/subprocess.py # bounded async runner; kills the process group on
                            # timeout (DUK JVM + platform curl)
   _transport/curl.py     # CurlBootstrapperBase — shared platform-curl machinery
                          # of the two APM certificate bootstraps (SPV + portal):
                          # curl resolution (ANAFPY_CURL), cert selectors, failure
                          # taxonomy; subclasses own choreography + judgment
-  auth/                  # OAuth2 layer: models, store, oauth, provider, callback
+  auth/                  # OAuth2 layer: models, store, oauth, provider,
+                         # callback, tlscert
   cli/main.py            # cyclopts CLI: `anafpy auth|spv|declaratii|duk ...`
   efactura/
     README.md            # module map: layer diagram (flat <-> UBL <-> wire),
@@ -167,7 +170,7 @@ src/anafpy/
   mcp/                   # MCP server — split BY SERVICE; the shared core is
                          # only what 2+ services genuinely use
     app.py               # composition root: create_server, main, auth_status
-    config.py            # ServerConfig.from_env
+    config.py            # ServerConfig — BaseSettings over ANAFPY_*
     context.py           # AppContext: providers + lazy clients + token ledger
                          # + SPV same-day request log
     gate.py              # the two-step filing gate: HMAC confirmation tokens +
@@ -177,9 +180,9 @@ src/anafpy/
     reference.py         # docs/anaf-reference/ as anafref:// resources
     prompts.py           # the workflow skills re-served as same-name prompts
     efactura/ etransport/ public/ spv/ declaratii/
-                         # per-service tools.py + models.py (+ nomenclatures,
-                         # incl. UN/ECE Rec 20/21 unit codes); resource
-                         # templates anafmsg:// and spvmsg://
+                         # per-service tools.py, plus models/nomenclatures
+                         # (incl. UN/ECE Rec 20/21 unit codes) where the service
+                         # needs them; resource templates anafmsg:// and spvmsg://
     __main__.py          # `python -m anafpy.mcp` (stdio)
 .claude-plugin/          # marketplace.json — publishes the two plugins below
 plugins/anafpy-setup/    # skill that installs + configures anafpy on an end
@@ -238,17 +241,17 @@ tests/                   # respx-mocked suite + opt-in live files (filing
 - **Auth is a separate layer.** Clients receive a `TokenProvider` and drive
   httpx via `AnafAuth`, which handles transparent refresh (incl. on 401). The
   certificate happens only in the interactive `anafpy auth login` browser flow
-  — **don't add cert/mTLS handling to clients**. ANAF registers only
-  `https://` callbacks and no public CA issues for localhost, so the default
+  — **don't add cert/mTLS handling to clients**. Because ANAF registers only
+  `https://` callbacks (and no public CA issues for localhost), the default
   login listener serves a per-attempt ephemeral self-signed cert
   (`auth/tlscert.py`; alternatives `--tls-cert/--tls-key`, `--paste`,
-  `--no-tls`; the listener binds before the browser opens and falls back to
-  paste). Every login binds a random OAuth `state`; mismatching redirects are
-  rejected (a pasted bare code is exempt). `anafpy auth logout` is **purely
-  local** — ANAF's `/revoke` is not reachable headlessly; **don't (re)add a
-  revoke call** unless ANAF routes the endpoint (DESIGN.md §3). Token
-  persistence is the `TokenStore` protocol: `KeyringTokenStore` (default; on
-  Windows splits the set across vault entries under the 2560-byte blob cap) or
+  `--no-tls`; it binds before the browser opens and falls back to paste —
+  rationale in DESIGN.md §3). Every login binds a random OAuth `state`;
+  mismatching redirects are rejected (a pasted bare code is exempt).
+  `anafpy auth logout` is **purely local** — ANAF's `/revoke` is not reachable
+  headlessly; **don't (re)add a revoke call** unless ANAF routes the endpoint
+  (DESIGN.md §3). Token persistence is the `TokenStore` protocol:
+  `KeyringTokenStore` (default; Windows-specific splitting per DESIGN.md §3) or
   `FileTokenStore` (the Docker/headless opt-out), selected by
   `ANAFPY_TOKEN_STORE_BACKEND` / `--store-backend`. The test suite installs an
   autouse in-memory fake keyring and an autouse isolated managed-DUK dir so no
@@ -258,7 +261,8 @@ tests/                   # respx-mocked suite + opt-in live files (filing
 - **Discrete methods do NO transport retry** — one call, one result-or-raise —
   so the non-idempotent `upload` POST is never silently repeated. Consumers
   bring their own retry. `tenacity` appears only in the business-state poll
-  loops (`upload_and_wait`, `wait_for_report`) and the SPV read deviation.
+  loops (`upload_and_wait`, `wait_for_report` — all three go through
+  `_transport/poll.py`'s `poll_until`) and the SPV read deviation.
 - **Module style**: `from __future__ import annotations`, explicit `__all__`,
   module + class docstrings, Google-style docstring sections. Line length 88.
   Keep new code in the voice of the surrounding files.
@@ -341,6 +345,16 @@ browser login stays CLI-side. The tool inventory with per-tool descriptions is
   the server as same-name MCP prompts (`mcp/prompts.py`; missing
   `name`/`description` frontmatter fails at server start). Never duplicate a
   playbook.
+- **Tool descriptions are `cleandoc` literals**, written inline in the
+  `@mcp.tool` / `@mcp.resource` decorator — FastMCP ships a description verbatim
+  (it dedents nothing of its own), so `inspect.cleandoc` is what strips the
+  decorator indent and the framing blank lines. Structure the shipped text:
+  a paragraph per concern, `-` bullets for every enumeration (the ANAF state
+  wordings, per-form `nr_evid` inputs, the three `accepted` verdicts, a
+  nomenclature's `kind`s). Only a description that interpolates a runtime
+  fragment is an `f` string — most carry literal braces (`{"xml": ...}`,
+  `anafmsg://{message_id}/pdf`). Parameter-level `Field(description=...)` stays
+  a plain string.
 - **Tool display names**: an English MCP `title` per tool, `Service: operation`
   (`e-Factura`, `e-Transport`, `ANAF Info`, `SPV`, `Declarations`; bare `ANAF`
   for `auth_status`). Titles are UI-only — the model sees `name` +
@@ -413,10 +427,10 @@ silently returning empty results.
   environment — on the production portal, double-gated
   (`ANAFPY_LIVE_FILE_D406T=1`, it fires the certificate 2FA twice). Don't add
   uploads to any other live file, and never file anything but D406T in that
-  one. That file's `test_validare_agrees_with_local_rules` is the **drift
-  tripwire** for CIUS-RO revisions — when it fires: re-vendor the `.sch`,
-  regenerate the code lists, re-align the translated rules
-  ([schemas/README.md](schemas/README.md)).
+  one. `test_efactura_roundtrip_live.py`'s
+  `test_validare_agrees_with_local_rules` is the **drift tripwire** for CIUS-RO
+  revisions — when it fires: re-vendor the `.sch`, regenerate the code lists,
+  re-align the translated rules ([schemas/README.md](schemas/README.md)).
 - **Keep the docs in sync — each fact in ONE home, link instead of retelling.**
   CLAUDE.md states current rules and layout (no dates, no history);
   [DESIGN.md](DESIGN.md) owns decisions, dates, and reversals; module

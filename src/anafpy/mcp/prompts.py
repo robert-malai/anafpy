@@ -27,7 +27,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from ..exceptions import AnafConfigError
-from .config import ServerConfig
+from .config import ServerConfig, bundled_dir
 
 __all__ = ["SkillDocument", "load_skills", "register"]
 
@@ -75,7 +75,7 @@ def load_skills(skills_dir: Path) -> list[SkillDocument]:
 
 def register(mcp: FastMCP, cfg: ServerConfig) -> None:
     """Expose the workflow skills as user-invoked MCP prompts."""
-    if (skills := _skills_dir(cfg)) is None:
+    if (skills := bundled_dir(cfg.skills_dir, _REPO_SKILLS, _PACKAGED_SKILLS)) is None:
         return
     for skill in load_skills(skills):
         mcp.prompt(name=skill.name, description=skill.description)(
@@ -97,15 +97,6 @@ def _required_field(post: frontmatter.Post, key: str, path: Path) -> str:
     if not isinstance(value, str) or not value.strip():
         raise AnafConfigError(f"skill file {path} frontmatter is missing {key!r}")
     return value.strip()
-
-
-def _skills_dir(cfg: ServerConfig) -> Path | None:
-    if cfg.skills_dir is not None:
-        return cfg.skills_dir if cfg.skills_dir.is_dir() else None
-    for candidate in (_REPO_SKILLS, _PACKAGED_SKILLS):
-        if candidate.is_dir():
-            return candidate
-    return None
 
 
 def _make_prompt(body: str) -> Callable[..., str]:

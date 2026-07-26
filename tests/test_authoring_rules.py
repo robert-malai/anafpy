@@ -53,6 +53,54 @@ def test_exempt_invoice_with_reason_is_clean() -> None:
     assert validate(doc).ok
 
 
+@pytest.mark.parametrize(
+    ("category", "rule"),
+    [
+        (VatCategory.EXEMPT, "BR-E-10"),
+        (VatCategory.REVERSE_CHARGE, "BR-AE-10"),
+        (VatCategory.INTRA_COMMUNITY, "BR-IC-10"),
+        (VatCategory.EXPORT, "BR-G-10"),
+        (VatCategory.NOT_SUBJECT, "BR-O-10"),
+    ],
+)
+def test_computed_breakdown_reports_missing_exemption_reason(
+    category: VatCategory, rule: str
+) -> None:
+    """An exempt-style invoice with no explicit breakdown must REPORT, not raise.
+
+    The reason (BT-120/121) cannot be derived from the lines, so the computed
+    entry is built without one and the gap surfaces here as its official rule
+    id. Before this was a rule, ``compute_vat_breakdown`` raised a raw pydantic
+    error — out of the AnafError hierarchy — from inside ``validate`` /
+    ``render_invoice`` / ``compute_totals`` for the everyday reverse-charge and
+    intra-community cases.
+    """
+    not_subject = category is VatCategory.NOT_SUBJECT
+    rate = None if not_subject else Decimal(0)
+    overrides: dict[str, object] = {
+        "lines": [make_line(vat_category=category, vat_rate=rate)]
+    }
+    if not_subject:
+        # O forbids the VAT identifiers it would otherwise trip (BR-O-02/03/04).
+        overrides["seller"] = make_seller(vat_id=None, tax_registration_id="12345678")
+        overrides["buyer"] = make_buyer(vat_id=None, legal_registration_id="J40/1/2020")
+    doc = make_invoice(**overrides)
+    report = validate(doc)
+    assert rule in {finding.rule for finding in report.findings}
+    assert not report.ok
+
+    # Supplying the reason clears it — and the totals still compute either way.
+    assert doc.compute_totals().tax_inclusive is not None
+    with_reason = doc.model_copy(
+        update={
+            "vat_breakdown": [
+                VatBreakdownEntry(category=category, exemption_reason="motiv scutire")
+            ]
+        }
+    )
+    assert rule not in rules_of(with_reason)
+
+
 # --- document rules ---------------------------------------------------------------
 
 

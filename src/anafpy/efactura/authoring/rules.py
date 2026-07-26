@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from ...exceptions import AnafError
 from .codes import VatCategory
 from .models import (
+    _EXEMPTION_REASON_CATEGORIES,
     InvoiceDocument,
     Seller,
     VatBreakdownEntry,
@@ -380,6 +381,20 @@ class _Rules:
             family = _CATEGORY_RULES.get(entry.category)
             if family is None:
                 continue  # split payment (B): already fatal via BR-B-01
+            if entry.category in _EXEMPTION_REASON_CATEGORIES and not (
+                entry.exemption_reason or entry.exemption_reason_code
+            ):
+                # Only a *computed* entry can reach this: a hand-written one
+                # without a reason is refused at construction. The reason is
+                # not derivable from the lines, so it is the author's to add.
+                self.flag(
+                    f"{family}-10",
+                    f"VAT category {entry.category.value} requires an exemption "
+                    "reason text or code (BT-120/121); it cannot be computed from "
+                    "the lines — pass the entry explicitly in vat_breakdown with "
+                    "exemption_reason or exemption_reason_code",
+                    location=location,
+                )
             if entry.taxable_amount is None:
                 self.flag(
                     "BR-45",

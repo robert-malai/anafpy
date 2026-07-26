@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from inspect import cleandoc
 
 from mcp.server.fastmcp import FastMCP
 
@@ -120,7 +121,7 @@ ANAF's 1 request/second rule, so large batches take time.
 
 def create_server(config: ServerConfig | None = None) -> FastMCP:
     """Build the configured :class:`FastMCP` server (stdio transport)."""
-    cfg = config or ServerConfig.from_env()
+    cfg = config or ServerConfig()
     ctx = AppContext(cfg)
 
     @asynccontextmanager
@@ -135,11 +136,15 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     @mcp.tool(
         title="ANAF: Authentication status",
         annotations=READ_ONLY,
-        description="Report whether a usable ANAF session is present, and when the "
-        "tokens expire. Call this first; if not authenticated, ask the user to run "
-        "`anafpy auth login` host-side. If credentials_configured is false, the "
-        "authenticated tools are unavailable (set ANAFPY_CLIENT_ID / "
-        "ANAFPY_CLIENT_SECRET) but the public anaf_* lookups still work.",
+        description=cleandoc("""
+            Report whether a usable ANAF session is present, and when the tokens
+            expire. Call this first; if not authenticated, ask the user to run
+            `anafpy auth login` host-side.
+
+            If credentials_configured is false, the authenticated tools are
+            unavailable (set ANAFPY_CLIENT_ID / ANAFPY_CLIENT_SECRET) but the
+            public anaf_* lookups still work.
+        """),
     )
     def auth_status() -> AuthStatus:
         return ctx.auth_status()

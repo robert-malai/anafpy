@@ -20,23 +20,16 @@ from collections.abc import AsyncIterator
 
 import httpx
 from pydantic import ValidationError
-from tenacity import (
-    AsyncRetrying,
-    RetryError,
-    retry_if_result,
-    stop_after_delay,
-    wait_exponential_jitter,
-)
 
 from .._transport.base import (
     Environment,
     Service,
     as_text,
     is_empty_result_message,
-    raise_for_status,
     service_base_url,
 )
 from .._transport.http import HttpClientBase
+from .._transport.poll import poll_until
 from ..auth.provider import AnafAuth, TokenProvider
 from ..exceptions import (
     AnafConfigError,
@@ -117,23 +110,6 @@ class ETransportClient(HttpClientBase):
             auth=AnafAuth(provider),
         )
 
-    # -- transport -------------------------------------------------------------------
-
-    async def _request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        content: bytes | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> httpx.Response:
-        response = await self._request_http(
-            method, path, params=params, content=content, headers=headers
-        )
-        raise_for_status(response)
-        return response
-
     # -- operations ------------------------------------------------------------------
 
     async def upload(
@@ -152,7 +128,7 @@ class ETransportClient(HttpClientBase):
         """
         body = xml.encode("utf-8") if isinstance(xml, str) else xml
         path = f"upload/{_STANDARD}/{_segment(cif)}/{version}"
-        response = await self._request(
+        response = await self._request_checked(
             "POST", path, content=body, headers=_XML_BODY_HEADERS
         )
         return self._parse_upload(response.content)
@@ -192,7 +168,9 @@ class ETransportClient(HttpClientBase):
 
     async def get_status(self, upload_id: str) -> MessageStatus:
         """Poll the processing state for an ``upload_id`` (``index_incarcare``)."""
-        response = await self._request("GET", f"stareMesaj/{_segment(upload_id)}")
+        response = await self._request_checked(
+            "GET", f"stareMesaj/{_segment(upload_id)}"
+        )
         return self._parse_status(response.content)
 
     @staticmethod
@@ -233,7 +211,7 @@ class ETransportClient(HttpClientBase):
     async def _iter_notifications(
         self, days: int, cif: str
     ) -> AsyncIterator[Notification]:
-        response = await self._request("GET", f"lista/{days}/{_segment(cif)}")
+        response = await self._request_checked("GET", f"lista/{days}/{_segment(cif)}")
         for notification in self._parse_notifications(response.content):
             yield notification
 
@@ -280,7 +258,7 @@ class ETransportClient(HttpClientBase):
             params["uit"] = uit
         if declarant_ref is not None:
             params["ref_decl"] = declarant_ref
-        response = await self._request("GET", "info", params=params)
+        response = await self._request_checked("GET", "info", params=params)
         return self._parse_info(response.content)
 
     @staticmethod
@@ -341,21 +319,13 @@ class ETransportClient(HttpClientBase):
             )
         upload_id = result.upload_id
 
-        last: MessageStatus | None = None
-        try:
-            async for attempt in AsyncRetrying(
-                retry=retry_if_result(lambda s: s.is_processing),
-                wait=wait_exponential_jitter(initial=initial_wait, max=max_wait),
-                stop=stop_after_delay(timeout),
-                reraise=True,
-            ):
-                with attempt:
-                    last = await self.get_status(upload_id)
-                if not attempt.retry_state.outcome.failed:  # type: ignore[union-attr]
-                    attempt.retry_state.set_result(last)
-        except RetryError as exc:
-            raise TimeoutError(
+        return await poll_until(
+            lambda: self.get_status(upload_id),
+            pending=lambda status: status.is_processing,
+            timeout=timeout,
+            timeout_message=(
                 f"e-Transport upload {upload_id} still processing after {timeout}s"
-            ) from exc
-        assert last is not None
-        return last
+            ),
+            initial_wait=initial_wait,
+            max_wait=max_wait,
+        )

@@ -12,6 +12,8 @@
     src="https://img.shields.io/codecov/c/github/robert-malai/anafpy?branch=main" alt="Coverage"></a>
   <a href="https://pypi.org/project/anafpy/"><img
     src="https://img.shields.io/pypi/v/anafpy" alt="PyPI version"></a>
+  <a href="https://pepy.tech/project/anafpy"><img
+    src="https://img.shields.io/pepy/dt/anafpy" alt="Downloads"></a>
   <a href="https://pypi.org/project/anafpy/"><img
     src="https://img.shields.io/pypi/pyversions/anafpy" alt="Python versions"></a>
   <a href="https://anafpy.readthedocs.io/en/latest/"><img
