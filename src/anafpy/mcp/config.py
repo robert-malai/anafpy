@@ -10,9 +10,16 @@ from __future__ import annotations
 
 import secrets
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field, PrivateAttr, ValidationError, field_validator
+from pydantic import (
+    Field,
+    ModelWrapValidatorHandler,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .._transport.base import Environment
@@ -26,9 +33,10 @@ _DEFAULT_STORE = "~/.anafpy/tokens.json"
 class ServerConfig(BaseSettings):
     """Configuration for the MCP server, read from ``ANAFPY_*`` environment variables.
 
-    Construct with :meth:`from_env` (the server entry point) to get a friendly
-    :class:`~anafpy.exceptions.AnafConfigError` when required values are missing; the
-    plain constructor accepts explicit values (used in tests).
+    Every field defaults from its ``ANAFPY_*`` variable, so ``ServerConfig()`` is
+    the environment (the server entry point); keyword arguments override it, which
+    is how the tests supply explicit values. Nothing here is required — see
+    ``client_id`` below.
 
     Attributes:
         client_id: ANAF OAuth client id (``ANAFPY_CLIENT_ID``). Optional: without
@@ -118,6 +126,29 @@ class ServerConfig(BaseSettings):
     # `SIGNING_KEY` env var — it is a fresh per-process secret each run.
     _signing_key: bytes = PrivateAttr(default_factory=lambda: secrets.token_bytes(32))
 
+    @model_validator(mode="wrap")
+    @classmethod
+    def _config_errors_are_anaf_errors(
+        cls, data: Any, handler: ModelWrapValidatorHandler[ServerConfig]
+    ) -> ServerConfig:
+        """Fail in the ``AnafError`` hierarchy, not pydantic's.
+
+        A wrap validator rather than an ``__init__`` override: it covers the same
+        construction paths, but leaves the constructor pydantic synthesizes alone,
+        so a wrong keyword argument stays a *static* type error instead of only a
+        runtime one.
+
+        Raises:
+            AnafConfigError: if a value is invalid (e.g. a bad ``ANAFPY_ENV``).
+        """
+        try:
+            return handler(data)
+        except ValidationError as exc:
+            # Every field carries a `validation_alias`, so pydantic already names
+            # the offending variable and its accepted values per error — restate
+            # neither here (a hand-written hint drifts as fields are added).
+            raise AnafConfigError(f"invalid MCP server configuration:\n{exc}") from exc
+
     @property
     def signing_key(self) -> bytes:
         """Per-process secret backing the confirmation tokens (never from env)."""
@@ -164,27 +195,6 @@ class ServerConfig(BaseSettings):
     def has_credentials(self) -> bool:
         """Whether an OAuth client id + secret pair is configured."""
         return self.client_id is not None and self.client_secret is not None
-
-    @classmethod
-    def from_env(cls) -> ServerConfig:
-        """Build a config from the environment.
-
-        Missing OAuth credentials are not an error — the server starts with only
-        the public no-auth lookups usable.
-
-        Raises:
-            AnafConfigError: if a supplied value is invalid (e.g. a bad
-                ``ANAFPY_ENV``).
-        """
-        try:
-            return cls()
-        except ValidationError as exc:
-            raise AnafConfigError(
-                "invalid MCP server configuration "
-                "(ANAFPY_ENV must be 'test' or 'prod'; "
-                "ANAFPY_TOKEN_STORE_BACKEND 'file' or 'keyring'): "
-                f"{exc.errors(include_url=False)}"
-            ) from exc
 
     def require_cif(self, cif: str | None) -> str:
         """Return *cif* if given, else the configured default, else raise."""

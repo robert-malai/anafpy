@@ -476,6 +476,28 @@ the XML pass-through tool *inputs* (the friendly flat models come from the clien
 layer, §4/§5), reads the existing token store, and refreshes headlessly.
 *(Implemented.)*
 
+- **`ServerConfig()` is the only constructor** (adopted 2026-07-26, replacing a
+  `ServerConfig.from_env()` classmethod). The factory existed only to translate
+  pydantic's `ValidationError` into `AnafConfigError`, which left two doors to
+  the same `BaseSettings` — and the door that skipped the translation was the one
+  the tests used. Folding it in keeps every misconfiguration inside the
+  `AnafError` hierarchy (§2's error model) at the cost of no longer naming the
+  env read at the call site; `BaseSettings` reading the environment is taken as
+  known. Done as a **`model_validator(mode="wrap")`, not an `__init__`
+  override**: pydantic marks its metaclass `@dataclass_transform`, so a
+  hand-written constructor — in any signature form — replaces the one type
+  checkers synthesize from the fields, and a wrong keyword argument degrades from
+  a static error to a runtime one. An explicit typed signature would also have to
+  duplicate every field and default, and forwarding those defaults would beat the
+  env entirely (init kwargs are pydantic-settings' highest-priority source, so
+  `client_id=None` silently erases `ANAFPY_CLIENT_ID`). The wrap validator sits
+  inside validation, so it covers construction from env and from kwargs alike;
+  errors a settings *source* raises before validation (`SettingsError` on
+  malformed JSON for a complex field) stay untranslated — moot while every field
+  is scalar. The message is `str(exc)` verbatim: each field carries a
+  `validation_alias`, so pydantic already names the offending variable and its
+  accepted values, where the previous hand-written hint listed a fixed two and
+  went stale as fields were added.
 - **e-Factura filing tools.** An agent can draft a complete invoice for a user
   with no invoicing software — the MCP use case the authoring package (§4)
   unlocked. Two STEP-1 shapes feed one gate:

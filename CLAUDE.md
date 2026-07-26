@@ -68,7 +68,10 @@ ANAFPY_CLIENT_ID=... ANAFPY_CLIENT_SECRET=... ANAFPY_CIF=... \
   uv run python -m anafpy.mcp        # stdio; or the `anafpy-mcp` console script
 ```
 
-Server config is env-only — `ServerConfig.from_env()`; full semantics live in
+Server config is env-only — `ServerConfig()` **is** the environment (a
+`BaseSettings`; kwargs override it, which is how the tests inject values), and an
+invalid value raises `AnafConfigError`, not pydantic's `ValidationError`, so a
+misconfiguration stays inside the `AnafError` hierarchy. Full semantics live in
 [mcp/config.py](src/anafpy/mcp/config.py)'s docstrings and the
 [docs/mcp/tools.md](docs/mcp/tools.md) table. In brief: `ANAFPY_CLIENT_ID` /
 `ANAFPY_CLIENT_SECRET` (optional — without them the public `anaf_*` tools still
@@ -167,7 +170,7 @@ src/anafpy/
   mcp/                   # MCP server — split BY SERVICE; the shared core is
                          # only what 2+ services genuinely use
     app.py               # composition root: create_server, main, auth_status
-    config.py            # ServerConfig.from_env
+    config.py            # ServerConfig — BaseSettings over ANAFPY_*
     context.py           # AppContext: providers + lazy clients + token ledger
                          # + SPV same-day request log
     gate.py              # the two-step filing gate: HMAC confirmation tokens +

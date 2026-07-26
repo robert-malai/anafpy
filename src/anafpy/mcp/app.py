@@ -121,7 +121,7 @@ ANAF's 1 request/second rule, so large batches take time.
 
 def create_server(config: ServerConfig | None = None) -> FastMCP:
     """Build the configured :class:`FastMCP` server (stdio transport)."""
-    cfg = config or ServerConfig.from_env()
+    cfg = config or ServerConfig()
     ctx = AppContext(cfg)
 
     @asynccontextmanager
