@@ -23,6 +23,17 @@
       "description": "ANAF workflow skills for Cowork: file e-Transport declarations, author/sign tax declarations, and summarize personal income. Drives the anafpy MCP tools (configure the connector via the anafpy-setup plugin).",
       "category": "workflow",
       "tags": ["anaf", "e-factura", "e-transport", "spv", "declaratii", "romania", "cowork"]
+    },
+    {
+      "name": "anaf-sync-setup",
+      "source": {
+        "source": "github",
+        "repo": "robert-malai/anaf-sync"
+      },
+      "displayName": "anaf-sync setup",
+      "description": "Install and configure anaf-sync on this computer — the scheduled local archiver for RO e-Factura invoices, built on anafpy. Probes what is already in place, installs what is missing, and repairs a broken setup.",
+      "category": "setup",
+      "tags": ["anaf", "e-factura", "romania", "archiver", "setup"]
     }
   ]
 }
