@@ -58,8 +58,8 @@ invoicing system.
 Python **3.12+** (floor set by PEP 695 syntax in the flat models and lookups; dev
 pin is 3.13), **httpx**, **Pydantic v2**.
 
-Since shipped, expanding the original scope: **SPV** (read-only mailbox, cert-mTLS
-— landed 2026-07-12, §11 notwithstanding its earlier "out of scope" listing) and
+Since shipped, expanding the original scope: **SPV** (read-only mailbox over a
+certificate-bootstrapped cookie session — landed 2026-07-12) and
 **declaration authoring + signing** (`anafpy.declaratii`, landing 2026-07-15 —
 local D300 authoring, DUKIntegrator validation, qualified signing; plus
 StareD112 filing-status/recipisa tracking, public no-auth, added 2026-07-16;
@@ -80,75 +80,39 @@ inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; a sync facade
   2026-07-26). The 3.12 floor means `match` is always available, and the three
   hand-written places that already used it (SPV's `required_parameters`, the
   login-flag truth table in `anafpy auth login`, `spv_nomenclature`) read
-  better than the chains they replaced — so it is now the house default for any
-  branch dispatching on **one** subject: closed-union `isinstance` chains
-  (closed with `case _: assert_never(x)`, which turns exhaustiveness into a
-  `mypy --strict` error rather than a silent fall-through), value dispatch over
-  ANAF codes and form names, flag truth tables, which-operation-is-set checks
-  on parsed wire models, and shape checks on decoded JSON. It is **not** a
-  rewrite mandate: substring/regex tests, single binary checks, and
-  dict-lookup dispatch stay plain `if` — the bar is that the pattern makes the
-  condition structural and shorter to read.
+  better than the chains they replaced — so it became the house default. The
+  operative rule — which branch shapes take `match`, which stay plain `if` —
+  lives in CLAUDE.md. Not a rewrite mandate.
 - **The walrus operator is the preferred assign-then-test form** (adopted
-  2026-07-26, the companion rule to pattern matching above). The codebase had
-  grown two spellings of the same shape — `x = f()` on its own line followed by
-  `if x is None:`, next to the `if (x := f()) is None:` already used in ~40
-  places — and the two-line form buries the fact that the binding exists only
-  to be tested. The rule is **lifetime, not brevity**: fold when the name is
-  consumed by the condition and its branch, keep the standalone assignment when
-  the name is the subject of everything that follows (an early-return guard
-  whose value drives the rest of the function reads worse with its binding
-  hidden inside the condition). Also excluded: right-hand sides that need their
-  own line to fit 88 columns, and loop counters/accumulators. Like the pattern-
-  matching rule this is a convention, not a lint gate — ruff has no check that
-  encodes the lifetime distinction, so it lives in review.
-- **Single distribution** `anafpy` with optional extras (not a multi-package repo):
-  - runtime: `httpx`, `pydantic`, `xsdata-pydantic`, `tenacity`, `pyjwt`
-    (unverified `exp` reads only, to schedule token refresh — verification is
-    ANAF's job), `keyring` (core since the token-store default flipped, §3)
-  - `anafpy[mcp]` → the MCP SDK + `pydantic-settings` (env config) +
-    `python-frontmatter` (SKILL.md → prompts)
-  - a former `anafpy[validation]` (`saxonche`) extra was removed — see §4 Validation
-- **`src/` layout** (ships generated code as package source). The full annotated
-  layout lives in CLAUDE.md; in brief:
-
-```
-src/anafpy/
-  exceptions.py    # AnafError hierarchy
-  _transport/      # shared httpx layer; per-service base URL; env (test/prod);
-                   # subprocess runner + platform-curl bootstrap base
-  auth/            # TokenProvider, TokenStore, OAuth bootstrap, callback listener
-  efactura/        # generated UBL models (Invoice+CreditNote closure) + client
-                   # + authoring/ (bidirectional flat models, rules, build/read)
-  etransport/      # generated XSD models + client + bidirectional flat models
-  public/          # PublicClient: no-auth lookups + financial statements (§6)
-  spv/             # read-only mailbox client over the certificate cookie session
-  declaratii/      # declarations: DUK wrapper + managed installer, signing,
-                   # StareD112 status, portal upload (§12)
-  cli/             # `anafpy auth|spv|declaratii|duk ...` command groups
-  mcp/             # MCP server (extra: anafpy[mcp]) — split by service
-                   # (efactura/, etransport/, public/, spv/, declaratii/: each
-                   # owns its tools, models, nomenclatures) over a shared core
-                   # (app, config, context, the two-step gate, artifacts,
-                   # resources, prompts)
-plugins/anafpy-workflows/skills/  # workflow skills (single home) — Cowork Agent
-                                  # Skills AND the MCP server's same-name prompts
-plugins/anafpy-setup/  # the end-user install/config skill
-docs/anaf-reference/   # agent-compiled local reference (+ _sources/)
-```
+  2026-07-26, the companion rule). The codebase had grown two spellings of the
+  same shape — a standalone assignment followed by its test, next to the
+  `if (x := f()) is None:` already used in ~40 places — and the two-line form
+  buries the fact that the binding exists only to be tested. The deciding
+  criterion is **lifetime, not brevity**: fold only when the binding lives and
+  dies with the condition's branch. The operative rule and its exclusions live
+  in CLAUDE.md. Both this and the pattern-matching rule are review
+  conventions, not lint gates — ruff has no check that encodes either.
+- **Single distribution** `anafpy` with optional extras (not a multi-package
+  repo): `anafpy[mcp]` (the server) and `anafpy[declaratii]` (pyHanko signing,
+  §12). The dependency inventory and each dependency's rationale live as
+  comments in `pyproject.toml`; the notable reversals: `keyring` was promoted
+  from an extra to core when it became the token-store default (§3), and a
+  former `anafpy[validation]` (`saxonche`) extra was removed (§4 Validation).
+- **`src/` layout** (ships generated code as package source); the annotated
+  tree lives in CLAUDE.md.
 
 The six network clients share only a small `_transport.HttpClientBase`
 chassis: owned-versus-injected `httpx.AsyncClient` lifecycle, trailing-slash
 base-URL convention, and network-error translation. An owned client is
 constructed with the resolved service URL; an injected client is **never
 mutated** — one with a non-empty `base_url` is accepted as-is (the test/proxy
-seam), while an empty `base_url` raises `AnafConfigError` at construction,
-naming the service URL the caller must configure (silently stamping a URL onto
-a caller-owned client would mis-route a second anafpy client sharing it). Request semantics and
-response/business-outcome parsing remain in each service client. Package-level
-`models.py` modules are the value-type homes; in particular,
-`declaratii/models.py` owns the DUK, signing, portal-upload, and StareD112
-outcomes without importing the optional pyHanko stack.
+seam), while an empty `base_url` raises `AnafConfigError` at construction
+(silently stamping a URL onto a caller-owned client would mis-route a second
+anafpy client sharing it). Request semantics and business-outcome parsing
+remain in each service client. Package-level `models.py` modules are the
+value-type homes; in particular, `declaratii/models.py` owns the DUK, signing,
+portal-upload, and StareD112 outcomes without importing the optional pyHanko
+stack.
 
 ## 3. Authentication (shared)
 
@@ -327,18 +291,14 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
 
 ### Retries & errors
 
-- **The client does no transport retry** — single transparent calls (never repeat
-  the non-idempotent `upload` POST). Consumers bring their own retry. On 429 the
-  client raises `AnafRateLimitError` exposing `retry_after`; no auto-backoff.
-- **`tenacity` appears in the poll loops and one documented deviation**: the
-  `upload_and_wait` / `wait_for_report` polls retry on the *business* processing
-  state, not transport errors; the SPV client's reads (idempotent GETs) retry
-  plain network failures with backoff — received HTTP answers, 429 included,
-  still surface immediately.
-- **Hybrid error model**: exceptions for transport/auth/programming errors
-  (`AnafError` → `AnafAuthError`, `AnafRateLimitError`, `AnafTransportError`, …);
-  **business outcomes** (`nok`, BR-RO findings) are **typed return values**
-  (`MessageStatus`, `RemoteValidationResult`, …), never exceptions.
+The operative rules live in CLAUDE.md ("Error model"); the decisions behind
+them: discrete methods do no transport retry so the non-idempotent `upload`
+POST is never silently repeated (429 raises `AnafRateLimitError` with
+`retry_after`, no auto-backoff — consumers own their retry policy); `tenacity`
+is allowed only where the retried thing is safe — the business-state poll loops
+and the SPV client's idempotent-GET reads; and the hybrid error model keeps
+ANAF's business verdicts (`nok`, BR-RO findings) as typed return values, never
+exceptions — a rejection is data, not control flow.
 
 ### Download
 
@@ -439,24 +399,15 @@ Mirrors e-Factura, with differences (see `docs/anaf-reference/etransport/api.md`
   429s, so the client spaces its own requests (`min_request_interval`, default
   1.0 s; `0` opts out). Reads are idempotent, so pacing carries none of the
   repeat-a-POST risk that motivated the no-retry stance.
-- **Operations**: `lookup_taxpayers` (v9 — VAT, VAT-on-collection, inactive,
-  split-VAT, e-Factura register membership in one call),
-  `lookup_efactura_register`, `lookup_farmers`, `lookup_cult_entities`,
-  `get_financial_statement`. Registry queries are batched CUIs at one as-of date,
-  capped per ANAF (100 / 500). The **async job variant** of the taxpayer lookup is
-  deliberately not wrapped: its result downloads exactly once and the not-ready
-  response is undocumented.
+- **Operations** map 1:1 onto the documented endpoints (registry lookups +
+  financial statements; batched CUIs at one as-of date, capped per ANAF). The
+  **async job variant** of the taxpayer lookup is deliberately not wrapped: its
+  result downloads exactly once and the not-ready response is undocumented.
 - **Business-vs-error mapping**: `notFound` CUIs and `registered is False` records
   are values; the e-Factura register's **404-with-`found`/`notFound`-body** is a
   business "not found" (returned), while a non-200 `cod` inside an HTTP 200
   envelope raises `AnafResponseError`. Membership always reads from the status
   booleans (RegAgric/RegCult return unknown CUIs under `found`).
-- **English models over wire names**: snake_case English fields with the wire names
-  as pydantic aliases; raw bytes retained on every container.
-- **Testing (hybrid)**: the respx suite is the gate; an opt-in `live` marker
-  (`ANAFPY_LIVE=1`) re-confirms wire shapes against production — possible here
-  precisely because no credentials are needed, but never a CI gate (registry data
-  drifts; ANAF punishes hammering).
 
 ## 7. Local ANAF reference docs
 
@@ -493,7 +444,7 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   pydantic's `ValidationError` into `AnafConfigError`, which left two doors to
   the same `BaseSettings` — and the door that skipped the translation was the one
   the tests used. Folding it in keeps every misconfiguration inside the
-  `AnafError` hierarchy (§2's error model) at the cost of no longer naming the
+  `AnafError` hierarchy (§4 Retries & errors) at the cost of no longer naming the
   env read at the call site; `BaseSettings` reading the environment is taken as
   known. Done as a **`model_validator(mode="wrap")`, not an `__init__`
   override**: pydantic marks its metaclass `@dataclass_transform`, so a
@@ -512,47 +463,32 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   went stale as fields were added.
 - **e-Factura filing tools.** An agent can draft a complete invoice for a user
   with no invoicing software — the MCP use case the authoring package (§4)
-  unlocked. Two STEP-1 shapes feed one gate:
-  `efactura_prepare` takes complete UBL XML (`UblXmlInput {xml|path}`) verbatim —
-  the **strongly recommended** path whenever upstream software produced the
-  document (§1: SPV purges after ~60 days; the durable record lives upstream) —
-  and `efactura_prepare_invoice` composes the XML from the client-layer
-  `InvoiceDocument` (§4 Authoring). Both return the invoice preview (the strict
-  read-back of the exact bytes), a confirmation token bound to those bytes + the
-  CIF, and — for the composed path — informational `local_findings` from the
-  translated rule set (never withholding the token). `efactura_submit` verifies
-  the token, redeems it single-use, and uploads with the `standard` derived from
-  the XML (UBL/CN); `efactura_get_status`
-  polls to `ok`/`nok` and hands the `download_id` to `efactura_download`.
-- **e-Transport outbound = composed from structured fields** (§5).
-  `etransport_prepare_declaration` takes the client-layer `FlatTransport` as tool
-  input; `etransport_prepare_deletion` / `_confirmation` / `_vehicle_change` take
-  scalars and build the tiny flat models. Each renders the XML via
-  `render_etransport` and returns it in `PreparedTransport.xml` next to the
-  preview (the *read-back* of the rendered bytes, so the human approves exactly
-  what will be filed) and the confirmation token (bound to those bytes). The
-  caller passes the XML back to the shared `etransport_submit` verbatim — a
-  mangled echo fails the token check, never files. `etransport_prepare`
-  (`EtransportXmlInput`) stays for ready-made XML; `etransport_nomenclature`
-  (read-only) lists the XSD code lists — so the model can map "vama Nădlac" →
-  `NADLAC` instead of guessing — plus the UN/ECE Rec 20/21 `unit_codes` ANAF's
-  Schematron enforces on goods lines.
-- **Safety: read-first, two-step gated filing.** Read-only tools (`*_list*`,
-  `*_status`, `*_lookup`, `*_validate`, `auth_status`) are annotated
-  `readOnlyHint` and freely callable; `efactura_download` is equally freely
-  callable but annotated honestly (`readOnlyHint=False`, idempotent,
-  non-destructive) since it may write files at caller-given paths. Filing — both
-  services — is split `*_prepare*` → `*_submit`: `prepare` renders a preview and
-  returns an HMAC **confirmation token** bound to the exact XML bytes plus the
-  CIF; `submit` requires that token (same bytes, same CIF) **and**
-  `confirm=True`, and redeems it **single-use** so one approval files at most
-  once. **Not a `dry_run` bool.**
-- **Validation authority is ANAF's**: `efactura_validate` calls the server-side
-  `validare`; `prepare` never blocks on validation — `efactura_prepare_invoice`'s
-  `local_findings` inform the human review but the token is issued regardless
-  (§4 Validation).
-- **e-Factura inbox**: `efactura_list_messages` → `efactura_download` →
-  the `InvoiceDocument` view, from the same client-layer reader.
+  unlocked. Two STEP-1 shapes feed one gate: `efactura_prepare` takes complete
+  UBL XML verbatim (the **strongly recommended** path whenever upstream
+  software produced the document, §1) and `efactura_prepare_invoice` composes
+  it from the client-layer `InvoiceDocument` (§4 Authoring). Both return the
+  preview (the strict read-back of the exact bytes) and a confirmation token
+  bound to those bytes + the CIF; the composed path adds informational
+  `local_findings` from the translated rule set (never withholding the token).
+- **e-Transport outbound = composed from structured fields** (§5). The prepare
+  tools take the flat models (scalars for the tiny lifecycle operations),
+  render via `render_etransport`, and return the XML next to its *read-back*
+  preview — the human approves exactly what will be filed — plus the token
+  bound to those bytes; the caller echoes the XML to `etransport_submit`, and a
+  mangled echo fails the token check, never files. `etransport_prepare` stays
+  for ready-made XML; `etransport_nomenclature` exists so the model maps "vama
+  Nădlac" → `NADLAC` instead of guessing (plus the UN/ECE Rec 20/21
+  `unit_codes` ANAF's Schematron enforces on goods lines).
+- **Safety: read-first, two-step gated filing** — the operative rule is in
+  CLAUDE.md. The shape is deliberately **not a `dry_run` bool**: prepare
+  returns an HMAC token bound to the exact bytes (+ CIF), submit requires it
+  plus `confirm=True` and redeems it single-use, so one human approval files at
+  most once. `efactura_download` is freely callable but annotated honestly
+  (`readOnlyHint=False`, idempotent, non-destructive) since it writes files at
+  caller-given paths.
+- **Validation authority is ANAF's** (§4 Validation): `prepare` never blocks on
+  a local check — `local_findings` inform the human review, the token is issued
+  regardless.
 - **Binary artifacts: files first, one PDF resource, never context** (decided
   2026-07-03). The model operates on the flat view; the ZIP and PDF are for the
   *human*, and current hosts read resources *into model context*, so base64 blobs
@@ -591,38 +527,32 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   `motiv` errors with the full accepted list so the flow self-heals. No
   two-step gate anywhere in SPV: report requests are additive information
   requests, not filings.
-- **Tool descriptions are structured, not packed** (adopted 2026-07-26). Every
-  tool and resource description is an inline `cleandoc("""…""")` literal rather
-  than implicit string concatenation. Two reasons. The shipped text: a
-  concatenated description reaches the model as one unbroken line, which buried
-  genuine tables — StareD112's four Romanian state wordings, `declaratie_nr_evid`'s
-  per-form inputs, `declaratie_submit`'s three `accepted` verdicts, the
-  nomenclature `kind` lists — that now render as bullets (`declaratie_status`
-  even got *shorter*, the bullets replacing connective prose). And maintenance:
-  ruff never reflows string literals, so a one-word edit meant hand-rewrapping
-  every line after it. `inspect.cleandoc` (not `textwrap.dedent`) because
-  FastMCP's `Tool.from_function` takes `description or fn.__doc__` **verbatim**
-  with no dedent of its own, and cleandoc strips the decorator indent *and* the
-  framing blank lines in one call. Function docstrings were rejected for the
-  same reason — no cleandoc on that path, so the indent would leak onto the
-  wire, and these are model-facing instructions rather than the human contract.
-  Parameter-level `Field(description=...)` keeps the plain form.
-- **Display names**: every tool carries an English MCP `title` following
-  `Service: operation` ("e-Factura: Validate invoice", "ANAF Info: Taxpayer
-  lookup", "ANAF: Authentication status"). One language only: MCP has no title
+- **Tool descriptions are structured, not packed** (adopted 2026-07-26; the
+  operative rule is in CLAUDE.md). Every description became an inline
+  `cleandoc("""…""")` literal rather than implicit string concatenation. Two
+  reasons. The shipped text: a concatenated description reaches the model as
+  one unbroken line, which buried genuine tables (StareD112's state wordings,
+  the per-form `nr_evid` inputs, the `accepted` verdicts, the nomenclature
+  `kind` lists) that now render as bullets. And maintenance: ruff never reflows
+  string literals, so a one-word edit meant hand-rewrapping every line after
+  it. `inspect.cleandoc` (not `textwrap.dedent`) because FastMCP ships
+  `description or fn.__doc__` **verbatim** with no dedent of its own, and
+  cleandoc strips the decorator indent *and* the framing blank lines in one
+  call. Function docstrings were rejected for the same reason — no cleandoc on
+  that path, so the indent would leak onto the wire, and these are model-facing
+  instructions rather than the human contract.
+- **Display names**: an English `title` per tool, `Service: operation` (the
+  operative rule is in CLAUDE.md). One language only: MCP has no title
   localization, and the model never sees titles (it works from `name` +
   `description`), so Romanian conversation quality is unaffected.
 - **ANAF reference exposed as MCP resources** (with draft/Romanian notes) so the
   skill can ground BR-RO explanations and code lists.
 - **Workflow skills served as MCP prompts** (2026-07-03; the skills' home moved
-  to the `anafpy-workflows` plugin 2026-07-18, see §11): each
-  `plugins/anafpy-workflows/skills/*/SKILL.md` becomes a prompt of the same
-  name — frontmatter `description` as the prompt description, the body as the
-  prompt text, plus an optional `source` argument.
-  Prompts are the closest MCP primitive to a skill but **user-invoked** — this is
-  how the playbooks reach every MCP consumer. The SKILL.md files stay the single
-  source of truth (read at server start via `python-frontmatter`, failing loudly
-  when `name`/`description` are missing).
+  to the `anafpy-workflows` plugin 2026-07-18, see §11): prompts are the
+  closest MCP primitive to a skill but **user-invoked** — this is how the
+  playbooks reach every MCP consumer. The SKILL.md files stay the single source
+  of truth (read at server start via `python-frontmatter`, failing loudly when
+  `name`/`description` are missing).
 - **Auth handling**: the server reads the token store + transparent refresh;
   interactive login stays the host-side CLI (an in-session `begin_login` tool is
   deferred by design). A read-only `auth_status` reports validity; authenticated
@@ -634,18 +564,16 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   **mypy `--strict`**, **pytest** + **pytest-asyncio** + **respx**, **pre-commit**.
 - **SemVer**, pre-1.0 (`0.x`). Support + test **3.12 and 3.13** (dev pin 3.13).
 - **License: Apache-2.0** (explicit patent grant; ship `NOTICE`).
-- **CI: GitHub Actions** — `ci.yml` (pytest × 3.12/3.13 × ubuntu/macos/windows,
-  plus ruff / mypy `--strict` / the strict docs build on the ubuntu leg; every
-  test leg uploads coverage and JUnit results to Codecov under per-leg flags)
-  and `release.yml` (gates, tag↔version check, build, publish to PyPI via
-  trusted publishing on `v*` tags).
+- **CI: GitHub Actions** — `ci.yml` (test matrix + gates + Codecov uploads) and
+  `release.yml` (tag↔version check, PyPI trusted publishing on `v*` tags); the
+  operative details live in CLAUDE.md and the workflow files.
 - **Testing (layered)**: respx mock suite as the credential-free CI gate + an
-  opt-in live suite (`ANAFPY_LIVE=1`). Mock tiers: (1) golden round-trip on
-  generated UBL models (regen/serialization regressions); (2) client behavior via
-  respx (upload→poll→download, `nok`, 401-refresh, 429). The live tier smoke-tests
-  the public services (§6) and the authenticated TEST endpoints (read-only), plus
-  the two deliberate filing exceptions: the e-Factura and e-Transport TEST
-  roundtrip files (TEST only, never prod).
+  opt-in live suite (`ANAFPY_LIVE=1`) that re-confirms wire shapes — never a CI
+  gate (registry data drifts; ANAF punishes hammering the public host). Mock
+  tiers: (1) golden round-trip on generated UBL models (regen/serialization
+  regressions); (2) client behavior via respx. The live tier is read-only
+  except the deliberate filing exceptions listed in CLAUDE.md ("Conventions
+  for changes").
 
 ## 10. Open / deferred items
 
@@ -774,7 +702,8 @@ no ANAF host — then the M2 portal upload and StareD112 confirmation (below).
 3. **Signing is consequential.** `declaratie_sign` is gated on `confirm=true`
    (the model must relay the user's explicit ask), one attempt per call, failures
    returned as `signed=false` + guidance (mirroring `spv_login`, not exceptions).
-   There is **no two-step filing gate** — nothing is filed with ANAF in M1.
+   M1 had **no two-step filing gate** — nothing was filed with ANAF; M2's gate
+   is the subsection below.
 4. **Binary artifacts go to disk** at caller-given paths through the shared
    `write_artifact` collision guard, never base64 into context.
 
