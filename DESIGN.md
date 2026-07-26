@@ -567,6 +567,15 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
 - **CI: GitHub Actions** — `ci.yml` (test matrix + gates + Codecov uploads) and
   `release.yml` (tag↔version check, PyPI trusted publishing on `v*` tags); the
   operative details live in CLAUDE.md and the workflow files.
+- **The GitHub release is automated after PyPI, its prose is not** (2026-07-26).
+  A `v*` tag now creates the GitHub release itself, downstream of the publish
+  job — the release is the announcement, so it must never point at a version
+  `pip install` cannot yet reach. The body comes from `release-notes/<tag>.md`
+  committed with the release: through v0.6.0 those notes were written by hand
+  after the fact, and a generated commit list would have been a downgrade, so
+  the automation moves the *creation* into CI and leaves the *writing* where it
+  was. GitHub's generated notes remain the fallback when a tag ships no such
+  file, so a release always exists for a published version.
 - **Testing (layered)**: respx mock suite as the credential-free CI gate + an
   opt-in live suite (`ANAFPY_LIVE=1`) that re-confirms wire shapes — never a CI
   gate (registry data drifts; ANAF punishes hammering the public host). Mock

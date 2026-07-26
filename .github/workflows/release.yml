@@ -2,7 +2,10 @@
 # API token is stored in the repo. PyPI side: the project's trusted publisher
 # must name this repo, this filename (release.yml), and the `pypi` environment.
 # The full CI gates re-run here so a tag can never ship an artifact that a
-# broken branch produced.
+# broken branch produced. Once PyPI has the distribution, the same tag gets a
+# GitHub release carrying the sdist + wheel; its prose comes from
+# `release-notes/<tag>.md` when the tag ships one, and from GitHub's generated
+# notes when it does not.
 name: Release
 
 on:
@@ -72,3 +75,70 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # PyPI first, GitHub release second: the release is the announcement, and it
+  # should never point at a version `pip install` cannot reach yet. Re-runnable
+  # — an existing release for the tag is updated in place rather than failing.
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the release, attach the distribution to it
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # full tag history — the compare link needs the predecessor
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Assemble the release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          notes="${RUNNER_TEMP}/notes.md"
+          previous="$(git tag -l 'v*' --sort=-v:refname | grep -A1 -x -F "${tag}" | tail -n1)"
+          if [ "${previous}" = "${tag}" ]; then
+            previous=""  # the oldest tag has no predecessor to compare against
+          fi
+          file="release-notes/${tag}.md"
+          if [ -f "${file}" ]; then
+            # An H1 on the first line is the release title; the rest is the body.
+            first="$(head -n1 "${file}")"
+            case "${first}" in
+              '# '*) title="${first#\# }"; tail -n +2 "${file}" > "${notes}" ;;
+              *)     title="anafpy ${tag#v}"; cp "${file}" "${notes}" ;;
+            esac
+            if [ -n "${previous}" ]; then
+              printf '\n**Full changelog**: %s/compare/%s...%s\n' \
+                "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" "${previous}" "${tag}" >> "${notes}"
+            fi
+          else
+            echo "no ${file} — using GitHub's generated notes" >&2
+            title="anafpy ${tag#v}"
+            gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="${tag}" \
+              ${previous:+-f previous_tag_name="${previous}"} \
+              --jq .body > "${notes}"
+          fi
+          echo "title=${title}" >> "${GITHUB_OUTPUT}"
+          echo "notes=${notes}" >> "${GITHUB_OUTPUT}"
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release edit "${tag}" \
+              --title "${{ steps.notes.outputs.title }}" \
+              --notes-file "${{ steps.notes.outputs.notes }}"
+            gh release upload "${tag}" dist/* --clobber
+          else
+            gh release create "${tag}" dist/* \
+              --title "${{ steps.notes.outputs.title }}" \
+              --notes-file "${{ steps.notes.outputs.notes }}"
+          fi

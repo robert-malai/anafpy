@@ -456,6 +456,13 @@ silently returning empty results.
   the test-results upload runs `if: ${{ !cancelled() }}`, and
   `junit_family = "legacy"` stays in `pyproject.toml` for Codecov's UI).
   `release.yml` re-runs the gates on a `v*` tag, checks the tag against
-  `pyproject.toml`'s version, and publishes to PyPI via trusted publishing
-  (OIDC, no stored token). The version lives in `pyproject.toml` **and**
+  `pyproject.toml`'s version, publishes to PyPI via trusted publishing (OIDC,
+  no stored token), and only then creates the GitHub release for the same tag
+  with the sdist + wheel attached. The version lives in `pyproject.toml` **and**
   `anafpy.__version__`; `tests/test_version.py` keeps them agreeing.
+- **Release notes are written, not generated.** Put a tag's prose in
+  `release-notes/<tag>.md` (e.g. `release-notes/v0.7.0.md`) **in the release
+  commit**, first line an H1 that becomes the release title; the workflow
+  appends the compare-with-previous-tag link itself. Without that file the
+  release still happens, carrying GitHub's generated commit list — the fallback,
+  not the intent.
