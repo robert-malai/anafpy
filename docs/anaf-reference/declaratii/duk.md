@@ -23,7 +23,7 @@ sources:
     retrieved: 2026-07-17
 compiled: 2026-07-15
 compiled_by: claude-opus-4-8
-last_verified: 2026-07-17
+last_verified: 2026-07-26
 status: draft
 ---
 
@@ -104,6 +104,12 @@ D406T no-effect test filing (portal-upload reference §5).
   expected namespace). The same document content validates under both — only
   the namespace differs; the 2023 T-validator additionally requires an
   (empty) `AnalysisTypeTable` the current D406 no longer asks for.
+- **The SAF-T validators write log files besides the err file** (observed
+  2026-07-26): a verbose `<xml>.log` section trace **next to the input XML**
+  on every run, and `validator.log` in the working directory on crashes (the
+  `NoClassDefFoundError` mode above). anafpy always validates a temp copy from
+  a per-run temp cwd, so both land in the run's own directory — cleaned up
+  with it, and folded into the diagnostics of a no-findings failure.
 - **SAF-T validators emit `F:`** (structure/fatal) finding lines besides
   `E:`/`W:`; parameters are **period-versioned** inside the jar (version table
   2019-01 → 2023-01 → 2024-01 → 2025-07), so structure rules shift with the
@@ -129,13 +135,17 @@ D406T no-effect test filing (portal-upload reference §5).
 
 ### Silent-exit-on-update escape hatch (`offLine=Y`)
 
-anafpy's `-v`/`-p` runs did not hit this, but it is worth knowing: DUK's startup
-update check uses **hardcoded Windows paths**, and on a non-Windows host it can
-make the app **silently exit** (exit `0`, no err file, no PDF). The fix, from the
-community macOS setup ([nokeect/duk-integrator-macos]), is to disable the check by
-setting `offLine=Y` in a `config/config.properties` and pointing DUK at it with the
-CLI's `-c <configPath>` flag (see §2). If a CLI run ever exits cleanly but produces
-nothing, this is the first thing to try.
+DUK's startup update check uses **hardcoded Windows paths**, and on a non-Windows
+host it can make the app **silently exit** (exit `0`, no err file, no PDF). The
+fix, from the community macOS setup ([nokeect/duk-integrator-macos]), is to
+disable the check by setting `offLine=Y` in a `config/config.properties` and
+pointing DUK at it with the CLI's `-c` flag (see §2 — `-c` takes the config
+**directory**, and pointing it at the properties *file* reproduces the same
+silent exit). Since 2026-07-26 anafpy preempts this on every run: it assembles a
+per-run config directory (the dist's `config/config.properties` with any
+`offLine` line replaced by `offLine=Y`) and always passes `-c`. If a manual CLI
+run ever exits cleanly but produces nothing, `offLine=Y` — and the `-c`-path
+shape — are the first things to check.
 
 [nokeect/duk-integrator-macos]: https://github.com/nokeect/duk-integrator-macos
 
@@ -169,12 +179,28 @@ java -jar DUKIntegrator.jar [-c configPath] -s <tip> <xml> [errFile] [valOption]
 - `zipFile` — `0` when the form has no attachment (true for D300).
 - `-p` writes the official multi-page PDF with the XML as an **embedded file**
   (`/EmbeddedFiles` present). Proven: a 4-page, ~25 KB D300.
+- `-c` expects the config **directory** (live-probed 2026-07-26): `-c
+  dist/config` works — as does any existing directory, even one with no
+  `config.properties` in it — while pointing `-c` at the `config.properties`
+  **file**, or at a nonexistent path, makes DUK **exit silently** (exit `0`, no
+  output, no err file; the same shape as the update-check silent exit).
+- **The working directory is free** (live-probed 2026-07-26): `-v` runs
+  correctly from any cwd — `lib/` resolves relative to the jar, not the cwd
+  (proven for D300 and the SAF-T D406T validator), and no `validator.log` is
+  written on clean or findings-level runs (it appears only in crash modes, in
+  the cwd).
 - `-s` is **not** used on macOS (see §5); on Windows it is the candidate signer
   with `algorithm=mscapi` (deferred).
 
 anafpy always fills every positional explicitly (it passes temp paths, so no `$`
-is needed): `-v <form> <xml> <err> <option>` and
-`-p <form> <xml> <err> <option> 0 <pdf>`.
+is needed), prefixed with a per-run `-c`: `-c <run-config-dir> -v <form> <xml>
+<err> <option>` and `-c <run-config-dir> -p <form> <xml> <err> <option> 0
+<pdf>`, where the run config dir carries the dist's settings with `offLine=Y`
+forced (§1.1). Every run executes from its own temp directory (concurrent runs
+share no writable state; a crash-mode `validator.log` lands there and is folded
+into the diagnostics) with `-Dfile.encoding=UTF-8`, so the err file's encoding
+is deterministic; the `-p` PDF is staged in the temp dir and moved to the
+caller's path only on success.
 
 ## 3. D300 wire format and `nr_evid`
 

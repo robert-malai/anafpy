@@ -17,7 +17,8 @@ certificate): point at the extracted ``dist/`` folder via ``duk_dir`` /
 (ignore the bundled 32-bit JRE 6 — a modern JVM runs ``-v``/``-p`` fine) and
 drop the per-form validator jars from the update feed into ``dist/lib/``.
 
-CLI contract facts baked in below (proven 2026-07-15, Oracle Java 26, macOS):
+CLI contract facts baked in below (proven 2026-07-15 and 2026-07-26, Oracle
+Java 26, macOS):
 
 * positional args; success of ``-v`` writes literally ``ok`` to the err file
   and prints ``Validare fara erori fisier: <path>`` to stdout; problems write
@@ -29,13 +30,27 @@ CLI contract facts baked in below (proven 2026-07-15, Oracle Java 26, macOS):
   the exit code.
 * ``-p`` writes the official multi-page PDF with the XML as an embedded file.
 * the ``zipFile`` positional is ``0`` for forms with no attachment (D300).
+* ``-c`` expects the config **directory** — pointing it at the properties
+  *file* (or a missing path) makes DUK exit silently (exit 0, no output, no
+  err file). Every run here passes a per-run config dir derived from the
+  dist's ``config/config.properties`` with ``offLine=Y`` forced, so the
+  startup update check (hardcoded Windows paths — the documented silent-exit
+  mode) can never fire.
+* runs execute from the per-run temp dir, never ``dist/``: ``lib/`` resolves
+  relative to the jar, and both cwd-relative output (``validator.log``, crash
+  modes) and input-relative output (the SAF-T validators' verbose
+  ``<xml>.log`` trace — the XML is always a temp copy) land in the run's own
+  directory — concurrent runs share no writable state.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 import shutil
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
 import httpx
@@ -64,28 +79,46 @@ _VERSIONS_FEED_URL = "https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml
 # their own.
 _SEVERITY_BY_PREFIX = {"E:": "error", "F:": "error", "W:": "warning", "A:": "warning"}
 
-# How much of each captured process stream a no-findings failure carries into
-# ``DukResult.raw`` — enough for the documented one-line clues (``cod
+# How much of each captured diagnostic source a no-findings failure carries
+# into ``DukResult.raw`` — enough for the documented one-line clues (``cod
 # eroare=-5``), bounded so a chatty JVM cannot flood the result.
 _PROCESS_TAIL_CHARS = 2000
 
+# The official rule id inside a finding's detail line (``eroare regula: R25:
+# nr_evid ...``). Only the unambiguous ``R<number>`` shape is extracted — other
+# detail flavours (``eroare atribut:``, ``eroare structura:``, the D700
+# ``ATENTIONARE`` label) carry no id.
+_RULE_ID = re.compile(r"\bregula:\s*(R\d+)\b")
 
-def _with_process_tail(result: DukResult, stdout: bytes, stderr: bytes) -> DukResult:
-    """Fold a bounded process-output tail into a no-findings failure's ``raw``.
+
+def _with_diagnostics(
+    result: DukResult, stdout: bytes, stderr: bytes, workdir: Path
+) -> DukResult:
+    """Fold bounded run diagnostics into a no-findings failure's ``raw``.
 
     DUK's documented broken-dist failure modes (the old-core
     ``NoClassDefFoundError`` run whose stdout only says ``cod eroare=-5``, the
     missing-config silent exit) leave an empty/unparseable err file — the only
-    clue lives on stdout/stderr. Carry the tail of those streams so the
-    ``ok=False, findings=[]`` outcome is self-explaining (the MCP layer
-    surfaces ``raw`` exactly when there are no findings). Runs with parseable
-    findings — and successes — pass through untouched.
+    clues live on stdout/stderr and in the log files the SAF-T validators drop
+    into the run directory: ``validator.log`` (crash modes) and the verbose
+    ``decl.xml.log`` trace written next to the input XML. Carry the tail of
+    those sources so the ``ok=False, findings=[]`` outcome is self-explaining
+    (the MCP layer surfaces ``raw`` exactly when there are no findings). Runs
+    with parseable findings — and successes — pass through untouched.
     """
     if result.ok or result.findings:
         return result
+    logs: dict[str, bytes] = {}
+    for name in ("validator.log", "decl.xml.log"):
+        with contextlib.suppress(OSError):
+            logs[name] = (workdir / name).read_bytes()
     tails = [
         f"[{label}] {text[-_PROCESS_TAIL_CHARS:]}"
-        for label, data in (("stdout", stdout), ("stderr", stderr))
+        for label, data in (
+            ("stdout", stdout),
+            ("stderr", stderr),
+            *logs.items(),
+        )
         if (text := data.decode("utf-8", errors="replace").strip())
     ]
     if not tails:
@@ -116,9 +149,9 @@ def _parse_err_file(text: str) -> DukResult:
 
     def flush() -> None:
         if severity:
-            findings.append(
-                DukFinding(severity=severity, message="\n".join(current).strip())
-            )
+            message = "\n".join(current).strip()
+            rule = match.group(1) if (match := _RULE_ID.search(message)) else None
+            findings.append(DukFinding(severity=severity, message=message, rule=rule))
 
     for line in text.splitlines():
         if (mapped := _SEVERITY_BY_PREFIX.get(line[:2])) is not None:
@@ -142,6 +175,12 @@ class DukIntegrator:
             ``shutil.which("java")``. Resolution happens at construction; a
             missing java raises :class:`AnafConfigError`.
         timeout: per-run wall-clock budget for the Java subprocess (seconds).
+        jvm_args: extra JVM flags placed before ``-jar``. The default pins
+            ``-Dfile.encoding=UTF-8`` so the err file's encoding is
+            deterministic on every platform (DUK otherwise writes it in the
+            platform default — cp1250 on a Romanian Windows). Passing a value
+            replaces the default; include the encoding pin yourself if you
+            only mean to add flags (e.g. ``-Xmx`` for large SAF-T documents).
 
     Raises:
         AnafConfigError: ``duk_dir`` is not a valid DUK install, or no ``java``
@@ -154,6 +193,7 @@ class DukIntegrator:
         *,
         java: str | None = None,
         timeout: float = 120.0,
+        jvm_args: Sequence[str] | None = None,
     ) -> None:
         self.duk_dir = Path(duk_dir).expanduser().resolve()
         self.jar = self.duk_dir / "DUKIntegrator.jar"
@@ -172,6 +212,9 @@ class DukIntegrator:
             )
         self.java = resolved
         self.timeout = timeout
+        self.jvm_args = (
+            tuple(jvm_args) if jvm_args is not None else ("-Dfile.encoding=UTF-8",)
+        )
 
     # -- public operations -------------------------------------------------------------
 
@@ -180,17 +223,27 @@ class DukIntegrator:
 
         Returns a :class:`DukResult`; ``ok=True`` means the validator wrote
         ``ok``. Findings are DUK's own messages, verbatim; a failure with no
-        parseable findings carries a bounded stdout/stderr tail in ``raw``.
+        parseable findings carries a bounded stdout/stderr/``validator.log``
+        tail in ``raw``.
         """
         with tempfile.TemporaryDirectory(prefix="anafpy-duk-") as tmp:
-            xml_path = (Path(tmp) / "decl.xml").resolve()
-            err_path = (Path(tmp) / "err.txt").resolve()
+            workdir = Path(tmp).resolve()
+            xml_path = workdir / "decl.xml"
+            err_path = workdir / "err.txt"
             xml_path.write_bytes(xml)
             _, stdout, stderr = await self._run(
-                ["-v", form, str(xml_path), str(err_path), str(option)]
+                [
+                    *self._config_args(workdir),
+                    "-v",
+                    form,
+                    str(xml_path),
+                    str(err_path),
+                    str(option),
+                ],
+                workdir=workdir,
             )
-            return _with_process_tail(
-                _parse_err_file(_read_err(err_path)), stdout, stderr
+            return _with_diagnostics(
+                _parse_err_file(_read_err(err_path)), stdout, stderr, workdir
             )
 
     async def render(
@@ -201,28 +254,37 @@ class DukIntegrator:
         DUK validates before rendering: on a validation failure it writes no PDF
         and the returned :class:`DukResult` carries the findings (``ok=False``).
         On success ``ok=True`` and *pdf_path* holds the multi-page PDF with the
-        XML embedded (``/EmbeddedFiles``).
+        XML embedded (``/EmbeddedFiles``). DUK renders into the run's temp dir
+        and the PDF is moved to *pdf_path* only on success, so a killed or
+        failed run never leaves a partial file at the caller's path.
         """
         pdf_path = Path(pdf_path).expanduser().resolve()
         with tempfile.TemporaryDirectory(prefix="anafpy-duk-") as tmp:
-            xml_path = (Path(tmp) / "decl.xml").resolve()
-            err_path = (Path(tmp) / "err.txt").resolve()
+            workdir = Path(tmp).resolve()
+            xml_path = workdir / "decl.xml"
+            err_path = workdir / "err.txt"
+            staging_pdf = workdir / "out.pdf"
             xml_path.write_bytes(xml)
             # -p <form> <xml> <err> <option> <zipFile=0> <pdf>
             _, stdout, stderr = await self._run(
                 [
+                    *self._config_args(workdir),
                     "-p",
                     form,
                     str(xml_path),
                     str(err_path),
                     str(option),
                     "0",
-                    str(pdf_path),
-                ]
+                    str(staging_pdf),
+                ],
+                workdir=workdir,
             )
-            return _with_process_tail(
-                _parse_err_file(_read_err(err_path)), stdout, stderr
+            result = _with_diagnostics(
+                _parse_err_file(_read_err(err_path)), stdout, stderr, workdir
             )
+            if result.ok:
+                _place_pdf(staging_pdf, pdf_path)
+            return result
 
     def installed_forms(self) -> dict[str, str]:
         """Installed per-form validators as ``{form: version}``.
@@ -261,18 +323,45 @@ class DukIntegrator:
 
     # -- execution ---------------------------------------------------------------------
 
-    async def _run(self, args: list[str]) -> tuple[int, bytes, bytes]:
+    def _config_args(self, workdir: Path) -> list[str]:
+        """Build ``-c <dir>`` pointing at a per-run config with ``offLine=Y``.
+
+        DUK's ``-c`` expects the config *directory* — a file path (or a missing
+        one) makes it exit silently — so the directory is always created here,
+        inside the run's temp dir. Its ``config.properties`` carries the
+        dist's own settings when readable, with any ``offLine`` line replaced
+        by ``offLine=Y`` (the startup update check is the documented
+        silent-exit mode on non-Windows hosts). Properties files predate
+        UTF-8 defaults, so the merge stays at the byte level.
+        """
+        config_dir = workdir / "config"
+        config_dir.mkdir()
+        source = self.duk_dir / "config" / "config.properties"
+        lines: list[bytes] = []
+        with contextlib.suppress(OSError):
+            lines = [
+                line
+                for line in source.read_bytes().splitlines()
+                if not line.strip().startswith(b"offLine")
+            ]
+        lines.append(b"offLine=Y")
+        (config_dir / "config.properties").write_bytes(b"\n".join(lines) + b"\n")
+        return ["-c", str(config_dir)]
+
+    async def _run(self, args: list[str], *, workdir: Path) -> tuple[int, bytes, bytes]:
         """Run ``java -jar DUKIntegrator.jar <args>``; returns (code, out, err).
 
-        The exit code is returned for diagnostics only — callers judge success
-        by the err file, never by this.
+        *workdir* — the run's temp dir — is the cwd, so cwd-relative outputs
+        (``validator.log``) land there and concurrent runs share no writable
+        state. The exit code is returned for diagnostics only — callers judge
+        success by the err file, never by this.
         """
-        command = [self.java, "-jar", str(self.jar), *args]
+        command = [self.java, *self.jvm_args, "-jar", str(self.jar), *args]
         try:
             return await run_subprocess(
                 command,
                 timeout=self.timeout,
-                cwd=self.duk_dir,
+                cwd=workdir,
             )
         except TimeoutError:
             raise AnafConfigError(
@@ -316,6 +405,28 @@ def _default_java() -> str | None:
     if override := os.environ.get("ANAFPY_DUK_JAVA"):
         return override
     return shutil.which("java")
+
+
+def _place_pdf(staging: Path, target: Path) -> None:
+    """Move a successfully-rendered PDF from the run's temp dir to *target*.
+
+    A rename for the atomic same-volume case; a temp dir on another volume
+    falls back to a plain copy (the temp dir's removal cleans up the staging
+    file). A PDF that cannot be placed after DUK reported success is a local
+    filesystem problem, not a validation outcome.
+
+    Raises:
+        AnafConfigError: the rendered PDF could not be written at *target*.
+    """
+    try:
+        try:
+            staging.replace(target)
+        except OSError:
+            shutil.copyfile(staging, target)
+    except OSError as exc:
+        raise AnafConfigError(
+            f"DUK rendered the PDF but it could not be placed at {target}: {exc}"
+        ) from exc
 
 
 def _read_err(err_path: Path) -> str:

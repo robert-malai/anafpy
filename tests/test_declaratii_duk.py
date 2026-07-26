@@ -26,6 +26,12 @@ def duk_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _err_path(args: list[str]) -> Path:
+    """The err-file positional: third after the ``-v``/``-p`` operation flag."""
+    operation = "-v" if "-v" in args else "-p"
+    return Path(args[args.index(operation) + 3])
+
+
 class FakeDuk(DukIntegrator):
     """A DukIntegrator whose ``_run`` writes a canned err file instead of Java."""
 
@@ -35,18 +41,31 @@ class FakeDuk(DukIntegrator):
         err: str = "ok",
         stdout: bytes = b"stdout",
         stderr: bytes = b"",
+        validator_log: str = "",
         **kwargs: object,
     ) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self.err = err
         self.stdout = stdout
         self.stderr = stderr
+        self.validator_log = validator_log
         self.calls: list[list[str]] = []
+        self.workdirs: list[Path] = []
+        self.config_snapshots: list[bytes] = []
         self.pdf_on_success = False
 
-    async def _run(self, args: list[str]) -> tuple[int, bytes, bytes]:
+    async def _run(self, args: list[str], *, workdir: Path) -> tuple[int, bytes, bytes]:
         self.calls.append(args)
-        Path(args[3]).write_text(self.err, encoding="utf-8")
+        self.workdirs.append(workdir)
+        # The per-run config dir is gone with the temp dir — snapshot it now.
+        self.config_snapshots.append(
+            (Path(args[1]) / "config.properties").read_bytes()
+            if args[0] == "-c"
+            else b""
+        )
+        _err_path(args).write_text(self.err, encoding="utf-8")
+        if self.validator_log:
+            (workdir / "validator.log").write_text(self.validator_log, encoding="utf-8")
         if self.pdf_on_success and self.err.strip() == "ok" and "-p" in args:
             Path(args[-1]).write_bytes(b"%PDF-1.7\n")
         return 0, self.stdout, self.stderr
@@ -81,13 +100,36 @@ async def test_validate_command_shape(duk_dir: Path) -> None:
     result = await duk.validate("D300", b"<x/>", option=0)
     assert result.ok
     args = duk.calls[0]
-    assert args[0] == "-v"
-    assert args[1] == "D300"
-    assert args[2].endswith(".xml")
-    assert args[3].endswith(".txt")
-    assert args[4] == "0"
-    assert Path(args[2]).is_absolute()
-    assert Path(args[3]).is_absolute()
+    # -c must point at a DIRECTORY inside the run's temp dir (a file path
+    # makes real DUK exit silently), ahead of the operation positionals.
+    assert args[0] == "-c"
+    assert Path(args[1]) == duk.workdirs[0] / "config"
+    assert args[2] == "-v"
+    assert args[3] == "D300"
+    assert args[4].endswith(".xml")
+    assert args[5].endswith(".txt")
+    assert args[6] == "0"
+    assert Path(args[4]).is_absolute()
+    assert Path(args[5]).is_absolute()
+
+
+async def test_config_dir_forces_offline_over_dist_settings(duk_dir: Path) -> None:
+    # The dist's config rides along, its offLine line replaced — never doubled.
+    (duk_dir / "config").mkdir()
+    (duk_dir / "config" / "config.properties").write_bytes(
+        b"proxy=auto\noffLine=N\nurlVersiuni=http://example.invalid\n"
+    )
+    duk = FakeDuk(duk_dir, java="java")
+    await duk.validate("D300", b"<x/>")
+    assert duk.config_snapshots[0] == (
+        b"proxy=auto\nurlVersiuni=http://example.invalid\noffLine=Y\n"
+    )
+
+
+async def test_config_dir_without_dist_config_is_minimal(duk_dir: Path) -> None:
+    duk = FakeDuk(duk_dir, java="java")
+    await duk.validate("D300", b"<x/>")
+    assert duk.config_snapshots[0] == b"offLine=Y\n"
 
 
 async def test_render_command_shape(duk_dir: Path, tmp_path: Path) -> None:
@@ -97,23 +139,26 @@ async def test_render_command_shape(duk_dir: Path, tmp_path: Path) -> None:
     result = await duk.render("D300", b"<x/>", pdf)
     assert result.ok
     args = duk.calls[0]
-    assert args[0] == "-p"
-    assert args[1] == "D300"
-    assert args[5] == "0"  # zipFile: no attachment
-    assert args[6] == str(pdf)
+    assert args[2] == "-p"
+    assert args[3] == "D300"
+    assert args[7] == "0"  # zipFile: no attachment
+    # DUK renders into the run's temp dir; the PDF is moved to the caller's
+    # path only on success.
+    assert Path(args[8]) == duk.workdirs[0] / "out.pdf"
     assert pdf.read_bytes().startswith(b"%PDF")
 
 
-async def test_render_resolves_relative_output_before_duk_cwd(
+async def test_render_resolves_relative_output_against_caller_cwd(
     duk_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
     duk = FakeDuk(duk_dir, java="java")
     duk.pdf_on_success = True
 
-    await duk.render("D300", b"<x/>", Path("relative.pdf"))
+    result = await duk.render("D300", b"<x/>", Path("relative.pdf"))
 
-    assert duk.calls[0][-1] == str((tmp_path / "relative.pdf").resolve())
+    assert result.ok
+    assert (tmp_path / "relative.pdf").read_bytes().startswith(b"%PDF")
 
 
 async def test_render_validation_failure_writes_no_pdf(
@@ -145,6 +190,18 @@ def test_parse_single_error() -> None:
     assert result.findings[0].severity == "error"
     assert "R25" in result.findings[0].message
     assert "detaliu suplimentar" in result.findings[0].message
+    assert result.findings[0].rule == "R25"
+
+
+def test_parse_rule_id_only_for_r_numbers() -> None:
+    # "eroare atribut"/"eroare structura" details and the D700 ATENTIONARE
+    # label carry no R-number — rule stays None, message stays verbatim.
+    result = _parse_err_file(
+        "E: eroare atribut: cui\n"
+        "A: validari globale\n"
+        " atentionare regula: ATENTIONARE: Formularul urmeaza sa fie prelucrat\n"
+    )
+    assert [f.rule for f in result.findings] == [None, None]
 
 
 def test_parse_saft_fatal_prefix() -> None:
@@ -245,6 +302,70 @@ async def test_render_empty_err_failure_carries_process_output_tail(
     result = await duk.render("D300", b"<x/>", tmp_path / "out.pdf")
     assert not result.ok
     assert "[stdout] cod eroare=-5" in result.raw
+
+
+async def test_empty_err_failure_carries_validator_log_tail(duk_dir: Path) -> None:
+    # The SAF-T validators crash-log into the working directory (the old-core
+    # NoClassDefFoundError mode) — with the per-run cwd that file is ours to read.
+    duk = FakeDuk(
+        duk_dir,
+        java="java",
+        err="",
+        stdout=b"",
+        validator_log="java.lang.NoClassDefFoundError: dec/DECTagStruct",
+    )
+    result = await duk.validate("D406", b"<x/>")
+    assert not result.ok
+    assert "[validator.log] java.lang.NoClassDefFoundError" in result.raw
+
+
+async def test_empty_err_failure_carries_input_log_tail(duk_dir: Path) -> None:
+    # The SAF-T validators also write a verbose trace next to the input XML —
+    # always the temp copy ``decl.xml``, so ``decl.xml.log`` in the run dir.
+    class LogWritingDuk(FakeDuk):
+        async def _run(
+            self, args: list[str], *, workdir: Path
+        ) -> tuple[int, bytes, bytes]:
+            (workdir / "decl.xml.log").write_text(
+                "SECTION DETECTED: Account", encoding="utf-8"
+            )
+            return await super()._run(args, workdir=workdir)
+
+    duk = LogWritingDuk(duk_dir, java="java", err="", stdout=b"")
+    result = await duk.validate("D406T", b"<x/>")
+    assert not result.ok
+    assert "[decl.xml.log] SECTION DETECTED: Account" in result.raw
+
+
+async def test_jvm_command_pins_utf8_and_runs_from_workdir(
+    duk_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorded: dict[str, object] = {}
+
+    async def record(
+        argv: list[str], *, timeout: float, cwd: object = None, env: object = None
+    ) -> tuple[int, bytes, bytes]:
+        recorded["argv"] = list(argv)
+        recorded["cwd"] = cwd
+        _err_path(list(argv)).write_text("ok", encoding="utf-8")
+        return 0, b"", b""
+
+    monkeypatch.setattr("anafpy.declaratii.duk.run_subprocess", record)
+    duk = DukIntegrator(duk_dir, java="java")
+    result = await duk.validate("D300", b"<x/>")
+    assert result.ok
+    argv = recorded["argv"]
+    assert isinstance(argv, list)
+    assert argv[:3] == ["java", "-Dfile.encoding=UTF-8", "-jar"]
+    # The run executes from the per-run temp dir, never the dist.
+    assert recorded["cwd"] != duk.duk_dir
+    assert _err_path(argv).parent == Path(str(recorded["cwd"]))
+
+
+def test_explicit_jvm_args_replace_the_default(duk_dir: Path) -> None:
+    duk = DukIntegrator(duk_dir, java="java", jvm_args=["-Xmx2g"])
+    assert duk.jvm_args == ("-Xmx2g",)
+    assert DukIntegrator(duk_dir, java="java").jvm_args == ("-Dfile.encoding=UTF-8",)
 
 
 def test_parse_cp1250_bytes(tmp_path: Path) -> None:

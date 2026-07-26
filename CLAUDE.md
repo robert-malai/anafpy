@@ -194,7 +194,10 @@ src/anafpy/
   declaratii/            # tax-declaration authoring/validation/signing (M1, local:
                          # subprocess + crypto) + StareD112 filing status (public):
     duk.py               # DukIntegrator (async): validate/render via ANAF's DUK
-                         # (-v/-p headless; judge by err-file, never exit code),
+                         # (-v/-p headless; judge by err-file, never exit code;
+                         # per-run temp cwd + -c offLine=Y config dir — -c takes
+                         # a DIRECTORY, a file path silently exits — and
+                         # -Dfile.encoding=UTF-8 by default),
                          # installed_forms + free fetch_feed_versions staleness
     models.py            # declaration-family value-type home: DUK, upload, PDF-sign
                          # outcomes + DeclarationState/Document/StatusList

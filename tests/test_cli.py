@@ -295,8 +295,11 @@ def _duk_dir(tmp_path: Path) -> Path:
 
 
 def _fake_duk_run(err: str) -> Any:
-    async def run(self: object, args: list[str]) -> tuple[int, bytes, bytes]:
-        Path(args[3]).write_text(err, encoding="utf-8")
+    async def run(
+        self: object, args: list[str], *, workdir: Path
+    ) -> tuple[int, bytes, bytes]:
+        operation = "-v" if "-v" in args else "-p"
+        Path(args[args.index(operation) + 3]).write_text(err, encoding="utf-8")
         # Like real DUK, a clean OR warning-only run still renders the PDF.
         has_error = any(line.startswith(("E:", "F:")) for line in err.splitlines())
         if "-p" in args and not has_error:

@@ -27,11 +27,14 @@ class DukFinding(BaseModel):
     """One DUK finding: an ``E:``/``F:`` error, or a ``W:``/``A:`` warning.
 
     ``severity`` is ``"error"`` (``E:``/``F:`` — blocking) or ``"warning"``
-    (``W:`` warning / ``A:`` atentionare — informational).
+    (``W:`` warning / ``A:`` atentionare — informational). ``rule`` is the
+    official rule id when the message carries one (``eroare regula: R25: …``
+    → ``"R25"``); the message stays DUK's verbatim text either way.
     """
 
     severity: str
     message: str
+    rule: str | None = None
 
 
 class DukResult(BaseModel):

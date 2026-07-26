@@ -54,8 +54,11 @@ async def _call(server: Any, name: str, **arguments: Any) -> dict[str, Any]:
 
 
 def _fake_run(err: str = "ok", *, write_pdf: bool = True) -> Any:
-    async def run(self: DukIntegrator, args: list[str]) -> tuple[int, bytes, bytes]:
-        Path(args[3]).write_text(err, encoding="utf-8")
+    async def run(
+        self: DukIntegrator, args: list[str], *, workdir: Path
+    ) -> tuple[int, bytes, bytes]:
+        operation = "-v" if "-v" in args else "-p"
+        Path(args[args.index(operation) + 3]).write_text(err, encoding="utf-8")
         if write_pdf and "-p" in args and err.strip() == "ok":
             Path(args[-1]).write_bytes(b"%PDF-1.7\ncontent")
         return 0, b"", b""
