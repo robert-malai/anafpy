@@ -22,20 +22,14 @@ invoicing system.
 - **e-Factura outbound: structured authoring fully supported, upstream
   invoicing software strongly recommended.** When the caller runs invoicing
   software, they supply the **complete UBL XML** it exported and anafpy never
-  re-composes it — an upstream system's document is authoritative, re-deriving
-  it adds only drift, and — decisively — **ANAF's SPV is not invoice storage**:
-  it purges filed messages after ~60 days (e-Factura reference §3), so the
+  re-composes it — the upstream document is authoritative, re-deriving it adds
+  only drift, and — decisively — **ANAF's SPV is not invoice storage**: it
+  purges filed messages after ~60 days (e-Factura reference §3), so the
   durable record must live in a system the caller owns, which an invoicing
   system provides for free. Where no such system exists, `efactura.authoring`
-  is the first-class path — one `InvoiceDocument` semantic model (kind picks
-  the UBL `Invoice`/`CreditNote` render target), totals and the VAT breakdown
-  **computed by default** with explicit overrides preserved, `render_invoice` →
-  upload-ready bytes, `read_invoice`/`parse_invoice` back from the wire
-  (byte-stable round-trips), and a translated EN 16931 + CIUS-RO rule set
-  (`validate()`, findings with official BR-* ids) — archiving the signed
-  documents (download the ZIP) is then the caller's own job.
-  `EFacturaClient.upload` files XML; `upload_invoice` files an authored
-  document.
+  is the first-class path (§4 Authoring has the full design); archiving the
+  signed ZIPs is then the caller's own job. `EFacturaClient.upload` files XML;
+  `upload_invoice` files an authored document.
 - **e-Transport = full translation to typed models** *(REVISED 2026-07-03; was
   pass-through like e-Factura)*. The pass-through premise doesn't hold here: there
   is usually **no upstream software** producing declaration XML (firms fill ANAF's
@@ -50,17 +44,13 @@ invoicing system.
   original zip/XML/PDF **as-is**, and parse received UBL into the flat
   `InvoiceDocument` view. e-Transport stays outbound + own-declaration status
   only.
-- **One e-Factura flat surface.**
-  `authoring.InvoiceDocument` is the **strict, full-fidelity bidirectional
-  model**: covers every EN 16931 business group CIUS-RO admits, enforces
-  formats/lengths/code lists at construction, and maps both directions
-  (`render_invoice` / `read_invoice`). Strict reading is safe for the inbox —
-  every filed document already passed ANAF's validation, whose rules the
-  construction checks mirror — and `DownloadedMessage.view` degrades to `None`
-  (never raises) on the residual risk, e.g. code-list edition drift until the
-  vendored lists are refreshed. The e-Transport flat models keep the same
-  bidirectional contract (full-fidelity, strict field validation, enum fields
-  accept ANAF codes or member names).
+- **One e-Factura flat surface.** `authoring.InvoiceDocument` is the strict,
+  full-fidelity bidirectional model (§4 Authoring). Strict reading is safe for
+  the inbox — every filed document already passed ANAF's validation, whose
+  rules the construction checks mirror — and `DownloadedMessage.view` degrades
+  to `None` (never raises) on the residual risk, e.g. code-list edition drift
+  until the vendored lists are refreshed. The e-Transport flat models keep the
+  same bidirectional contract.
 - **Stateless** beyond the OAuth token store: callers own persistence of upload
   indices, message ids, and statuses. Discrete one-call-one-result methods, no
   transport retry.
@@ -524,6 +514,23 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   auth required (usable before `anafpy auth login`), 1:1 on the client methods;
   `raw` bytes stay client-side. The counterparty sanity-check before filing lives
   here.
+- **SPV tools** (added 2026-07-12/13): read-only mailbox access, plus
+  `spv_cerere` carried by honest REQUESTING annotations and an **in-process
+  same-day dedupe** in `AppContext` (a persistent cache was rejected — the
+  library stays stateless; a repeated `cerere` is harmless at the client
+  layer, guarding agent loops is the MCP layer's job). **The certificate/2FA
+  login IS a tool** (`spv_login`, 2026-07-13 — reversing the earlier
+  logins-stay-CLI stance): unlike the OAuth browser flow it needs no host UI
+  (the human gate is the out-of-band PIN/2FA approval), and APM sessions die
+  in under an hour, so per-hour terminal round-trips would kill the Cowork
+  UX. It is confirm-gated, one attempt per call, failures returned as
+  `logged_in=false` + guidance. Report-type selection is model-driven over
+  `spv_nomenclature`'s per-type English descriptions (decided 2026-07-13); an
+  MCP-elicitation host-side picker was **parked** — Claude Desktop/Cowork
+  answer `elicitation/create` with a synthetic instant cancel — and a wrong
+  `motiv` errors with the full accepted list so the flow self-heals. No
+  two-step gate anywhere in SPV: report requests are additive information
+  requests, not filings.
 - **Display names**: every tool carries an English MCP `title` following
   `Service: operation` ("e-Factura: Validate invoice", "ANAF Info: Taxpayer
   lookup", "ANAF: Authentication status"). One language only: MCP has no title
