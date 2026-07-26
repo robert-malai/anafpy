@@ -131,10 +131,8 @@ def _header_errors(root: ET.Element) -> list[str]:
     """Collect ``errorMessage`` values from ``<Errors>`` children of an ANAF header."""
     errors: list[str] = []
     for child in root.iter():
-        if _local(child.tag) == "Errors":
-            message = child.get("errorMessage")
-            if message:
-                errors.append(message)
+        if _local(child.tag) == "Errors" and (message := child.get("errorMessage")):
+            errors.append(message)
     return errors
 
 
@@ -412,8 +410,7 @@ class EFacturaClient(HttpClientBase):
                 status_code=200,
                 body=as_text(body),
             ) from exc
-        error = data.get("eroare")
-        if error is not None:
+        if (error := data.get("eroare")) is not None:
             if is_empty_result_message(str(error)):
                 return [], None
             raise AnafResponseError(

@@ -50,8 +50,7 @@ def parse_netscape_cookies(text: str) -> dict[str, str]:
         elif line.startswith("#") or not line.strip():
             continue
         # domain, include-subdomains, path, secure, expires, name, value
-        fields = line.split("\t")
-        if len(fields) == 7:
+        if len(fields := line.split("\t")) == 7:
             cookies[fields[5]] = fields[6]
     return cookies
 
@@ -207,8 +206,7 @@ class CurlBootstrapperBase:
                     # fire the user's 2FA.
                     self.raise_curl_failure(returncode, stderr, step=step)
             jar_text = ""
-            jar = Path(jar_path)
-            if jar.exists():
+            if (jar := Path(jar_path)).exists():
                 jar_text = jar.read_text(encoding="utf-8")
         return returncode, stdout, stderr, parse_netscape_cookies(jar_text)
 

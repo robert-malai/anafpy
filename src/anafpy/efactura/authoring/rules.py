@@ -195,8 +195,7 @@ class _Rules:
                 "additional legal information (BT-33) — those are seller-only "
                 "terms in EN 16931",
             )
-        instructions = doc.payment_instructions
-        if instructions is not None:
+        if (instructions := doc.payment_instructions) is not None:
             if (
                 instructions.means_code in _CREDIT_TRANSFER_MEANS
                 and not instructions.credit_transfers
@@ -401,8 +400,7 @@ class _Rules:
                 entry.category,
                 None if entry.rate is None else entry.rate.normalize(),
             )
-            expected = self.groups.get(key)
-            if expected is None:
+            if (expected := self.groups.get(key)) is None:
                 self.flag(
                     f"{family}-08",
                     f"VAT breakdown entry {entry.category.value} at rate "

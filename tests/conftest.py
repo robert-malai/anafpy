@@ -83,8 +83,7 @@ def live_token_store(fake_keyring: FakeKeyring) -> Iterator[TokenStore]:
     path = Path(
         os.environ.get("ANAFPY_TOKEN_STORE", "~/.anafpy/tokens.json")
     ).expanduser()
-    file_store = FileTokenStore(path)
-    if file_store.load() is not None:
+    if (file_store := FileTokenStore(path)).load() is not None:
         yield file_store
         return
     keyring.set_keyring(fake_keyring.previous)

@@ -46,8 +46,7 @@ def _fixup_generated() -> int:
 
 
 def main() -> int:
-    missing = [p for p in ROOTS if not p.exists()]
-    if missing:
+    if missing := [p for p in ROOTS if not p.exists()]:
         print(f"Missing vendored XSDs: {missing}", file=sys.stderr)
         return 1
 

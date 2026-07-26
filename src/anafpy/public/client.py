@@ -179,8 +179,7 @@ class _RequestPacer:
             return
         async with self._lock:
             loop = asyncio.get_running_loop()
-            delay = self._earliest - loop.time()
-            if delay > 0:
+            if (delay := self._earliest - loop.time()) > 0:
                 await asyncio.sleep(delay)
             self._earliest = loop.time() + self._interval
 

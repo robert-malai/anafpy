@@ -272,6 +272,15 @@ tests/                   # respx-mocked suite + opt-in live files (filing
   for substring/regex tests, single binary checks, and dict-lookup dispatch —
   the test is whether the pattern makes the condition structural and *shorter*
   to read, not whether it can be expressed as one.
+- **Favour the walrus operator** (DESIGN.md §2) — fold an assign-then-test pair
+  into the condition (`if (exp := _jwt_exp(token)) is not None:`,
+  `if message := child.get("errorMessage"):`,
+  `if (jar := Path(jar_path)).exists():`) **when the binding's whole lifetime
+  is that branch**. Keep the separate assignment when the name is the subject
+  of the rest of the function (a `docs = _docs_dir(cfg)` guard whose `docs`
+  drives everything below), when the merged line would wrap or exceed 88
+  columns, or when the right-hand side already needs its own line. Loop
+  counters and accumulators are not walrus material.
 - **English identifiers everywhere in hand-written code**: ANAF's Romanian wire
   names survive only as pydantic validation aliases (`data_creare` →
   `created_at`), string literals, and the generated schema models. Domain

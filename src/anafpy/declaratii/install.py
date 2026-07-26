@@ -384,8 +384,7 @@ class DukInstaller:
             await _stream_to_file(client, SAFT_ZIP_URL, archive)
             with zipfile.ZipFile(archive) as bundle:
                 for member in bundle.namelist():
-                    name = PurePosixPath(member).name
-                    if name in wanted:
+                    if (name := PurePosixPath(member).name) in wanted:
                         extracted.setdefault(name, bundle.read(member))
         if f"{_SAFT_FORM}Validator.jar" not in extracted:
             raise AnafResponseError(

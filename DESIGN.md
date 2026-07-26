@@ -89,6 +89,19 @@ inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; a sync facade
   rewrite mandate: substring/regex tests, single binary checks, and
   dict-lookup dispatch stay plain `if` — the bar is that the pattern makes the
   condition structural and shorter to read.
+- **The walrus operator is the preferred assign-then-test form** (adopted
+  2026-07-26, the companion rule to pattern matching above). The codebase had
+  grown two spellings of the same shape — `x = f()` on its own line followed by
+  `if x is None:`, next to the `if (x := f()) is None:` already used in ~40
+  places — and the two-line form buries the fact that the binding exists only
+  to be tested. The rule is **lifetime, not brevity**: fold when the name is
+  consumed by the condition and its branch, keep the standalone assignment when
+  the name is the subject of everything that follows (an early-return guard
+  whose value drives the rest of the function reads worse with its binding
+  hidden inside the condition). Also excluded: right-hand sides that need their
+  own line to fit 88 columns, and loop counters/accumulators. Like the pattern-
+  matching rule this is a convention, not a lint gate — ruff has no check that
+  encodes the lifetime distinction, so it lives in review.
 - **Single distribution** `anafpy` with optional extras (not a multi-package repo):
   - runtime: `httpx`, `pydantic`, `xsdata-pydantic`, `tenacity`, `pyjwt`
     (unverified `exp` reads only, to schedule token refresh — verification is

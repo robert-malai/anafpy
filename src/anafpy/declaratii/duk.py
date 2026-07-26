@@ -447,8 +447,7 @@ def _read_err(err_path: Path) -> str:
 
 
 def _form_version(lib: Path, form: str) -> str:
-    history = lib / f"{form}IstoriaVersiunilor.txt"
-    if history.exists():
+    if (history := lib / f"{form}IstoriaVersiunilor.txt").exists():
         for line in history.read_text(encoding="utf-8", errors="replace").splitlines():
             if stripped := line.strip():
                 return stripped

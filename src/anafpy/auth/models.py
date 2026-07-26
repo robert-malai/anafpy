@@ -58,8 +58,7 @@ class TokenSet(BaseModel):
     @cached_property
     def access_expires_at(self) -> float:
         """Access expiry (epoch s): JWT ``exp``, else ``expires_in``, else 90 days."""
-        exp = _jwt_exp(self.access_token)
-        if exp is not None:
+        if (exp := _jwt_exp(self.access_token)) is not None:
             return exp
         if self.expires_in:
             return self.obtained_at + self.expires_in
