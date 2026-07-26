@@ -130,6 +130,29 @@ browser). Two curl loose ends:
 
 ## Step 9 — declarations
 
-Signing is **not available on Windows** yet: offer only the validate/render
-half (DUKIntegrator install as in SKILL.md), and say plainly that signing and
-the signed-PDF flow need a Mac for now.
+Signing is **not available on Windows** yet: offer the validate/render half
+plus the no-login status/recipisa tools, and say plainly that signing, and
+therefore the signed-PDF filing flow, need a Mac for now.
+
+Java probe (JRE/JDK 8+; DUKIntegrator needs it):
+
+```bash
+java -version 2>&1 | head -1
+```
+
+If that fails, anafpy also finds a JVM through `JAVA_HOME` (Windows JRE
+installers often set it without touching `PATH`) — probe
+`ls "$JAVA_HOME/bin/java.exe" 2>/dev/null` before declaring Java missing. When
+it truly is missing, tell the user first, then install one yourself with
+`winget install --id EclipseAdoptium.Temurin21.JRE -e` and let them answer the
+UAC prompt.
+
+DUKIntegrator install (managed, from ANAF's update feed — as in SKILL.md):
+
+```bash
+"$USERPROFILE/.local/bin/anafpy.exe" duk install
+```
+
+The dist lands at `%USERPROFILE%\.anafpy\duk-dist`; no `env` entry is needed —
+the server finds the managed install by itself. Verify by asking Cowork
+*"check the declaration setup"* (`declaratie_duk_status`).

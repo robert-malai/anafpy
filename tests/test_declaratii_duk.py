@@ -7,6 +7,7 @@ err-file parser directly.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import httpx
@@ -82,8 +83,9 @@ def test_bad_duk_dir_raises(tmp_path: Path) -> None:
 
 def test_missing_java_raises(duk_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANAFPY_DUK_JAVA", raising=False)
+    monkeypatch.delenv("JAVA_HOME", raising=False)
     monkeypatch.setattr("anafpy.declaratii.duk.shutil.which", lambda _: None)
-    with pytest.raises(AnafConfigError, match="no Java runtime"):
+    with pytest.raises(AnafConfigError, match="JAVA_HOME"):
         DukIntegrator(duk_dir)
 
 
@@ -91,6 +93,37 @@ def test_java_from_env(duk_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANAFPY_DUK_JAVA", "/opt/java/bin/java")
     duk = DukIntegrator(duk_dir)
     assert duk.java == "/opt/java/bin/java"
+
+
+def _java_home(tmp_path: Path) -> tuple[Path, Path]:
+    """A fake ``JAVA_HOME`` tree; returns (home, the java binary inside it)."""
+    home = tmp_path / "jdk"
+    binary = home / "bin" / ("java.exe" if os.name == "nt" else "java")
+    binary.parent.mkdir(parents=True)
+    binary.write_text("")
+    return home, binary
+
+
+def test_java_from_java_home_when_not_on_path(
+    duk_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The Windows accommodation: JRE installers set JAVA_HOME without PATH.
+    monkeypatch.delenv("ANAFPY_DUK_JAVA", raising=False)
+    monkeypatch.setattr("anafpy.declaratii.duk.shutil.which", lambda _: None)
+    home, binary = _java_home(tmp_path)
+    monkeypatch.setenv("JAVA_HOME", str(home))
+    assert DukIntegrator(duk_dir).java == str(binary)
+
+
+def test_java_on_path_wins_over_java_home(
+    duk_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A stale JAVA_HOME must never displace a working PATH java.
+    monkeypatch.delenv("ANAFPY_DUK_JAVA", raising=False)
+    monkeypatch.setattr("anafpy.declaratii.duk.shutil.which", lambda _: "/usr/bin/java")
+    home, _binary = _java_home(tmp_path)
+    monkeypatch.setenv("JAVA_HOME", str(home))
+    assert DukIntegrator(duk_dir).java == "/usr/bin/java"
 
 
 # -- command construction ----------------------------------------------------------

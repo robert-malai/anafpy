@@ -316,7 +316,8 @@ installs it for you:
    `java -version` in a terminal should print a version. (anafpy only runs
    DUKIntegrator's *validate* and *render* steps, which work on any modern JVM;
    the Java-8-only limitation you may read about applies to DUK's own signing,
-   which anafpy does not use.)
+   which anafpy does not use. Installed but the command not found? anafpy also
+   looks at `JAVA_HOME`, which Windows Java installers usually set.)
 2. Ask Claude to *"set up the declaration validator"* — it calls
    `declaratie_duk_install`, which downloads DUKIntegrator and the validators
    for the common forms straight from ANAF's official update feed into

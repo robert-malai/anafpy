@@ -28,7 +28,8 @@ upload (the upload client, or manually) → status/recipisa via StareD112.
   `await DukInstaller().install()`. A hand-assembled `dist/` folder keeps
   working — pass its path to `DukIntegrator` (or set `ANAFPY_DUK_DIR`) and it
   wins over the managed install.
-- **A JRE/JDK** (Java 8+) on `PATH`, or set `ANAFPY_DUK_JAVA`.
+- **A JRE/JDK** (Java 8+) — on `PATH`, via `JAVA_HOME`, or set
+  `ANAFPY_DUK_JAVA`.
 - **The `declaratii` extra** for signing: `pip install 'anafpy[declaratii]'`
   (pyHanko). Validation and rendering do not need it.
 

@@ -55,11 +55,13 @@ class ServerConfig(BaseSettings):
         spv_identity_path: the persisted certificate selection written by
             ``spv_select_certificate`` / ``anafpy spv login``
             (``ANAFPY_SPV_IDENTITY_FILE``).
-        duk_dir: the extracted DUKIntegrator ``dist/`` folder (``ANAFPY_DUK_DIR``);
-            no default. Without it the declaration tools report how to enable
-            themselves, like the authenticated tools without OAuth credentials.
+        duk_dir: an extracted DUKIntegrator ``dist/`` folder (``ANAFPY_DUK_DIR``);
+            overrides the managed dist that ``declaratie_duk_install`` maintains
+            at ``~/.anafpy/duk-dist``. With neither, the declaration tools
+            report how to enable themselves, like the authenticated tools
+            without OAuth credentials.
         duk_java: the ``java`` binary DUKIntegrator runs under (``ANAFPY_DUK_JAVA``);
-            optional — falls back to ``java`` on ``PATH``.
+            optional — falls back to ``java`` on ``PATH``, then to ``JAVA_HOME``.
         sign_identity: the Keychain identity name to sign declarations with
             (``ANAFPY_SIGN_IDENTITY``); optional — falls back to the persisted SPV
             certificate selection (the same qualified certificate).

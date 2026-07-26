@@ -112,7 +112,8 @@ x64 Schannel curl such as Git for Windows', see the SPV reference §1.1),
 `ANAFPY_DUK_DIR` (an extracted DUKIntegrator `dist/` folder — overrides the
 managed dist at `~/.anafpy/duk-dist` that `anafpy duk install` /
 `declaratie_duk_install` maintain; with neither, the `declaratie_*` authoring
-tools error with install guidance), `ANAFPY_DUK_JAVA` (the java binary; optional),
+tools error with install guidance), `ANAFPY_DUK_JAVA` (the java binary;
+optional — else `java` on PATH, else `JAVA_HOME`, the Windows accommodation),
 `ANAFPY_SIGN_IDENTITY` (Keychain identity name to sign declarations with;
 optional — falls back to the persisted SPV certificate selection),
 `ANAFPY_DECLARATII_UPLOAD` (default on; `off` opts out of the declaration

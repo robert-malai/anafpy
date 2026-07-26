@@ -167,8 +167,9 @@ class DukIntegrator:
         duk_dir: the extracted ``dist/`` folder (must contain
             ``DUKIntegrator.jar`` and ``lib/``).
         java: the ``java`` binary; explicit arg > ``ANAFPY_DUK_JAVA`` >
-            ``shutil.which("java")``. Resolution happens at construction; a
-            missing java raises :class:`AnafConfigError`.
+            ``java`` on PATH > ``JAVA_HOME/bin/java`` (``java.exe`` on
+            Windows). Resolution happens at construction; a missing java
+            raises :class:`AnafConfigError`.
         timeout: per-run wall-clock budget for the Java subprocess (seconds).
         jvm_args: extra JVM flags placed before ``-jar``. The default pins
             ``-Dfile.encoding=UTF-8`` so the err file's encoding is
@@ -203,8 +204,8 @@ class DukIntegrator:
         resolved = java or _default_java()
         if not resolved:
             raise AnafConfigError(
-                "no Java runtime found — install a JRE/JDK (Java 8+) and set "
-                "ANAFPY_DUK_JAVA, or put `java` on PATH"
+                "no Java runtime found — install a JRE/JDK (Java 8+); anafpy "
+                "looks at ANAFPY_DUK_JAVA, then `java` on PATH, then JAVA_HOME"
             )
         self.java = resolved
         self.timeout = timeout
@@ -387,10 +388,22 @@ async def fetch_feed_versions(
 
 
 def _default_java() -> str | None:
-    """``ANAFPY_DUK_JAVA`` if set, else ``java`` on PATH, else ``None``."""
+    """``ANAFPY_DUK_JAVA`` if set, else ``java`` on PATH, else ``JAVA_HOME``.
+
+    The ``JAVA_HOME`` probe is the Windows accommodation: JRE installers there
+    routinely set the variable without putting ``java.exe`` on ``PATH``. PATH
+    stays ahead of it so a working ``java`` is never displaced by a stale
+    ``JAVA_HOME`` pointing at a removed install.
+    """
     if override := os.environ.get("ANAFPY_DUK_JAVA"):
         return override
-    return shutil.which("java")
+    if found := shutil.which("java"):
+        return found
+    if home := os.environ.get("JAVA_HOME"):
+        candidate = Path(home) / "bin" / ("java.exe" if os.name == "nt" else "java")
+        if candidate.exists():
+            return str(candidate)
+    return None
 
 
 def _place_pdf(staging: Path, target: Path) -> None:
