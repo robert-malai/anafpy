@@ -575,7 +575,13 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   after the fact, and a generated commit list would have been a downgrade, so
   the automation moves the *creation* into CI and leaves the *writing* where it
   was. GitHub's generated notes remain the fallback when a tag ships no such
-  file, so a release always exists for a published version.
+  file, so a release always exists for a published version. The v0.1.0–v0.6.0
+  notes were **backfilled into `release-notes/` from the published bodies**, so
+  the directory — not the GitHub API — is now the corpus; only the compare link
+  was dropped from each, being the one line the workflow derives. Notes are
+  **not** duplicated into the packaged README for PyPI's sake (PyPI has no
+  notes field, and the shipped README would then drift from the repo's): a
+  `Changelog` project URL points every version's project page at the releases.
 - **Testing (layered)**: respx mock suite as the credential-free CI gate + an
   opt-in live suite (`ANAFPY_LIVE=1`) that re-confirms wire shapes — never a CI
   gate (registry data drifts; ANAF punishes hammering the public host). Mock

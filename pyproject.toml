@@ -70,6 +70,10 @@ anafpy-mcp = "anafpy.mcp:main"
 Homepage = "https://github.com/robert-malai/anafpy"
 Documentation = "https://anafpy.readthedocs.io"
 Issues = "https://github.com/robert-malai/anafpy/issues"
+# PyPI has no release-notes field; this puts the per-tag notes one click from
+# every version's project page. Each release's prose stays in its one home,
+# `release-notes/<tag>.md`, which release.yml turns into the GitHub release.
+Changelog = "https://github.com/robert-malai/anafpy/releases"
 
 # PEP 735 dependency groups (dev-only; installed via `uv sync`).
 [dependency-groups]

@@ -460,9 +460,18 @@ silently returning empty results.
   no stored token), and only then creates the GitHub release for the same tag
   with the sdist + wheel attached. The version lives in `pyproject.toml` **and**
   `anafpy.__version__`; `tests/test_version.py` keeps them agreeing.
-- **Release notes are written, not generated.** Put a tag's prose in
-  `release-notes/<tag>.md` (e.g. `release-notes/v0.7.0.md`) **in the release
-  commit**, first line an H1 that becomes the release title; the workflow
-  appends the compare-with-previous-tag link itself. Without that file the
-  release still happens, carrying GitHub's generated commit list — the fallback,
-  not the intent.
+- **Cutting a release** — the release commit carries all three, then the tag:
+  1. Bump the version in `pyproject.toml` **and** `anafpy.__version__`.
+  2. **Write `release-notes/<tag>.md`** (e.g. `release-notes/v0.7.0.md`) — every
+     tag has one; `release-notes/` holds all of them, backfilled to v0.1.0.
+  3. Commit as `Release X.Y.Z`, then push the `v*` tag.
+
+  **Release notes are written, not generated.** The file's first line is an H1
+  that becomes the GitHub release title (`# anafpy 0.7.0 — <the hook>`); the
+  rest is the body, prose in the voice of the existing files — what changed and
+  why it matters to a user, plus a "Not yet verified" section when a path
+  shipped without live confirmation. Never hand-write the compare link;
+  `release.yml` derives and appends it. A tag with no such file still gets a
+  release, carrying GitHub's generated commit list — the fallback, not the
+  intent. PyPI has no notes field: `[project.urls] Changelog` links every
+  version's project page to the releases, so the prose keeps one home.
