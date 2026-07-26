@@ -210,8 +210,9 @@ class SpvClient(HttpClientBase):
             data = json.loads(body)
         except ValueError:
             data = None
-        if isinstance(data, dict) and data.get("eroare") is not None:
-            raise _business_error("descarcare", str(data["eroare"]), body)
+        match data:
+            case {"eroare": error} if error is not None:
+                raise _business_error("descarcare", str(error), body)
         raise AnafResponseError(
             f"unrecognised descarcare response for id {message_id!r}: "
             f"{as_text(body)[:200]}",

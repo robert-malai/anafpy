@@ -262,6 +262,16 @@ tests/                   # respx-mocked suite + opt-in live files (filing
 - **Module style**: `from __future__ import annotations`, explicit `__all__`,
   module + class docstrings, Google-style docstring sections. Line length 88.
   Keep new code in the voice of the surrounding files.
+- **Favour structured pattern matching** (DESIGN.md §2) — 3.12+ is the floor,
+  so `match` is always available. Use it wherever a branch dispatches on **one
+  subject's shape or value**: closed-union `isinstance` chains (close with
+  `case _: assert_never(x)` so `mypy --strict` flags an unhandled new member),
+  value dispatch on ANAF codes / form names, flag truth tables, presence-of-
+  field checks on parsed models (`case ETransport(stergere=CorectieType())`),
+  and shape checks on decoded JSON (`case {"eroare": error}`). Keep plain `if`
+  for substring/regex tests, single binary checks, and dict-lookup dispatch —
+  the test is whether the pattern makes the condition structural and *shorter*
+  to read, not whether it can be expressed as one.
 - **English identifiers everywhere in hand-written code**: ANAF's Romanian wire
   names survive only as pydantic validation aliases (`data_creare` →
   `created_at`), string literals, and the generated schema models. Domain

@@ -755,32 +755,35 @@ def read_flat_transport(doc: ETransport) -> FlatSubmission:
     operations or otherwise cannot be represented.
     """
     root = _read_root(doc)
-    if doc.notificare is not None:
-        return _read_declaration(doc.notificare, root)
-    if doc.stergere is not None:
-        return FlatDeletion(uit=doc.stergere.uit, **root)
-    if doc.confirmare is not None:
-        return FlatConfirmation(
-            uit=doc.confirmare.uit,
-            confirmation_type=doc.confirmare.tip_confirmare,
-            note=doc.confirmare.observatii,
-            **root,
-        )
-    if doc.modif_vehicul is not None:
-        change = doc.modif_vehicul
-        return FlatVehicleChange(
-            uit=change.uit,
-            plate=change.nr_vehicul,
-            trailer1=change.nr_remorca1,
-            trailer2=change.nr_remorca2,
-            changed_at=change.data_modificare.to_datetime(),
-            note=change.observatii,
-            **root,
-        )
-    raise ValueError(
-        "eTransport document carries none of notificare / stergere / confirmare / "
-        "modifVehicul"
-    )
+    # Which of the four operation elements is present decides the flat type; the
+    # patterns bind it already narrowed to non-``None``.
+    match doc:
+        case ETransport(notificare=NotificareType() as notif):
+            return _read_declaration(notif, root)
+        case ETransport(stergere=CorectieType(uit=uit)):
+            return FlatDeletion(uit=uit, **root)
+        case ETransport(confirmare=ConfirmareType() as confirmation):
+            return FlatConfirmation(
+                uit=confirmation.uit,
+                confirmation_type=confirmation.tip_confirmare,
+                note=confirmation.observatii,
+                **root,
+            )
+        case ETransport(modif_vehicul=ModifVehiculType() as change):
+            return FlatVehicleChange(
+                uit=change.uit,
+                plate=change.nr_vehicul,
+                trailer1=change.nr_remorca1,
+                trailer2=change.nr_remorca2,
+                changed_at=change.data_modificare.to_datetime(),
+                note=change.observatii,
+                **root,
+            )
+        case _:
+            raise ValueError(
+                "eTransport document carries none of notificare / stergere / "
+                "confirmare / modifVehicul"
+            )
 
 
 def _read_root(doc: ETransport) -> dict[str, Any]:
@@ -914,31 +917,35 @@ def build_etransport(
         ref_declarant=document.declarant_ref,
         decl_post_avarie=DeclPostAvarieType.D if document.post_incident else None,
     )
-    if isinstance(document, FlatTransport):
-        root.notificare = _build_notificare(document)
-    elif isinstance(document, FlatDeletion):
-        root.stergere = CorectieType(uit=document.uit)
-    elif isinstance(document, FlatConfirmation):
-        root.confirmare = ConfirmareType(
-            uit=document.uit,
-            tip_confirmare=document.confirmation_type,
-            observatii=document.note,
-        )
-    elif isinstance(document, FlatVehicleChange):
-        # ANAF's documented dataModificare format is second-precision (BR-203).
-        # The default is Romania *wall* time, kept naive so the rendered
-        # xs:dateTime carries no offset; a caller-supplied value is used as-is.
-        changed_at = (document.changed_at or _now_romania()).replace(microsecond=0)
-        root.modif_vehicul = ModifVehiculType(
-            uit=document.uit,
-            nr_vehicul=document.plate,
-            nr_remorca1=document.trailer1,
-            nr_remorca2=document.trailer2,
-            data_modificare=XmlDateTime.from_datetime(changed_at),
-            observatii=document.note,
-        )
-    else:
-        assert_never(document)
+    # One operation per document; the match is exhaustive over `FlatSubmission`,
+    # so `mypy --strict` flags a new member missing a case at `assert_never`.
+    match document:
+        case FlatTransport():
+            root.notificare = _build_notificare(document)
+        case FlatDeletion(uit=uit):
+            root.stergere = CorectieType(uit=uit)
+        case FlatConfirmation(uit=uit, confirmation_type=kind, note=note):
+            root.confirmare = ConfirmareType(
+                uit=uit,
+                tip_confirmare=kind,
+                observatii=note,
+            )
+        case FlatVehicleChange(changed_at=changed_at):
+            # ANAF's documented dataModificare format is second-precision (BR-203).
+            # The default is Romania *wall* time, kept naive so the rendered
+            # xs:dateTime carries no offset; a caller-supplied value is used as-is.
+            root.modif_vehicul = ModifVehiculType(
+                uit=document.uit,
+                nr_vehicul=document.plate,
+                nr_remorca1=document.trailer1,
+                nr_remorca2=document.trailer2,
+                data_modificare=XmlDateTime.from_datetime(
+                    (changed_at or _now_romania()).replace(microsecond=0)
+                ),
+                observatii=document.note,
+            )
+        case _:
+            assert_never(document)
     return root
 
 

@@ -232,10 +232,15 @@ def parse_windows_identities(json_text: str) -> list[StoreIdentity]:
         raise AnafConfigError(
             f"unrecognised certificate listing from PowerShell: {json_text[:200]!r}"
         ) from exc
-    if isinstance(data, dict):  # a single certificate may serialize unwrapped
-        data = [data]
+    match data:
+        case dict():  # a single certificate may serialize unwrapped
+            entries = [data]
+        case list():
+            entries = data
+        case _:  # neither shape: no certificates, not an error
+            entries = []
     identities = []
-    for entry in data if isinstance(data, list) else []:
+    for entry in entries:
         if not isinstance(entry, dict):
             continue
         try:

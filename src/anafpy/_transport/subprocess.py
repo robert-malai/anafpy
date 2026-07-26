@@ -34,12 +34,13 @@ async def run_subprocess(
     translate.
     """
     process_kwargs: dict[str, Any] = {}
-    if os.name == "posix":
-        process_kwargs["start_new_session"] = True
-    elif os.name == "nt":
-        process_kwargs["creationflags"] = getattr(
-            subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200
-        )
+    match os.name:
+        case "posix":
+            process_kwargs["start_new_session"] = True
+        case "nt":
+            process_kwargs["creationflags"] = getattr(
+                subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200
+            )
 
     process = await asyncio.create_subprocess_exec(
         *argv,

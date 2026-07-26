@@ -76,6 +76,19 @@ inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; a sync facade
 ## 2. Cross-cutting architecture
 
 - **Async only** (see §1 for the dropped sync facade).
+- **Structured pattern matching is the preferred branch form** (adopted
+  2026-07-26). The 3.12 floor means `match` is always available, and the three
+  hand-written places that already used it (SPV's `required_parameters`, the
+  login-flag truth table in `anafpy auth login`, `spv_nomenclature`) read
+  better than the chains they replaced — so it is now the house default for any
+  branch dispatching on **one** subject: closed-union `isinstance` chains
+  (closed with `case _: assert_never(x)`, which turns exhaustiveness into a
+  `mypy --strict` error rather than a silent fall-through), value dispatch over
+  ANAF codes and form names, flag truth tables, which-operation-is-set checks
+  on parsed wire models, and shape checks on decoded JSON. It is **not** a
+  rewrite mandate: substring/regex tests, single binary checks, and
+  dict-lookup dispatch stay plain `if` — the bar is that the pattern makes the
+  condition structural and shorter to read.
 - **Single distribution** `anafpy` with optional extras (not a multi-package repo):
   - runtime: `httpx`, `pydantic`, `xsdata-pydantic`, `tenacity`, `pyjwt`
     (unverified `exp` reads only, to schedule token refresh — verification is

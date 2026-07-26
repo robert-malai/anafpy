@@ -400,36 +400,37 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     ) -> NrEvidResult:
         form = form.upper()
         try:
-            if form == "D300":
-                if tip_decont is None:
-                    raise AnafConfigError("form D300 requires tip_decont (L/T/S/A)")
-                number = payment_evidence_number(
-                    tip_decont=tip_decont, month=month, year=year
-                )
-            elif form in {"D100", "D710"}:
-                number = obligation_evidence_number(
-                    cod_oblig=_require_code(cod_oblig, form),
-                    month=month,
-                    year=year,
-                    due_date=_require_scadenta(scadenta, form),
-                )
-            elif form == "D101":
-                number = profit_tax_evidence_number(
-                    cod_obligatie=_require_code(cod_oblig, form),
-                    month=month,
-                    year=year,
-                    due_date=_require_scadenta(scadenta, form),
-                    in_liquidation=in_liquidation,
-                )
-            elif form == "D301":
-                number = special_vat_evidence_number(
-                    month=month, year=year, new_transport=mijl_trans
-                )
-            else:
-                raise AnafConfigError(
-                    f"unknown form {form!r}; expected one of: "
-                    "D300, D100, D710, D101, D301"
-                )
+            match form:
+                case "D300":
+                    if tip_decont is None:
+                        raise AnafConfigError("form D300 requires tip_decont (L/T/S/A)")
+                    number = payment_evidence_number(
+                        tip_decont=tip_decont, month=month, year=year
+                    )
+                case "D100" | "D710":
+                    number = obligation_evidence_number(
+                        cod_oblig=_require_code(cod_oblig, form),
+                        month=month,
+                        year=year,
+                        due_date=_require_scadenta(scadenta, form),
+                    )
+                case "D101":
+                    number = profit_tax_evidence_number(
+                        cod_obligatie=_require_code(cod_oblig, form),
+                        month=month,
+                        year=year,
+                        due_date=_require_scadenta(scadenta, form),
+                        in_liquidation=in_liquidation,
+                    )
+                case "D301":
+                    number = special_vat_evidence_number(
+                        month=month, year=year, new_transport=mijl_trans
+                    )
+                case _:
+                    raise AnafConfigError(
+                        f"unknown form {form!r}; expected one of: "
+                        "D300, D100, D710, D101, D301"
+                    )
         except ValueError as exc:
             raise AnafConfigError(str(exc)) from exc
         return NrEvidResult(

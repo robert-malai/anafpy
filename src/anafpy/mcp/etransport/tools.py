@@ -300,14 +300,16 @@ def _prepare_composed_transport(
     """
     try:
         resolved = cfg.require_cif(cif)
-        model = (
-            document
-            if isinstance(
-                document,
-                FlatTransport | FlatDeletion | FlatConfirmation | FlatVehicleChange,
-            )
-            else document(**fields)
-        )
+        match document:
+            case (
+                FlatTransport()
+                | FlatDeletion()
+                | FlatConfirmation()
+                | FlatVehicleChange()
+            ):
+                model = document
+            case _:  # a flat-model class: construct it from `fields`
+                model = document(**fields)
         xml = render_etransport(model, declarant_code=resolved)
     except (AnafError, ValidationError) as exc:
         return PreparedTransport(valid=False, message=str(exc))
