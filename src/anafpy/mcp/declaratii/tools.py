@@ -168,6 +168,36 @@ def _require_scadenta(scadenta: str | None, form: str) -> date:
     )
 
 
+def _staleness(
+    form: str, installed: str | None, current: str | None
+) -> dict[str, object]:
+    """One `declaratie_duk_status` staleness row.
+
+    Keeps the four comparison outcomes apart — a form ANAF publishes and this
+    dist does not have needs a first install, not an update, and a form the
+    feed does not list (D406T) cannot be judged at all. `stale` stays in the
+    row as the plain "reinstall this one" flag, true for that state only.
+    """
+    match (installed, current):
+        case (None, _):
+            state = "not installed"
+        case (_, None):
+            state = "not in feed"
+        case (version, latest) if version == latest:
+            state = "current"
+        case ("unknown", _):
+            state = "unknown"
+        case _:
+            state = "stale"
+    return {
+        "form": form,
+        "installed": installed or "not installed",
+        "current": current or "unknown",
+        "state": state,
+        "stale": state == "stale",
+    }
+
+
 def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     file_it = _FILE_IT_PORTAL if config.declaratii_upload else _FILE_IT_MANUAL
 
@@ -523,6 +553,17 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             declaratie_duk_install to fix a stale or missing validator. The
             feed fetch is best-effort; offline, only the installed versions are
             reported.
+
+            Each forms[] entry carries a state, and `stale` is true for that
+            one state only:
+
+            - "current" — the installed version matches ANAF's feed.
+            - "stale" — an older validator is installed; reinstall the form.
+            - "not installed" — ANAF publishes it, this dist does not have it.
+            - "not in feed" — installed but absent from the feed, so it cannot
+              be compared (D406T, whose jars ship in the SAF-T archive).
+            - "unknown" — installed with no recorded version; reinstall the
+              form to settle it.
         """),
     )
     async def declaratie_duk_status() -> dict[str, object]:
@@ -539,12 +580,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
                 result["feed_error"] = str(feed_exc)
                 return result
             result["forms"] = [
-                {
-                    "form": form,
-                    "installed": "not installed",
-                    "current": version,
-                    "stale": True,
-                }
+                _staleness(form, None, version)
                 for form, version in sorted(feed.items())
             ]
             return result
@@ -566,12 +602,7 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
             return result
         feed = feed_result
         result["forms"] = [
-            {
-                "form": form,
-                "installed": installed.get(form, "not installed"),
-                "current": feed.get(form, "unknown"),
-                "stale": form in feed and installed.get(form) != feed[form],
-            }
+            _staleness(form, installed.get(form), feed.get(form))
             for form in sorted(installed.keys() | feed.keys())
         ]
         return result

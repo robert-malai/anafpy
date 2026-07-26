@@ -772,6 +772,15 @@ and a manifest records every file's source URL + SHA-256, making the install
 auditable and the operation **convergent** (current files skipped; a
 hand-assembled dist is adopted in place, never wiped). Resolution order:
 explicit `ANAFPY_DUK_DIR` always wins; the managed dist is only the fallback.
+That manifest is also **the authority for the installed version** (2026-07-26,
+issue #8): it records the feed's own `versiuneJ` per fetched file, so
+`installed_forms()` reads it first and only falls back to scraping
+`<form>IstoriaVersiunilor.txt` for a manifest-less dist. The original scrape
+took the file's first line, which is free text or the oldest release — it
+reported every form stale forever, right after a correct install. The corrected
+scrape takes the *last* `J…` token (the files are chronological, oldest first);
+`declaratie_duk_status` now also keeps `not installed` and `not in feed`
+(D406T — unlistable, so unjudgeable) apart from `stale`.
 Scope choices: a bare install covers the top two usage buckets of the form
 inventory plus whatever is already installed; **D406T** (jars only inside the
 ~91 MB `duk_SAFT` zip, absent from the feed) downloads only when named

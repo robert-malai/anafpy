@@ -251,7 +251,14 @@ def _saft_zip() -> bytes:
     with zipfile.ZipFile(buffer, "w") as bundle:
         bundle.writestr("dist/lib/D406TValidator.jar", b"t-validator")
         bundle.writestr("dist/lib/D406TPdf.jar", b"t-pdf")
-        bundle.writestr("dist/lib/D406TIstoriaVersiunilor.txt", "J2.0.6\nolder\n")
+        # Chronological, oldest first, title-led — ANAF's real shape, so the
+        # recorded version must be the LAST one named (issue #8).
+        bundle.writestr(
+            "dist/lib/D406TIstoriaVersiunilor.txt",
+            "Istoria versiunilor pentru D406T\n\n28-Feb-2021\n"
+            "\t- publicat versiunea J1.0.0 de validator\n"
+            "\n16-Feb-2023\n\t- publicat versiunea J2.0.6 de validator\n",
+        )
         bundle.writestr("dist/Instructiuni.txt", "ignored")
     return buffer.getvalue()
 

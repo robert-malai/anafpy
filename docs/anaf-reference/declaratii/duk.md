@@ -93,9 +93,19 @@ certSIGN Paperless vToken).
   `ajutor.chm` is the GUI help file), `sJars` + `iJars` → `lib/` (core + the
   third-party iText/BouncyCastle jars), `cFisiere` → `config/`, and `dJars`
   (the GUI updater) is not needed for CLI use. `versiuneJ` is the validator
-  jar's version and `versiuneP` the PDF jar's; the installed
-  `<form>IstoriaVersiunilor.txt` (what `DURL` points at) leads with the same
-  `J…` string, which is what makes installed-vs-feed comparison possible.
+  jar's version and `versiuneP` the PDF jar's — the feed is the authority for
+  installed-vs-current comparison (anafpy records `versiuneJ` per fetched file
+  in its install manifest).
+- **`<form>IstoriaVersiunilor.txt` (what `DURL` points at) is chronological,
+  oldest first, and its opening lines are free text** — verified across the 12
+  preinstall forms 2026-07-26. The head is a document title (`Istoria
+  versiunilor pentru D406`), a bare date (`21-Mar-2019` for D212, `3-Jan-2012:`
+  for D390), or the *first release ever published* (D100's `19-Oct-2011
+  publicat versiunea de test J1.0.0`). The **last** `J<major>.<minor>…` token
+  in the file is the current version — it matched `versiuneJ` for all 12 forms.
+  Reading the first line instead reports every form as permanently stale
+  (issue #8). Lines also carry the PDF jar's `P…` versions, so a version scrape
+  must match the `J` prefix specifically.
 
 ### The SAF-T module (D406/D406T) — jar sourcing and compatibility
 

@@ -59,7 +59,10 @@ assert rendered.ok
 code (DUK exits `0` on a validation failure). `installed_forms()` and
 `fetch_feed_versions()` power a staleness check — the feed works before DUK is
 installed, and CLI-mode DUK does not auto-update, so an installed validator can
-lag ANAF's current one.
+lag ANAF's current one. `installed_forms()` reads the version the installer
+recorded in the dist manifest, falling back to the sibling
+`<form>IstoriaVersiunilor.txt` for a hand-assembled dist, so its values compare
+directly against the feed's.
 
 ## The `nr_evid` helper
 

@@ -6,6 +6,7 @@ never runs (its confirm gate and its failure paths are what the tools promise).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
@@ -15,6 +16,7 @@ import respx
 from mcp.server.fastmcp.exceptions import ToolError
 
 from anafpy.declaratii.duk import DukIntegrator
+from anafpy.declaratii.install import MANIFEST_NAME
 from anafpy.declaratii.upload import PORTAL_BASE_URL
 from anafpy.exceptions import AnafAuthError
 from anafpy.mcp import create_server
@@ -574,6 +576,9 @@ async def test_duk_status_unconfigured_still_reports_feed(tmp_path: Path) -> Non
     assert "ANAFPY_DUK_DIR" in result["install_error"]
     assert result["forms"][0]["form"] == "D300"
     assert result["forms"][0]["installed"] == "not installed"
+    # Never installed is a first install, not an update (issue #8).
+    assert result["forms"][0]["state"] == "not installed"
+    assert result["forms"][0]["stale"] is False
 
 
 @respx.mock
@@ -593,13 +598,55 @@ async def test_duk_status_reports_staleness(
         return_value=httpx.Response(200, text=feed)
     )
     server = create_server(_config(tmp_path))
+    lib = tmp_path / "dist" / "lib"
+    (lib / "D300IstoriaVersiunilor.txt").write_text("J1.0.0\n\nJ12.0.1\n")
+    (lib / "D406TValidator.jar").write_text("")  # installed, never in the feed
     result = await _call(server, "declaratie_duk_status")
     assert "installed_forms" in result
     assert result["java"] == 'openjdk version "21.0.1"'
     forms = {entry["form"]: entry for entry in result["forms"]}
-    # Installed version is "unknown" (no history file), feed says J13.0.0 -> stale.
+    # Installed J12.0.1 (the history file's *last* version), feed says J13.0.0.
+    assert forms["D300"]["installed"] == "J12.0.1"
     assert forms["D300"]["current"] == "J13.0.0"
+    assert forms["D300"]["state"] == "stale"
     assert forms["D300"]["stale"] is True
+    assert forms["D406T"]["state"] == "not in feed"
+    assert forms["D406T"]["stale"] is False
+
+
+@respx.mock
+async def test_duk_status_is_idempotent_after_a_current_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dist at the feed's version reports current, not stale (issue #8)."""
+
+    async def fake_java_version(self: DukIntegrator) -> str:
+        return 'openjdk version "21.0.1"'
+
+    monkeypatch.setattr(DukIntegrator, "java_version", fake_java_version)
+    feed = (
+        "<versiuni><D300><versiuneJ>J13.0.0</versiuneJ>"
+        "<JURL>http://static.anaf.ro/static/10/Anaf/update5/D300/"
+        "D300Validator.jar</JURL></D300></versiuni>"
+    )
+    respx.get("https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
+        return_value=httpx.Response(200, text=feed)
+    )
+    server = create_server(_config(tmp_path))
+    (tmp_path / "dist" / MANIFEST_NAME).write_text(
+        json.dumps(
+            {
+                "created_at": "2026-07-26T10:00:00Z",
+                "updated_at": "2026-07-26T10:00:00Z",
+                "forms": {"D300": "J13.0.0"},
+            }
+        )
+    )
+    result = await _call(server, "declaratie_duk_status")
+    forms = {entry["form"]: entry for entry in result["forms"]}
+    assert forms["D300"]["installed"] == "J13.0.0"
+    assert forms["D300"]["state"] == "current"
+    assert forms["D300"]["stale"] is False
 
 
 # --- portal filing (login / status / prepare / submit) -----------------------------

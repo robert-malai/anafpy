@@ -29,6 +29,7 @@ jars untouched.
 from __future__ import annotations
 
 import hashlib
+import re
 import tempfile
 import urllib.parse
 import zipfile
@@ -53,6 +54,8 @@ __all__ = [
     "FeedForm",
     "default_duk_dir",
     "fetch_feed",
+    "history_version",
+    "manifest_versions",
     "parse_feed",
 ]
 
@@ -155,6 +158,43 @@ def default_duk_dir() -> Path | None:
     """
     directory = MANAGED_DUK_DIR.expanduser()
     return directory if (directory / "DUKIntegrator.jar").exists() else None
+
+
+#: A validator version as ANAF writes it in a history file (``J21.0.6``). The
+#: PDF jar's ``P…`` versions share the lines and are deliberately not matched.
+_HISTORY_VERSION = re.compile(r"\bJ\d+(?:\.\d+)+")
+
+
+def history_version(text: str) -> str | None:
+    """The current validator version stated by a ``<form>IstoriaVersiunilor.txt``.
+
+    The history files are **chronological, oldest first**, and their opening
+    lines are free text that varies per form — a document title (D406), a bare
+    date (D212, D390), or the first release ever published (D100's
+    ``J1.0.0``). The current version is therefore the **last** ``J…`` token in
+    the file, never the first line. ``None`` when the file names no version at
+    all.
+    """
+    if matches := _HISTORY_VERSION.findall(text):
+        return str(matches[-1])
+    return None
+
+
+def manifest_versions(dist_dir: Path) -> dict[str, str]:
+    """``{form: versiuneJ}`` as recorded by *dist_dir*'s install manifest.
+
+    The authoritative installed-version source: the installer writes the feed's
+    own ``versiuneJ`` for every file it puts on disk. Empty for a dist with no
+    readable manifest (a hand-assembled one, or a pre-manifest install) —
+    callers fall back to :func:`history_version`.
+    """
+    try:
+        manifest = DukManifest.model_validate_json(
+            (dist_dir / MANIFEST_NAME).read_bytes()
+        )
+    except (OSError, ValueError):
+        return {}
+    return dict(manifest.forms)
 
 
 def parse_feed(text: str) -> DukFeed:
@@ -394,10 +434,9 @@ class DukInstaller:
             )
         version = "unknown"
         if history := extracted.get(f"{_SAFT_FORM}IstoriaVersiunilor.txt"):
-            for line in history.decode("utf-8", errors="replace").splitlines():
-                if stripped := line.strip():
-                    version = stripped
-                    break
+            version = (
+                history_version(history.decode("utf-8", errors="replace")) or version
+            )
         for name, data in extracted.items():
             rel = f"lib/{name}"
             self._write(rel, data)

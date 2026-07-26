@@ -7,6 +7,7 @@ err-file parser directly.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -16,7 +17,7 @@ import respx
 
 from anafpy.declaratii import DukIntegrator
 from anafpy.declaratii.duk import _parse_err_file
-from anafpy.declaratii.install import parse_feed
+from anafpy.declaratii.install import MANIFEST_NAME, parse_feed
 from anafpy.exceptions import AnafConfigError, AnafResponseError, AnafTransportError
 
 
@@ -425,6 +426,65 @@ def test_installed_forms(duk_dir: Path) -> None:
     duk = DukIntegrator(duk_dir, java="java")
     forms = duk.installed_forms()
     assert forms == {"D300": "J12.0.1", "D112": "unknown"}
+
+
+def test_installed_forms_reads_the_history_files_bottom_up(duk_dir: Path) -> None:
+    # ANAF's history files are chronological, oldest first, and open with free
+    # text — a title, a bare date, or the first release ever published. The
+    # current version is the last one named, not the first line (issue #8).
+    lib = duk_dir / "lib"
+    (lib / "D100Validator.jar").write_text("")
+    (lib / "D100IstoriaVersiunilor.txt").write_text(
+        "19-Oct-2011 publicat versiunea de test J1.0.0\n"
+        "\n"
+        "29-Nov-2011\n"
+        "\t- publicat versiunea J2.0.0 de validator\n"
+        "\t- publicat versiunea P2.0.0 pentru creare Pdf\n"
+        "\n"
+        "14-Jul-2026\n"
+        "\t- publicat versiune J21.0.6\n"
+    )
+    (lib / "D406Validator.jar").write_text("")
+    (lib / "D406IstoriaVersiunilor.txt").write_text(
+        "Istoria versiunilor pentru D406\n\n28-Feb-2021\n\t- versiunea J1.0.0\n"
+        "\n16-Feb-2026\n\t- publicat versiunea J2.2.18 de validator\n"
+    )
+    (lib / "D212Validator.jar").write_text("")
+    (lib / "D212IstoriaVersiunilor.txt").write_text("21-Mar-2019\n")  # no J version
+    duk = DukIntegrator(duk_dir, java="java")
+    assert duk.installed_forms() == {
+        "D100": "J21.0.6",
+        "D406": "J2.2.18",
+        "D212": "unknown",
+    }
+
+
+def test_installed_forms_prefers_the_install_manifest(duk_dir: Path) -> None:
+    # The manifest records the feed's own versiuneJ per file it fetched — the
+    # authoritative source; the history scrape is only the manifest-less path.
+    lib = duk_dir / "lib"
+    (lib / "D300Validator.jar").write_text("")
+    (lib / "D300IstoriaVersiunilor.txt").write_text("J1.0.0\n")
+    (duk_dir / MANIFEST_NAME).write_text(
+        json.dumps(
+            {
+                "created_at": "2026-07-26T10:00:00Z",
+                "updated_at": "2026-07-26T10:00:00Z",
+                "forms": {"D300": "J12.0.1"},
+            }
+        )
+    )
+    duk = DukIntegrator(duk_dir, java="java")
+    assert duk.installed_forms() == {"D300": "J12.0.1"}
+
+
+def test_installed_forms_survives_an_unreadable_manifest(duk_dir: Path) -> None:
+    lib = duk_dir / "lib"
+    (lib / "D300Validator.jar").write_text("")
+    (lib / "D300IstoriaVersiunilor.txt").write_text("J12.0.1\n")
+    (duk_dir / MANIFEST_NAME).write_text("{not json")
+    duk = DukIntegrator(duk_dir, java="java")
+    assert duk.installed_forms() == {"D300": "J12.0.1"}
 
 
 # -- feed_versions -----------------------------------------------------------------

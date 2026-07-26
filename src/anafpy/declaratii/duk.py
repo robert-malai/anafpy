@@ -58,7 +58,7 @@ import httpx
 
 from .._transport.subprocess import run_subprocess
 from ..exceptions import AnafConfigError
-from .install import fetch_feed
+from .install import fetch_feed, history_version, manifest_versions
 from .models import DukFinding, DukResult
 
 __all__ = [
@@ -286,16 +286,22 @@ class DukIntegrator:
     def installed_forms(self) -> dict[str, str]:
         """Installed per-form validators as ``{form: version}``.
 
-        Scans ``lib/*Validator.jar``; the version comes from a sibling
-        ``<form>IstoriaVersiunilor.txt`` when present, else ``"unknown"``. Cheap
-        and non-fatal — a form with no readable version still appears.
+        Scans ``lib/*Validator.jar``. The version comes from the install
+        manifest (:func:`~anafpy.declaratii.install.manifest_versions` — the
+        feed's own ``versiuneJ``, recorded when the file was fetched), falling
+        back to the sibling ``<form>IstoriaVersiunilor.txt`` for a dist that
+        carries no manifest, and to ``"unknown"`` when neither states a
+        version. Cheap and non-fatal — a form with no readable version still
+        appears, so the values compare directly against
+        :func:`fetch_feed_versions`.
         """
+        recorded = manifest_versions(self.duk_dir)
         forms: dict[str, str] = {}
         for jar in sorted(self.lib.glob("*Validator.jar")):
             form = jar.name.removesuffix("Validator.jar")
             if not form:
                 continue
-            forms[form] = _form_version(self.lib, form)
+            forms[form] = recorded.get(form) or _form_version(self.lib, form)
         return forms
 
     async def java_version(self) -> str:
@@ -447,8 +453,10 @@ def _read_err(err_path: Path) -> str:
 
 
 def _form_version(lib: Path, form: str) -> str:
-    if (history := lib / f"{form}IstoriaVersiunilor.txt").exists():
-        for line in history.read_text(encoding="utf-8", errors="replace").splitlines():
-            if stripped := line.strip():
-                return stripped
-    return "unknown"
+    """The manifest-less fallback: the last version named by the history file."""
+    history = lib / f"{form}IstoriaVersiunilor.txt"
+    try:
+        text = history.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "unknown"
+    return history_version(text) or "unknown"
