@@ -28,12 +28,18 @@ user's out-of-band approval; it mirrors ``spv_login``'s contract (failures come
 back as ``signed=false`` + guidance, never as exceptions). PDFs are written to
 caller-given paths through the shared ``write_artifact`` collision guard, never
 returned as base64.
+
+Every tool description is an inline ``cleandoc`` literal: FastMCP ships the
+description verbatim (it dedents nothing of its own), and paragraphs and
+bullets read better than one packed line — the ANAF state wordings, the
+per-form ``nr_evid`` inputs, and the three filing verdicts are tables.
 """
 
 from __future__ import annotations
 
 import asyncio
 from datetime import date
+from inspect import cleandoc
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -117,11 +123,6 @@ def _looks_signed(pdf: bytes) -> bool:
     return b"/ByteRange" in pdf and b"adbe.pkcs7.detached" in pdf
 
 
-def _upload_context(filename: str) -> str:
-    """The submission parameter bound into a filing's confirmation token."""
-    return f"filename={filename}"
-
-
 def _no_findings_message(raw: str) -> str:
     """Explain a failed DUK run that yielded no parseable findings.
 
@@ -173,17 +174,24 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="Declarations: validate",
         annotations=READ_ONLY,
-        description="Validate a tax declaration with ANAF's own DUKIntegrator "
-        "validator (authoritative). `form` is the form name exactly as ANAF "
-        "spells the validator (e.g. 'D300', 'D112'); pass the document as "
-        '{"xml": ...} or {"path": ...}. Returns {ok, findings, warnings}: '
-        "ok=false means DUK reported errors — `findings` are its own messages "
-        "verbatim, fix the XML and call again (typical convergence is under 6 "
-        "rounds). ok=true means the document is valid; `warnings` may still be "
-        "non-empty (DUK's informational notices — e.g. D700's 'the form will be "
-        "processed at the competent tax office' — which are NOT errors: relay "
-        "them to the user but do not treat them as a failure). This is the "
-        "authoring loop; nothing is filed.",
+        description=cleandoc("""
+            Validate a tax declaration with ANAF's own DUKIntegrator validator
+            (authoritative). `form` is the form name exactly as ANAF spells the
+            validator (e.g. 'D300', 'D112'); pass the document as {"xml": ...}
+            or {"path": ...}.
+
+            Returns {ok, findings, warnings}:
+            - ok=false means DUK reported errors — `findings` are its own
+              messages verbatim, fix the XML and call again (typical
+              convergence is under 6 rounds).
+            - ok=true means the document is valid; `warnings` may still be
+              non-empty (DUK's informational notices — e.g. D700's 'the form
+              will be processed at the competent tax office' — which are NOT
+              errors: relay them to the user but do not treat them as a
+              failure).
+
+            This is the authoring loop; nothing is filed.
+        """),
     )
     async def declaratie_validate(
         document: DeclarationXmlInput, form: str, option: int = 0
@@ -208,15 +216,20 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="Declarations: render PDF",
         annotations=ARTIFACT_SAVING,
-        description="Render the official multi-page PDF for a declaration (with "
-        "the XML embedded) to disk via DUKIntegrator `-p`, and return the saved "
-        "path. `form` and the document input are as for declaratie_validate; the "
-        "document is validated first, so a validation failure writes NO PDF and "
-        "returns the findings (ok=false), while a valid document with DUK "
-        "warnings still renders (ok=true, `warnings` set — relay them). Name the "
-        "file with `save_pdf_as` (a "
-        "full path); an existing file is never replaced unless overwrite=true. "
-        "The binary never enters the context — sign it next with declaratie_sign.",
+        description=cleandoc("""
+            Render the official multi-page PDF for a declaration (with the XML
+            embedded) to disk via DUKIntegrator `-p`, and return the saved
+            path. `form` and the document input are as for declaratie_validate.
+
+            The document is validated first, so a validation failure writes NO
+            PDF and returns the findings (ok=false), while a valid document
+            with DUK warnings still renders (ok=true, `warnings` set — relay
+            them).
+
+            Name the file with `save_pdf_as` (a full path); an existing file is
+            never replaced unless overwrite=true. The binary never enters the
+            context — sign it next with declaratie_sign.
+        """),
     )
     async def declaratie_render(
         document: DeclarationXmlInput,
@@ -253,16 +266,22 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="Declarations: sign",
         annotations=MUTATING,
-        description="Sign a rendered declaration PDF with the user's qualified "
-        "certificate (macOS only in this release). THIS FIRES THE USER'S "
-        "PIN/2FA APPROVAL PROMPT on their token or phone — warn them it is coming, "
-        "and call this only after they explicitly approve, passing confirm=true. "
-        "`pdf_path` is a declaratie_render output; the signed PDF defaults to "
-        "'<name>-semnat.pdf' next to it, or set `save_as`. One attempt per call; "
-        "a dismissed/timed-out approval or a missing certificate returns "
-        "signed=false + guidance (not an error) — ask the user and retry. On "
-        "success reports the signed path and whether the issuer chain was "
-        "completed; then " + file_it + ".",
+        description=cleandoc(f"""
+            Sign a rendered declaration PDF with the user's qualified
+            certificate (macOS only in this release). THIS FIRES THE USER'S
+            PIN/2FA APPROVAL PROMPT on their token or phone — warn them it is
+            coming, and call this only after they explicitly approve, passing
+            confirm=true.
+
+            `pdf_path` is a declaratie_render output; the signed PDF defaults
+            to '<name>-semnat.pdf' next to it, or set `save_as`. One attempt
+            per call; a dismissed/timed-out approval or a missing certificate
+            returns signed=false + guidance (not an error) — ask the user and
+            retry.
+
+            On success reports the signed path and whether the issuer chain was
+            completed; then {file_it}.
+        """),
     )
     async def declaratie_sign(
         pdf_path: str,
@@ -320,18 +339,27 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="Declarations: filing status",
         annotations=READ_ONLY,
-        description="Check the processing status of a filed declaration on ANAF's "
-        "public StareD112 service (no login needed). `index` is the upload index "
-        "the portal returned on submission (= the recipisa number); `cui` defaults "
-        "to the configured fiscal code; pass filed_at_counter=true for documents "
-        "filed at an ANAF counter (`index` is then the registration number). A "
-        "matching pair returns ALL the CUI's documents from the last 3 months "
-        "(max 200), each with `state` in ANAF's verbatim Romanian wording: "
-        "'Documentul este valid' = accepted; 'In prelucrare' = still processing, "
-        "check again later; 'Documentul are erori de validare' and 'Fişierul "
-        "depus nu este un document valid' = must be fixed and refiled. "
-        "found=false means the pair matched nothing (wrong pair, older than 3 "
-        "months, or beyond the last 200 submissions).",
+        description=cleandoc("""
+            Check the processing status of a filed declaration on ANAF's public
+            StareD112 service (no login needed).
+
+            `index` is the upload index the portal returned on submission (=
+            the recipisa number); `cui` defaults to the configured fiscal code;
+            pass filed_at_counter=true for documents filed at an ANAF counter
+            (`index` is then the registration number).
+
+            A matching pair returns ALL the CUI's documents from the last 3
+            months (max 200), each with `state` in ANAF's verbatim Romanian
+            wording:
+            - 'Documentul este valid' — accepted
+            - 'In prelucrare' — still processing, check again later
+            - 'Documentul are erori de validare' — must be fixed and refiled
+            - 'Fişierul depus nu este un document valid' — must be fixed and
+              refiled
+
+            found=false means the pair matched nothing (wrong pair, older than
+            3 months, or beyond the last 200 submissions).
+        """),
     )
     async def declaratie_status(
         index: str, cui: str | None = None, filed_at_counter: bool = False
@@ -346,15 +374,20 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="Declarations: download recipisa",
         annotations=ARTIFACT_SAVING,
-        description="Download the signed recipisa (filing receipt) PDF for an "
-        "upload index from ANAF's public StareD112 service, and write it to "
-        "`save_pdf_as` (a full path) — the binary never enters the context. "
-        "Recipisas are only available ~60 days from filing: ok=false with an "
-        "explanation means the index is unknown or the window has lapsed "
-        "(declaratie_status reports availability per document as "
-        "receipt_available). An existing file is never replaced unless "
-        "overwrite=true. Advise the user to archive the recipisa — it is the "
-        "digitally signed proof of filing and ANAF does not keep it accessible.",
+        description=cleandoc("""
+            Download the signed recipisa (filing receipt) PDF for an upload
+            index from ANAF's public StareD112 service, and write it to
+            `save_pdf_as` (a full path) — the binary never enters the context.
+            An existing file is never replaced unless overwrite=true.
+
+            Recipisas are only available ~60 days from filing: ok=false with an
+            explanation means the index is unknown or the window has lapsed
+            (declaratie_status reports availability per document as
+            receipt_available).
+
+            Advise the user to archive the recipisa — it is the digitally
+            signed proof of filing and ANAF does not keep it accessible.
+        """),
     )
     async def declaratie_recipisa(
         index: str, save_pdf_as: str, overwrite: bool = False
@@ -376,17 +409,24 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="Declarations: payment-evidence number",
         annotations=LOCAL_READ_ONLY,
-        description="Compose the `nr_evid` (numărul de evidență a plății), the "
-        "required 23-character payment-evidence number, for a self-assessed "
-        "declaration. `month` is 1-12, `year` four digits. `form` selects the "
-        "layout and its required inputs: `D300` (default) needs `tip_decont` "
-        "(L monthly / T quarterly / S / A); `D100` and `D710` need the 3-digit "
-        "`cod_oblig` and the `scadenta` (payment due date, `d.m.yyyy` — e.g. "
-        "`25.07.2026`); `D101` needs `cod_oblig` (the obligation code) and "
-        "`scadenta`, and takes `in_liquidation` for a liquidation-period "
-        "return; `D301` needs neither and takes `mijl_trans` (set when the "
-        "return reports an intra-EU acquisition of new means of transport). "
-        "Always use this — never compute the number (its check digit) by hand.",
+        description=cleandoc("""
+            Compose the `nr_evid` (numărul de evidență a plății), the required
+            23-character payment-evidence number, for a self-assessed
+            declaration. `month` is 1-12, `year` four digits.
+
+            `form` selects the layout and its required inputs:
+            - `D300` (default) needs `tip_decont` (L monthly / T quarterly /
+              S / A)
+            - `D100` and `D710` need the 3-digit `cod_oblig` and the `scadenta`
+              (payment due date, `d.m.yyyy` — e.g. `25.07.2026`)
+            - `D101` needs `cod_oblig` (the obligation code) and `scadenta`,
+              and takes `in_liquidation` for a liquidation-period return
+            - `D301` needs neither and takes `mijl_trans` (set when the return
+              reports an intra-EU acquisition of new means of transport)
+
+            Always use this — never compute the number (its check digit) by
+            hand.
+        """),
     )
     def declaratie_nr_evid(
         month: int,
@@ -446,17 +486,23 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="Declarations: install DUKIntegrator",
         annotations=PROVISIONING,
-        description="Install or update DUKIntegrator from ANAF's official "
-        "update feed — no manual download. With `forms` named (e.g. ['D390']) "
-        "exactly those validators are installed; without, the common preinstall "
-        "set plus everything already installed is brought to ANAF's current "
-        "versions. Safe to repeat: files already current are skipped, an "
-        "existing dist is adopted in place, never wiped. The target is the "
-        "managed dist (~/.anafpy/duk-dist) unless ANAFPY_DUK_DIR points "
-        "elsewhere. D406T is special: its ~91 MB source archive is downloaded "
-        "only when that form is named explicitly. All downloads come from "
-        "static.anaf.ro over HTTPS and a manifest records each file's source "
-        "URL and SHA-256. Follow up with declaratie_duk_status to confirm.",
+        description=cleandoc("""
+            Install or update DUKIntegrator from ANAF's official update feed —
+            no manual download.
+            - With `forms` named (e.g. ['D390']) exactly those validators are
+              installed; without, the common preinstall set plus everything
+              already installed is brought to ANAF's current versions.
+            - Safe to repeat: files already current are skipped, an existing
+              dist is adopted in place, never wiped.
+            - The target is the managed dist (~/.anafpy/duk-dist) unless
+              ANAFPY_DUK_DIR points elsewhere.
+            - D406T is special: its ~91 MB source archive is downloaded only
+              when that form is named explicitly.
+            - All downloads come from static.anaf.ro over HTTPS and a manifest
+              records each file's source URL and SHA-256.
+
+            Follow up with declaratie_duk_status to confirm.
+        """),
     )
     async def declaratie_duk_install(
         forms: list[str] | None = None,
@@ -467,13 +513,17 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="Declarations: DUKIntegrator status",
         annotations=READ_ONLY,
-        description="Report the DUKIntegrator installation: its directory, the "
-        "Java version, and the per-form validators installed versus ANAF's update "
-        "feed (a staleness table). CLI-mode DUK does NOT auto-update, so an "
-        "installed validator can lag ANAF's current one — surface that to the "
-        "user and offer declaratie_duk_install to fix a stale or missing "
-        "validator. The feed fetch is best-effort; offline, only the installed "
-        "versions are reported.",
+        description=cleandoc("""
+            Report the DUKIntegrator installation: its directory, the Java
+            version, and the per-form validators installed versus ANAF's update
+            feed (a staleness table).
+
+            CLI-mode DUK does NOT auto-update, so an installed validator can
+            lag ANAF's current one — surface that to the user and offer
+            declaratie_duk_install to fix a stale or missing validator. The
+            feed fetch is best-effort; offline, only the installed versions are
+            reported.
+        """),
     )
     async def declaratie_duk_status() -> dict[str, object]:
         try:
@@ -536,11 +586,15 @@ def _register_upload_tools(mcp: FastMCP, ctx: AppContext, config: ServerConfig) 
     @mcp.tool(
         title="Declarations: portal session status",
         annotations=READ_ONLY,
-        description="Probe whether the declaration-filing portal session is "
-        "still alive: a plain page fetch with the stored cookies — NO PIN/2FA "
-        "is ever fired. Call it before declaratie_submit (portal sessions die "
-        "after ~10 idle minutes). session_active=false means a login is "
-        "needed first: with the user's approval, declaratie_portal_login.",
+        description=cleandoc("""
+            Probe whether the declaration-filing portal session is still alive:
+            a plain page fetch with the stored cookies — NO PIN/2FA is ever
+            fired. Call it before declaratie_submit (portal sessions die after
+            ~10 idle minutes).
+
+            session_active=false means a login is needed first: with the user's
+            approval, declaratie_portal_login.
+        """),
     )
     async def declaratie_portal_status() -> PortalStatusResult:
         try:
@@ -566,16 +620,21 @@ def _register_upload_tools(mcp: FastMCP, ctx: AppContext, config: ServerConfig) 
     @mcp.tool(
         title="Declarations: portal log in",
         annotations=MUTATING,
-        description="Establish a fresh session on ANAF's declaration-filing "
-        "portal with the selected certificate (spv_select_certificate). This "
-        "FIRES THE USER'S PIN/2FA prompt on their token or phone — call it "
-        "only when the user explicitly asked to log in (or approved doing "
-        "so), and pass confirm=true to attest that. It is deliberately "
-        "separate from declaratie_submit: log in once, then prepare and "
-        "submit ride the session (probe it with declaratie_portal_status). "
-        "One attempt per call; the handshake is occasionally flaky on ANAF's "
-        "side, so logged_in=false just means ask the user and try again. "
-        "Sessions die after ~10 idle minutes, so file promptly after.",
+        description=cleandoc("""
+            Establish a fresh session on ANAF's declaration-filing portal with
+            the selected certificate (spv_select_certificate). This FIRES THE
+            USER'S PIN/2FA prompt on their token or phone — call it only when
+            the user explicitly asked to log in (or approved doing so), and
+            pass confirm=true to attest that.
+
+            It is deliberately separate from declaratie_submit: log in once,
+            then prepare and submit ride the session (probe it with
+            declaratie_portal_status).
+
+            One attempt per call; the handshake is occasionally flaky on ANAF's
+            side, so logged_in=false just means ask the user and try again.
+            Sessions die after ~10 idle minutes, so file promptly after.
+        """),
     )
     async def declaratie_portal_login(
         confirm: bool = False, timeout_s: float = 180.0
@@ -621,19 +680,23 @@ def _register_upload_tools(mcp: FastMCP, ctx: AppContext, config: ServerConfig) 
     @mcp.tool(
         title="Declarations: prepare filing",
         annotations=MUTATING,
-        description="STEP 1 of filing a SIGNED declaration PDF on ANAF's "
-        "portal (anaf.ro → Depunere declarații — PRODUCTION; declaration "
-        "filing has no test environment, so every submission is a real "
-        "filing). `pdf_path` is the declaratie_sign output. Returns the "
-        "file's metadata and a confirmation token bound to the exact bytes "
-        "and the multipart `filename` (defaults to the file's own name; the "
-        "conventional shape is '<form>_<cui>_<period>.pdf'). "
-        "looks_signed=false warns that no embedded signature was detected "
-        "(the portal would reject) but never withholds the token. Recap to "
-        "the user WHAT will be filed (the form, period, and CUI of the PDF "
-        "they reviewed) and get explicit approval, then call "
-        "declaratie_submit with the same pdf_path, the token, and "
-        "confirm=true. Does NOT file and needs no portal session.",
+        description=cleandoc("""
+            STEP 1 of filing a SIGNED declaration PDF on ANAF's portal (anaf.ro
+            → Depunere declarații — PRODUCTION; declaration filing has no test
+            environment, so every submission is a real filing).
+
+            `pdf_path` is the declaratie_sign output. Returns the file's
+            metadata and a confirmation token bound to the exact bytes and the
+            multipart `filename` (defaults to the file's own name; the
+            conventional shape is '<form>_<cui>_<period>.pdf').
+            looks_signed=false warns that no embedded signature was detected
+            (the portal would reject) but never withholds the token.
+
+            Recap to the user WHAT will be filed (the form, period, and CUI of
+            the PDF they reviewed) and get explicit approval, then call
+            declaratie_submit with the same pdf_path, the token, and
+            confirm=true. Does NOT file and needs no portal session.
+        """),
     )
     async def declaratie_prepare(
         pdf_path: str, filename: str | None = None
@@ -648,7 +711,7 @@ def _register_upload_tools(mcp: FastMCP, ctx: AppContext, config: ServerConfig) 
             config.signing_key,
             kind=_UPLOAD_KIND,
             payload=pdf,
-            context=_upload_context(resolved_name),
+            context=f"filename={resolved_name}",
         )
         looks_signed = _looks_signed(pdf)
         note = (
@@ -673,18 +736,24 @@ def _register_upload_tools(mcp: FastMCP, ctx: AppContext, config: ServerConfig) 
     @mcp.tool(
         title="Declarations: submit filing",
         annotations=MUTATING,
-        description="STEP 2 of filing: upload the signed declaration PDF to "
-        "ANAF's production portal and return its verdict. Requires the "
-        "confirmation_token from declaratie_prepare for the SAME file and "
-        "confirm=true, plus an active portal session — the session is probed "
-        "BEFORE the single-use token is spent, so a lapsed login costs "
-        "nothing (declaratie_portal_login, then call again with the same "
-        "token). accepted=true carries the upload_index: give it to the user "
-        "and track processing with declaratie_status; the success page is "
-        "NOT the registration confirmation — the signed recipisa is "
-        "(declaratie_recipisa, ~60-day window). accepted=false carries the "
-        "portal's rejection reason; accepted=null means the answer was not "
-        "recognised — check declaratie_status before re-filing.",
+        description=cleandoc("""
+            STEP 2 of filing: upload the signed declaration PDF to ANAF's
+            production portal and return its verdict. Requires the
+            confirmation_token from declaratie_prepare for the SAME file and
+            confirm=true, plus an active portal session — the session is probed
+            BEFORE the single-use token is spent, so a lapsed login costs
+            nothing (declaratie_portal_login, then call again with the same
+            token).
+
+            The verdict:
+            - accepted=true carries the upload_index: give it to the user and
+              track processing with declaratie_status; the success page is NOT
+              the registration confirmation — the signed recipisa is
+              (declaratie_recipisa, ~60-day window).
+            - accepted=false carries the portal's rejection reason.
+            - accepted=null means the answer was not recognised — check
+              declaratie_status before re-filing.
+        """),
     )
     async def declaratie_submit(
         pdf_path: str,
@@ -712,7 +781,7 @@ def _register_upload_tools(mcp: FastMCP, ctx: AppContext, config: ServerConfig) 
                 confirmation_token,
                 kind=_UPLOAD_KIND,
                 payload=pdf,
-                context=_upload_context(resolved_name),
+                context=f"filename={resolved_name}",
             )
         except ConfirmationError as exc:
             return UploadSubmitResult(accepted=False, message=str(exc))

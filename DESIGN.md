@@ -557,6 +557,22 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   `motiv` errors with the full accepted list so the flow self-heals. No
   two-step gate anywhere in SPV: report requests are additive information
   requests, not filings.
+- **Tool descriptions are structured, not packed** (adopted 2026-07-26). Every
+  tool and resource description is an inline `cleandoc("""…""")` literal rather
+  than implicit string concatenation. Two reasons. The shipped text: a
+  concatenated description reaches the model as one unbroken line, which buried
+  genuine tables — StareD112's four Romanian state wordings, `declaratie_nr_evid`'s
+  per-form inputs, `declaratie_submit`'s three `accepted` verdicts, the
+  nomenclature `kind` lists — that now render as bullets (`declaratie_status`
+  even got *shorter*, the bullets replacing connective prose). And maintenance:
+  ruff never reflows string literals, so a one-word edit meant hand-rewrapping
+  every line after it. `inspect.cleandoc` (not `textwrap.dedent`) because
+  FastMCP's `Tool.from_function` takes `description or fn.__doc__` **verbatim**
+  with no dedent of its own, and cleandoc strips the decorator indent *and* the
+  framing blank lines in one call. Function docstrings were rejected for the
+  same reason — no cleandoc on that path, so the indent would leak onto the
+  wire, and these are model-facing instructions rather than the human contract.
+  Parameter-level `Field(description=...)` keeps the plain form.
 - **Display names**: every tool carries an English MCP `title` following
   `Service: operation` ("e-Factura: Validate invoice", "ANAF Info: Taxpayer
   lookup", "ANAF: Authentication status"). One language only: MCP has no title

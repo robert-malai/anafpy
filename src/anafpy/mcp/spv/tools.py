@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from inspect import cleandoc
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -109,10 +110,14 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: List certificates",
         annotations=READ_ONLY,
-        description="Enumerate the qualified certificates usable for SPV in this "
-        "machine's key store (macOS Keychain / Windows CertStore), including "
-        "USB-token and cloud-HSM identities surfaced by their middleware. Shows "
-        "which one is currently selected. Pick one with spv_select_certificate.",
+        description=cleandoc("""
+            Enumerate the qualified certificates usable for SPV in this machine's
+            key store (macOS Keychain / Windows CertStore), including USB-token
+            and cloud-HSM identities surfaced by their middleware.
+
+            Shows which one is currently selected. Pick one with
+            spv_select_certificate.
+        """),
     )
     async def spv_list_certificates() -> dict[str, object]:
         selected = load_selected_identity(config.spv_identity_path)
@@ -127,12 +132,16 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: Select certificate",
         annotations=ARTIFACT_SAVING,
-        description="Persist which certificate SPV logins should use, by SHA-1 "
-        "thumbprint (see spv_list_certificates). Writes a local config file "
-        "only — nothing is sent to ANAF, and an existing session still belongs "
-        "to the previously used certificate. A session with the new one takes a "
-        "login: spv_login (with the user's approval — it fires their PIN/2FA) "
-        "or `anafpy spv login` in a terminal.",
+        description=cleandoc("""
+            Persist which certificate SPV logins should use, by SHA-1 thumbprint
+            (see spv_list_certificates). Writes a local config file only —
+            nothing is sent to ANAF, and an existing session still belongs to
+            the previously used certificate.
+
+            A session with the new one takes a login: spv_login (with the user's
+            approval — it fires their PIN/2FA) or `anafpy spv login` in a
+            terminal.
+        """),
     )
     async def spv_select_certificate(thumbprint: str) -> dict[str, object]:
         identity = await asyncio.to_thread(identity_by_thumbprint, thumbprint)
@@ -145,14 +154,18 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: Log in",
         annotations=MUTATING,
-        description="Establish a fresh SPV session with the selected certificate "
-        "(spv_select_certificate / `anafpy spv select`). This FIRES THE USER'S "
-        "PIN/2FA prompt on their token or phone — call it only when the user "
-        "explicitly asked to log in (or approved doing so), and pass "
-        "confirm=true to attest that. One attempt per call; the handshake is "
-        "occasionally flaky on ANAF's side, so a failed attempt just means ask "
-        "the user and try again (their prompt fires anew). On success reports "
-        "the certificate's identity and `authorized_cuis`.",
+        description=cleandoc("""
+            Establish a fresh SPV session with the selected certificate
+            (spv_select_certificate / `anafpy spv select`). This FIRES THE USER'S
+            PIN/2FA prompt on their token or phone — call it only when the user
+            explicitly asked to log in (or approved doing so), and pass
+            confirm=true to attest that.
+
+            One attempt per call; the handshake is occasionally flaky on ANAF's
+            side, so a failed attempt just means ask the user and try again
+            (their prompt fires anew). On success reports the certificate's
+            identity and `authorized_cuis`.
+        """),
     )
     async def spv_login(
         confirm: bool = False, timeout_s: float = 180.0
@@ -208,12 +221,16 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: Status",
         annotations=READ_ONLY,
-        description="Smoke-test the SPV session: reports whether SPV is reachable "
-        "with the stored cookie session, and for whom — the certificate holder's "
-        "CNP, the certificate serial, and `authorized_cuis`, the full list of "
-        "CUIs/CNPs this certificate has SPV rights for (the authorization "
-        "inventory — any other CIF will be refused). Call this before other spv_* "
-        "tools; if it reports no session, the user must log in host-side.",
+        description=cleandoc("""
+            Smoke-test the SPV session: reports whether SPV is reachable with the
+            stored cookie session, and for whom — the certificate holder's CNP,
+            the certificate serial, and `authorized_cuis`, the full list of
+            CUIs/CNPs this certificate has SPV rights for (the authorization
+            inventory — any other CIF will be refused).
+
+            Call this before other spv_* tools; if it reports no session, the
+            user must log in host-side.
+        """),
     )
     async def spv_status() -> dict[str, object]:
         try:
@@ -244,13 +261,19 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: List messages",
         annotations=READ_ONLY,
-        description="List SPV inbox messages from the last `zile` days (receipts, "
-        "payment notices, report deliveries, notifications). Optional filters: "
-        "`cif` (one of the authorized CUIs/CNPs) and `tip` (message kind, e.g. "
-        "RECIPISA, PLATA, 'RASPUNS SOLICITARE' — matched trimmed). Large inboxes "
-        f"are paged: at most {_PAGE_LIMIT} messages per call, with `total` and "
-        "`has_more` — page by increasing `offset`. Each message's `id` feeds "
-        "spv_descarca; `request_id` links a delivered report to its spv_cerere.",
+        description=cleandoc(f"""
+            List SPV inbox messages from the last `zile` days (receipts, payment
+            notices, report deliveries, notifications).
+
+            Optional filters: `cif` (one of the authorized CUIs/CNPs) and `tip`
+            (message kind, e.g. RECIPISA, PLATA, 'RASPUNS SOLICITARE' — matched
+            trimmed).
+
+            Large inboxes are paged: at most {_PAGE_LIMIT} messages per call,
+            with `total` and `has_more` — page by increasing `offset`. Each
+            message's `id` feeds spv_descarca; `request_id` links a delivered
+            report to its spv_cerere.
+        """),
     )
     async def spv_lista_mesaje(
         zile: int,
@@ -280,12 +303,18 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: Download document",
         annotations=ARTIFACT_SAVING,
-        description="Download one SPV message's document (PDF) to disk and return "
-        "the saved path — the binary never enters the context. Name the file with "
-        "`save_as` (full path), or pass `dest_dir` to use the generated name "
-        "'spv-<mesaj_id>.pdf'. An existing file is never replaced unless "
-        "overwrite=true. `mesaj_id` is a message `id` from spv_lista_mesaje. The "
-        "document is also readable as the resource spvmsg://{mesaj_id}/pdf.",
+        description=cleandoc("""
+            Download one SPV message's document (PDF) to disk and return the
+            saved path — the binary never enters the context. `mesaj_id` is a
+            message `id` from spv_lista_mesaje.
+
+            Name the file with `save_as` (full path), or pass `dest_dir` to use
+            the generated name 'spv-<mesaj_id>.pdf'. An existing file is never
+            replaced unless overwrite=true.
+
+            The document is also readable as the resource
+            spvmsg://{mesaj_id}/pdf.
+        """),
     )
     async def spv_descarca(
         mesaj_id: str,
@@ -306,9 +335,11 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.resource(
         "spvmsg://{mesaj_id}/pdf",
         name="SPV message document",
-        description="One SPV message's document (PDF, by `id` from "
-        "spv_lista_mesaje), fetched on read. Needs an active SPV session — "
-        "the read cannot trigger a login; spv_descarca saves to disk instead.",
+        description=cleandoc("""
+            One SPV message's document (PDF, by `id` from spv_lista_mesaje),
+            fetched on read. Needs an active SPV session — the read cannot
+            trigger a login; spv_descarca saves to disk instead.
+        """),
         mime_type="application/pdf",
     )
     async def spv_message_pdf(mesaj_id: str) -> bytes:
@@ -317,15 +348,18 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: Code lists",
         annotations=READ_ONLY,
-        description="List one SPV nomenclature. `kind` is one of: report_types "
-        "(every `tip` spv_cerere accepts, each with a description of what the "
-        "report contains — use it to map the user's actual question onto the "
-        "right type — and the parameters it requires), "
-        "income_certificate_reasons (ANAF's fixed `motiv` list for 'Adeverinte "
-        "Venit' — the filed text must match an entry EXACTLY, so map the user's "
-        "stated purpose onto the closest entry; e.g. a health-insurance request "
-        "is 'Sanatate', a bank loan is 'Institutie financiar bancara asigurare "
-        "etc.').",
+        description=cleandoc("""
+            List one SPV nomenclature. `kind` is one of:
+            - report_types — every `tip` spv_cerere accepts, each with a
+              description of what the report contains (use it to map the user's
+              actual question onto the right type) and the parameters it
+              requires.
+            - income_certificate_reasons — ANAF's fixed `motiv` list for
+              'Adeverinte Venit'. The filed text must match an entry EXACTLY, so
+              map the user's stated purpose onto the closest entry; e.g. a
+              health-insurance request is 'Sanatate', a bank loan is 'Institutie
+              financiar bancara asigurare etc.'.
+        """),
     )
     def spv_nomenclature(kind: str) -> dict[str, object]:
         result: dict[str, object] = {"kind": kind}
@@ -349,22 +383,27 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         # it) — not a read, even though no declaration is filed and the
         # two-step gate deliberately does not apply.
         annotations=REQUESTING,
-        description="Ask ANAF to generate an official report/document (cerere). "
-        "`tip` is the report name exactly as ANAF spells it — e.g. 'VECTOR "
-        "FISCAL', 'Obligatii de plata', 'Istoric declaratii', 'D300', 'Duplicat "
-        "Recipisa', 'Adeverinte Venit', 'NeconcordanteD394'; the full list with "
-        "per-type parameters is spv_nomenclature('report_types'). Parameters "
-        "vary per type (year `an`, month `luna`, reason `motiv`, "
-        "`numar_inregistrare`, branch `cui_pui`, period `lunai`/`lunas`) and are "
-        "validated before the wire call. For 'Adeverinte Venit', `motiv` must be "
-        "one of ANAF's fixed reasons verbatim — it is printed on the issued "
-        "certificate; get the list with "
-        "spv_nomenclature('income_certificate_reasons') and pick the entry "
-        "matching the user's stated purpose. The report is generated "
-        "ASYNCHRONOUSLY (no SLA): the result "
-        "returns an `id_solicitare` — wait for delivery with spv_asteapta_raport, "
-        "or match it later against messages' `request_id`. An identical request "
-        "already filed today returns the same id (deduped) unless force=true.",
+        description=cleandoc("""
+            Ask ANAF to generate an official report/document (cerere). `tip` is
+            the report name exactly as ANAF spells it — e.g. 'VECTOR FISCAL',
+            'Obligatii de plata', 'Istoric declaratii', 'D300', 'Duplicat
+            Recipisa', 'Adeverinte Venit', 'NeconcordanteD394'; the full list
+            with per-type parameters is spv_nomenclature('report_types').
+
+            Parameters vary per type (year `an`, month `luna`, reason `motiv`,
+            `numar_inregistrare`, branch `cui_pui`, period `lunai`/`lunas`) and
+            are validated before the wire call.
+
+            For 'Adeverinte Venit', `motiv` must be one of ANAF's fixed reasons
+            verbatim — it is printed on the issued certificate; get the list with
+            spv_nomenclature('income_certificate_reasons') and pick the entry
+            matching the user's stated purpose.
+
+            The report is generated ASYNCHRONOUSLY (no SLA): the result returns
+            an `id_solicitare` — wait for delivery with spv_asteapta_raport, or
+            match it later against messages' `request_id`. An identical request
+            already filed today returns the same id (deduped) unless force=true.
+        """),
     )
     async def spv_cerere(
         tip: str,
@@ -415,14 +454,18 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: Await report",
         annotations=ARTIFACT_SAVING,
-        description="Poll the SPV inbox until the report for `id_solicitare` (from "
-        "spv_cerere) is delivered, then download it to disk and return the saved "
-        "path. Polls gently (15s → 120s intervals) up to `timeout_s`. On timeout "
-        "this returns status='pending' with instructions — the request stays "
-        "valid, call again later; it is NOT an error. Name the file with "
-        "`save_as`, or pass `dest_dir` for the generated name "
-        "'spv-raport-<id_solicitare>.pdf'; existing files are never replaced "
-        "unless overwrite=true.",
+        description=cleandoc("""
+            Poll the SPV inbox until the report for `id_solicitare` (from
+            spv_cerere) is delivered, then download it to disk and return the
+            saved path. Polls gently (15s → 120s intervals) up to `timeout_s`.
+
+            On timeout this returns status='pending' with instructions — the
+            request stays valid, call again later; it is NOT an error.
+
+            Name the file with `save_as`, or pass `dest_dir` for the generated
+            name 'spv-raport-<id_solicitare>.pdf'; existing files are never
+            replaced unless overwrite=true.
+        """),
     )
     async def spv_asteapta_raport(
         id_solicitare: str,

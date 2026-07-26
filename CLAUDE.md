@@ -341,6 +341,16 @@ browser login stays CLI-side. The tool inventory with per-tool descriptions is
   the server as same-name MCP prompts (`mcp/prompts.py`; missing
   `name`/`description` frontmatter fails at server start). Never duplicate a
   playbook.
+- **Tool descriptions are `cleandoc` literals**, written inline in the
+  `@mcp.tool` / `@mcp.resource` decorator — FastMCP ships a description verbatim
+  (it dedents nothing of its own), so `inspect.cleandoc` is what strips the
+  decorator indent and the framing blank lines. Structure the shipped text:
+  a paragraph per concern, `-` bullets for every enumeration (the ANAF state
+  wordings, per-form `nr_evid` inputs, the three `accepted` verdicts, a
+  nomenclature's `kind`s). Only a description that interpolates a runtime
+  fragment is an `f` string — most carry literal braces (`{"xml": ...}`,
+  `anafmsg://{message_id}/pdf`). Parameter-level `Field(description=...)` stays
+  a plain string.
 - **Tool display names**: an English MCP `title` per tool, `Service: operation`
   (`e-Factura`, `e-Transport`, `ANAF Info`, `SPV`, `Declarations`; bare `ANAF`
   for `auth_status`). Titles are UI-only — the model sees `name` +

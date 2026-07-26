@@ -18,6 +18,7 @@ model's context.
 from __future__ import annotations
 
 from datetime import datetime
+from inspect import cleandoc
 
 from mcp.server.fastmcp import FastMCP
 
@@ -42,11 +43,16 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Factura: List messages",
         annotations=READ_ONLY,
-        description="List e-Factura messages (sent/received/errors) for a fiscal code. "
-        "Give a window as EITHER `days` (1-60) OR an ISO `start`+`end` date range "
-        "(e.g. '2026-06-01'); all pages are fetched and flattened automatically. "
-        "ANAF retains messages for 60 days, so the window must lie within the "
-        "last 60 days and `end` may be neither before `start` nor in the future.",
+        description=cleandoc("""
+            List e-Factura messages (sent/received/errors) for a fiscal code.
+            Give a window as EITHER `days` (1-60) OR an ISO `start`+`end` date
+            range (e.g. '2026-06-01'); all pages are fetched and flattened
+            automatically.
+
+            ANAF retains messages for 60 days, so the window must lie within
+            the last 60 days and `end` may be neither before `start` nor in the
+            future.
+        """),
     )
     async def efactura_list_messages(
         cif: str | None = None,
@@ -81,18 +87,24 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Factura: Download message",
         annotations=ARTIFACT_SAVING,
-        description="Download a processed e-Factura message (the signed invoice/errors "
-        "ZIP) by id. Returns the decoded content and an easy-to-read `invoice` view of "
-        "the received document when it is a parseable invoice/credit-note — work from "
-        "the view. The binary artifacts are for the user, not the context: pass "
-        "`save_zip_as` to write the signed archive ZIP and/or `save_pdf_as` to write "
-        "ANAF's official PDF rendering to those file paths (name them from the "
-        "invoice metadata, e.g. '<date> - <partner>.pdf'). An existing file is never "
-        "replaced unless overwrite=true: a refused write is reported in "
-        "`pdf_error`/`zip_error` — pick another name, or pass overwrite=true only "
-        "for a deliberate re-export. The PDF is best-effort: a conversion failure "
-        "is reported in `pdf_error` and never fails the download. The PDF is also "
-        "readable as the resource anafmsg://{message_id}/pdf.",
+        description=cleandoc("""
+            Download a processed e-Factura message (the signed invoice/errors
+            ZIP) by id. Returns the decoded content and an easy-to-read
+            `invoice` view of the received document when it is a parseable
+            invoice/credit-note — work from the view.
+
+            The binary artifacts are for the user, not the context: pass
+            `save_zip_as` to write the signed archive ZIP and/or `save_pdf_as`
+            to write ANAF's official PDF rendering to those file paths (name
+            them from the invoice metadata, e.g. '<date> - <partner>.pdf'). An
+            existing file is never replaced unless overwrite=true: a refused
+            write is reported in `pdf_error`/`zip_error` — pick another name, or
+            pass overwrite=true only for a deliberate re-export.
+
+            The PDF is best-effort: a conversion failure is reported in
+            `pdf_error` and never fails the download. It is also readable as the
+            resource anafmsg://{message_id}/pdf.
+        """),
     )
     async def efactura_download(
         message_id: str,
@@ -142,8 +154,10 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.resource(
         "anafmsg://{message_id}/pdf",
         name="e-Factura message PDF",
-        description="ANAF's official PDF rendering (transformare) of a downloaded "
-        "e-Factura message, fetched and converted on read.",
+        description=cleandoc("""
+            ANAF's official PDF rendering (transformare) of a downloaded
+            e-Factura message, fetched and converted on read.
+        """),
         mime_type="application/pdf",
     )
     async def efactura_message_pdf(message_id: str) -> bytes:
@@ -157,12 +171,16 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Factura: Validate invoice",
         annotations=READ_ONLY,
-        description="Validate a complete UBL invoice / credit note (XML) with ANAF's "
-        "own server-side validator, without filing. Authoritative — the same rules "
-        "the upload is checked against. Uses ANAF's public no-auth validator, which "
-        "exists only in production, so it works (and answers identically) whatever "
-        "environment this server is configured for — even with no OAuth "
-        "credentials configured; nothing is filed anywhere.",
+        description=cleandoc("""
+            Validate a complete UBL invoice / credit note (XML) with ANAF's own
+            server-side validator, without filing. Authoritative — the same
+            rules the upload is checked against.
+
+            Uses ANAF's public no-auth validator, which exists only in
+            production, so it works (and answers identically) whatever
+            environment this server is configured for — even with no OAuth
+            credentials configured; nothing is filed anywhere.
+        """),
     )
     async def efactura_validate(document: UblXmlInput) -> dict[str, object]:
         xml = document.resolve()
@@ -178,10 +196,13 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Factura: Upload status",
         annotations=READ_ONLY,
-        description="Get the processing state of an e-Factura upload by its upload "
-        "id (index_incarcare, from efactura_submit). A terminal 'ok' carries the "
-        "download_id of the signed archive — fetch it with efactura_download; "
-        "'nok' carries the rejection findings in errors.",
+        description=cleandoc("""
+            Get the processing state of an e-Factura upload by its upload id
+            (index_incarcare, from efactura_submit).
+            - a terminal 'ok' carries the download_id of the signed archive —
+              fetch it with efactura_download
+            - 'nok' carries the rejection findings in errors
+        """),
     )
     async def efactura_get_status(upload_id: str) -> dict[str, object]:
         status = await ctx.efactura().get_status(upload_id)
@@ -195,17 +216,24 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Factura: Prepare invoice",
         annotations=MUTATING,
-        description="STEP 1 of filing an e-Factura invoice or credit note composed "
-        "from STRUCTURED fields — no XML and no invoicing software needed: render "
-        "the CIUS-RO UBL from the given invoice (totals and the VAT breakdown are "
-        "computed from the lines unless supplied) and return the exact XML + the "
-        "invoice preview + local_findings (anafpy's translated CIUS-RO rule check "
-        "— informational; ANAF's validation is authoritative) + a confirmation "
-        "token. Show the preview and any findings for approval; then call "
-        "efactura_submit with document={'xml': <the returned xml>}, the token, and "
-        "confirm=True. Does NOT file. When the user's invoicing software already "
-        "produced the XML, prefer efactura_prepare with that XML instead of "
-        "re-composing it here.",
+        description=cleandoc("""
+            STEP 1 of filing an e-Factura invoice or credit note composed from
+            STRUCTURED fields — no XML and no invoicing software needed: render
+            the CIUS-RO UBL from the given invoice (totals and the VAT breakdown
+            are computed from the lines unless supplied) and return:
+            - the exact XML
+            - the invoice preview
+            - local_findings (anafpy's translated CIUS-RO rule check —
+              informational; ANAF's validation is authoritative)
+            - a confirmation token
+
+            Show the preview and any findings for approval; then call
+            efactura_submit with document={'xml': <the returned xml>}, the
+            token, and confirm=True. Does NOT file.
+
+            When the user's invoicing software already produced the XML, prefer
+            efactura_prepare with that XML instead of re-composing it here.
+        """),
     )
     async def efactura_prepare_invoice(
         invoice: InvoiceDocument, cif: str | None = None
@@ -245,14 +273,18 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Factura: Prepare XML filing",
         annotations=MUTATING,
-        description="STEP 1 of filing an e-Factura invoice/credit note the caller "
-        "already has as complete UBL XML — the RECOMMENDED path when the user's "
-        "invoicing software produced it: return an easy-to-read invoice preview + "
-        "a confirmation token bound to this exact document and CIF; the bytes go "
-        "to ANAF verbatim. (To compose an invoice from structured fields instead, "
-        "use efactura_prepare_invoice.) Show the preview for approval; then call "
-        "efactura_submit with the same document, the token, and confirm=True. "
-        "Does NOT file; pre-check with efactura_validate if in doubt.",
+        description=cleandoc("""
+            STEP 1 of filing an e-Factura invoice/credit note the caller already
+            has as complete UBL XML — the RECOMMENDED path when the user's
+            invoicing software produced it: return an easy-to-read invoice
+            preview + a confirmation token bound to this exact document and CIF;
+            the bytes go to ANAF verbatim. (To compose an invoice from
+            structured fields instead, use efactura_prepare_invoice.)
+
+            Show the preview for approval; then call efactura_submit with the
+            same document, the token, and confirm=True. Does NOT file; pre-check
+            with efactura_validate if in doubt.
+        """),
     )
     async def efactura_prepare(
         document: UblXmlInput, cif: str | None = None
@@ -289,11 +321,14 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Factura: Submit filing",
         annotations=MUTATING,
-        description="STEP 2 of filing an e-Factura document: upload the supplied "
-        "XML to ANAF and return the upload id (poll it with efactura_get_status). "
-        "Requires the confirmation_token from efactura_prepare or "
-        "efactura_prepare_invoice for the SAME document (for the composing tool, "
-        "document={'xml': <the xml it returned>}) and confirm=True.",
+        description=cleandoc("""
+            STEP 2 of filing an e-Factura document: upload the supplied XML to
+            ANAF and return the upload id (poll it with efactura_get_status).
+
+            Requires the confirmation_token from efactura_prepare or
+            efactura_prepare_invoice for the SAME document (for the composing
+            tool, document={'xml': <the xml it returned>}) and confirm=True.
+        """),
     )
     async def efactura_submit(
         document: UblXmlInput,
