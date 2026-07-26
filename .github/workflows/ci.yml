@@ -43,16 +43,19 @@ jobs:
           flags: ${{ matrix.os }}-py${{ matrix.python-version }}
           fail_ci_if_error: false
       # Test Analytics: the JUnit report feeds Codecov's failed-test / flake view.
-      # Unlike coverage this must upload when the suite FAILS — that is the whole
-      # point — so it runs on anything but a cancelled job. Same flags as the
-      # coverage upload keep the six legs distinguishable instead of overwriting
-      # each other.
+      # Same action as the coverage upload, switched by `report_type` — the old
+      # `codecov/test-results-action` is deprecated. Unlike coverage this must
+      # upload when the suite FAILS — that is the whole point — so it runs on
+      # anything but a cancelled job. Same flags as the coverage upload keep the
+      # six legs distinguishable instead of overwriting each other.
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
           files: ./junit.xml
+          disable_search: true
           flags: ${{ matrix.os }}-py${{ matrix.python-version }}
           fail_ci_if_error: false
       # The static gates are platform-independent; run them once per Python.
