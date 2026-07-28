@@ -131,10 +131,31 @@ document = parse_invoice(xml_bytes)        # from bytes
 document = read_invoice(message.document)  # from a DownloadedMessage's UBL
 ```
 
-The reader is strict and full-fidelity: every wire amount lands in the explicit
-fields (never recomputed), so `render_invoice(parse_invoice(xml)) == xml` holds
-and `validate()` can judge an upstream document's arithmetic. This is the
-natural starting point for *drafting a credit note from a received invoice* —
-and it is exactly what `DownloadedMessage.view` returns for a
+The reader is full-fidelity: every wire amount lands in the explicit fields
+(never recomputed), so re-rendering is byte-stable
+(`render_invoice(parse_invoice(rendered)) == rendered`) and `validate()` can
+judge an upstream document's arithmetic. This is the natural
+starting point for *drafting a credit note from a received invoice* — and it is
+exactly what `DownloadedMessage.view` returns for a
 [downloaded message](efactura.md#downloading-three-read-tiers), wrapped to yield
 `None` instead of raising when the content is not a representable invoice.
+
+It is also **lenient about shape**, and deliberately so. Authoring and reading
+are the same models, not the same contract: the construction-time checks above
+exist to stop you filing an invalid document, and re-applying them to one ANAF
+already accepted can only lose it. So reading stands them down — a *storno*
+filed the Romanian way (a type-380 invoice with negative amounts throughout), an
+empty `<cbc:PostalZone/>`, two addresses in one BT-43, a category-O line with a
+redundant `0` rate all read cleanly. `validate()` still judges the
+cross-aggregate rules (totals arithmetic, breakdown consistency, regime
+identifiers) on the result; single-field shapes that arrived in an accepted
+document are ones ANAF tolerates, and are deliberately not re-reported as
+findings either.
+
+What still refuses to read is a missing mandatory element, or a value failing
+one of the ANAF-certain mirrors — the closed `BR-CL-*` code lists, format
+patterns, length limits, decimal budgets, all rules ANAF itself enforces
+fatally. A refusal there means the vendored CIUS-RO edition has drifted from
+ANAF's current one — see
+[`schemas/README.md`](https://github.com/robert-malai/anafpy/blob/main/schemas/README.md)
+for the re-vendoring playbook.

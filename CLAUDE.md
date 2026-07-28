@@ -28,8 +28,13 @@ The service strands:
   hand-translated EN 16931 + CIUS-RO rule set (`validate()`, findings with
   official BR-* ids; ANAF stays authoritative), byte-stable
   render/read round-trips, `EFacturaClient.upload_invoice`. The same model
-  backs the inbox: `DownloadedMessage.view` reads downloads strictly but never
-  raises (`None` when not representable; raw bytes + full UBL model are the
+  backs the inbox — but **not the same contract**: the construction checks are
+  authoring's, and nothing the caller did not author is judged by them
+  (`_DERIVED_CONTEXT` — a document read off the wire, or a value `compute_*`
+  derives), so the reader never rejects a document ANAF accepted and a read one
+  always renders back. `DownloadedMessage.view` never raises
+  (`None` when not representable — a missing mandatory element or off-list
+  code; cause on `view_error` + a warning; raw bytes + full UBL model are the
   fallback tiers).
 - **e-Transport** (goods transport) — **fully translated**: bidirectional flat
   models author a filing and view a parsed one, covering all four operations

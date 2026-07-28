@@ -467,8 +467,8 @@ async def test_efactura_prepare_xml_previews_the_document(tmp_path: Path) -> Non
 async def test_efactura_prepare_unparseable_xml_still_issues_a_token(
     tmp_path: Path,
 ) -> None:
-    # Pass-through means the bytes go to ANAF verbatim even when the strict flat
-    # view cannot represent them; the message says there is no preview.
+    # Pass-through means the bytes go to ANAF verbatim even when the flat view
+    # cannot represent them; the message says there is no preview.
     server = create_server(_config(tmp_path))
     prepared = await _call(server, "efactura_prepare", document={"xml": "<NotUbl/>"})
     assert prepared["valid"] is True

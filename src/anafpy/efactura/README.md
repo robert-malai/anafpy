@@ -57,15 +57,25 @@ flowchart TD
     DL["EFacturaClient.download(id)"] --> DM["DownloadedMessage"]
     DM --> T1["tier 1 — raw_zip / content_xml / signature_xml<br/>authoritative, legally archivable"]
     DM --> T2["tier 2 — document: ubl.Invoice | CreditNote<br/>full parsed model (lazy)"]
-    DM --> T3["tier 3 — view: InvoiceDocument | None<br/>strict authoring reader, never raises"]
-    T3 -. "None ⇒ not a representable invoice<br/>(nok errors file, buyer message, rule drift)<br/>fall back to tier 2 / tier 1" .-> T2
+    DM --> T3["tier 3 — view: InvoiceDocument | None<br/>lenient wire reader, never raises"]
+    T3 -. "None ⇒ not a representable invoice<br/>(nok errors file, buyer message, code-list drift)<br/>cause on view_error + a warning; fall back to tier 2 / tier 1" .-> T2
 ```
 
 Tier 3 is the same flat model you author with, read full-fidelity from the wire
 (amounts land in the explicit fields, never recomputed) — so a received invoice
 is one edit away from a drafted credit note, and `validate()` can judge an
-upstream document's arithmetic. Strictness is safe here: everything in the
-inbox already passed ANAF's validation, whose rules the flat models mirror.
+upstream document's arithmetic.
+
+Authoring and reading are the same models but **not the same contract**. The
+construction-time checks stop *us* filing an invalid document; re-applying them
+to one ANAF already accepted only loses data, so the reader validates through a
+context marker that stands them down — a storno filed as a negative type-380
+invoice, an empty `<cbc:PostalZone/>`, two addresses in one BT-43 all read
+cleanly; `validate()` still judges the cross-aggregate rules (totals arithmetic,
+breakdown consistency). What stays fatal on read are the ANAF-certain mirrors —
+code lists, formats, lengths, decimal budgets, all rules ANAF itself enforces
+fatally — so a refusal there means the vendored edition has drifted: the
+tripwire.
 
 ## Who owns what
 

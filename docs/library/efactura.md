@@ -74,16 +74,21 @@ levels:
 1. **Raw signed bytes** — ANAF's ZIP archive, the authoritative artifact.
 2. **The full UBL model** — the parsed, typed document.
 3. **`InvoiceDocument`** — the flat **view** (`DownloadedMessage.view`):
-   parties, lines, totals, references, projected from the UBL by the strict
-   [authoring reader](authoring.md).
+   parties, lines, totals, references, projected from the UBL by the
+   [authoring reader](authoring.md#reading-wire-xml-back).
 
 The view is **full-fidelity and renderable back** — the same model you author
-with, so drafting a credit note from a received invoice is one step away. It is
-strict on purpose: every inbox document already passed ANAF's validation, whose
-rules the models mirror, so a representable document always reads. When the
-content is not a representable invoice (a rejection-errors file, a buyer
-message, rule drift), `view` is `None` — never an exception — and the raw bytes
-plus the UBL model stay authoritative.
+with, so drafting a credit note from a received invoice is one step away. The
+reader never re-judges a document ANAF already accepted, so the shapes real
+inboxes are full of — negative amounts on a *storno*, empty optional elements, a
+typo in a contact phone number — read cleanly rather than costing you the
+invoice; run `validate()` on the result to judge it.
+
+When the content is not a representable invoice (a rejection-errors file, a
+buyer message, or a code off one of the closed lists), `view` is `None` — never
+an exception — and the raw bytes plus the UBL model stay authoritative. That
+second case is never silent: `view_error` carries the cause and a `UserWarning`
+is emitted, so "unreadable" cannot be mistaken for "empty".
 
 `validate_signature` checks the Ministry of Finance signature over a downloaded
 archive.

@@ -276,20 +276,23 @@ def _additional_references(
             )
         )
     for item in doc.supporting_documents:
+        # Authoring guarantees mime_code alongside content, but a document read
+        # off the wire may carry content without it (the check is stood down
+        # there); the binary needs its schema-required mimeCode to render, so
+        # such content is dropped rather than written malformed.
+        embedded = (
+            cbc.EmbeddedDocumentBinaryObject(
+                value=item.content,
+                mime_code=item.mime_code,
+                filename=item.filename,
+            )
+            if item.content is not None and item.mime_code is not None
+            else None
+        )
         attachment = None
-        if item.url or item.content is not None:
+        if item.url or embedded is not None:
             attachment = cac.Attachment(
-                embedded_document_binary_object=(
-                    cbc.EmbeddedDocumentBinaryObject(
-                        value=item.content,
-                        mime_code=item.mime_code,
-                        filename=item.filename,
-                    )
-                    # mime_code is model-guaranteed alongside content; the check
-                    # here narrows the Optional for the schema-required attr.
-                    if item.content is not None and item.mime_code is not None
-                    else None
-                ),
+                embedded_document_binary_object=embedded,
                 external_reference=(
                     cac.ExternalReference(uri=cbc.Uri(value=item.url))
                     if item.url

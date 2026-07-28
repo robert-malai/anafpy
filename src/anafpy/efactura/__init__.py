@@ -4,7 +4,7 @@ The :mod:`anafpy.efactura.ubl` subpackage is generated from the vendored OASIS U
 XSDs (see ``scripts/generate_ubl.py``). The two document roots used by e-Factura are
 re-exported here for convenience; richer component types live under
 ``anafpy.efactura.ubl.common``. The flat, bidirectional invoice models — authoring,
-the translated CIUS-RO rule set, and the strict wire reader backing
+the translated CIUS-RO rule set, and the wire reader backing
 ``DownloadedMessage.view`` — live in :mod:`anafpy.efactura.authoring`.
 """
 

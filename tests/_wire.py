@@ -39,8 +39,9 @@ def _party(name: str, vat: str) -> agg.Party:
         party_name=[agg.PartyName(name=cbc.Name(value=name))],
         postal_address=agg.PostalAddress(
             street_name=cbc.StreetName(value="Str A 1"),
-            # RO-B requires a SECTOR city (BR-RO-100) — the strict authoring
-            # reader behind DownloadedMessage.view enforces the same rule.
+            # RO-B requires a SECTOR city (BR-RO-100). The reader does not
+            # enforce it (nothing on the read path does), but the fixtures are
+            # the shape ANAF accepts, so authoring from them stays valid too.
             city_name=cbc.CityName(value="SECTOR1"),
             country_subentity=cbc.CountrySubentity(value="RO-B"),
             country=agg.Country(identification_code=cbc.IdentificationCode(value="RO")),

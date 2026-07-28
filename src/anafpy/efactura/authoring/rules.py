@@ -29,6 +29,7 @@ from .models import (
     Seller,
     VatBreakdownEntry,
     round2,
+    vat_group_key,
 )
 
 __all__ = [
@@ -387,9 +388,10 @@ class _Rules:
             if entry.category in _EXEMPTION_REASON_CATEGORIES and not (
                 entry.exemption_reason or entry.exemption_reason_code
             ):
-                # Only a *computed* entry can reach this: a hand-written one
-                # without a reason is refused at construction. The reason is
-                # not derivable from the lines, so it is the author's to add.
+                # Reached by a *computed* entry (the reason is not derivable
+                # from the lines, so it is the author's to add) or one read off
+                # the wire; a hand-written entry without a reason is refused at
+                # construction.
                 self.flag(
                     f"{family}-10",
                     f"VAT category {entry.category.value} requires an exemption "
@@ -414,10 +416,7 @@ class _Rules:
                     location=location,
                 )
                 continue
-            key = (
-                entry.category,
-                None if entry.rate is None else entry.rate.normalize(),
-            )
+            key = vat_group_key(entry.category, entry.rate)
             if (expected := self.groups.get(key)) is None:
                 self.flag(
                     f"{family}-08",
@@ -524,7 +523,10 @@ def validate(document: InvoiceDocument) -> ValidationReport:
     arithmetic, VAT breakdown presence/consistency per category, VAT-regime
     identifier requirements, payment-instruction coherence. Field formats,
     lengths, code lists and decimal budgets were already enforced when the
-    models were constructed.
+    models were constructed. For a document read off the wire, the
+    construction-time *consistency* checks were deliberately skipped
+    (:mod:`.read`) and are not re-reported here: a shape that arrived in an
+    ANAF-accepted document is a shape ANAF tolerates.
 
     Returns:
         A :class:`ValidationReport`; ``report.ok`` is ``True`` when no fatal

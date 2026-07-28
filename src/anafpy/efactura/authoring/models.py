@@ -17,6 +17,16 @@ Validation is two-tier:
   (totals arithmetic, VAT breakdown consistency, regime-dependent identifier
   requirements) and returns a findings report instead of raising.
 
+Authoring and reading are the same models but *not* the same contract. Refusing
+to build an invalid document is data hygiene; refusing to *read* one ANAF already
+accepted is a bug — so :func:`~.read.read_invoice` validates through the
+:data:`_DERIVED_CONTEXT` marker, which turns the consistency and sign checks
+into no-ops while leaving coercion, defaults and normalisation in place. The
+first tier above stays fatal in both directions — code lists, format patterns,
+lengths, decimal budgets all mirror rules ANAF enforces fatally, so they cannot
+fire on an accepted document; when one does, the mirrors have drifted, which is
+the tripwire :attr:`~anafpy.efactura.models.DownloadedMessage.view` documents.
+
 Totals and the VAT breakdown are **computed by default** from the lines,
 allowances and charges (correct by construction); explicit values may be supplied
 — e.g. when reproducing an upstream document — and are then checked against the
@@ -128,6 +138,67 @@ def _in_codelist(codes: frozenset[str], label: str) -> Callable[[str], str]:
     return check
 
 
+#: Validation context marking a value the caller did **not** author: one
+#: :func:`~.read.read_invoice` translated off the wire, or one this module
+#: derived from a document that was (:meth:`InvoiceDocument.compute_totals`,
+#: :meth:`~InvoiceDocument.compute_vat_breakdown`).
+#:
+#: Every check it disables is one whose whole job is to stop *us* emitting an
+#: invalid document: the non-negativity rules, the contact free-text shapes, the
+#: per-category rate and exemption-reason consistency, and the cross-field
+#: "X requires Y" pairs. Neither kind of value is a place to enforce them. A
+#: received document already carries ANAF's verdict, so re-judging it can only
+#: lose data — one rejected optional field would make the whole invoice
+#: unreadable. And a *derived* value is this module's own output: raising there
+#: turns a caller's data problem into a raw pydantic error thrown from inside a
+#: function documented never to raise (which is exactly how the BR-*-10
+#: exemption reason went wrong, DESIGN.md §4) — and would make a read document
+#: unrenderable, breaking the bidirectional contract.
+#:
+#: Coercion, defaults and normalisation still run, as do the closed code lists
+#: (see the module docstring).
+_DERIVED_CONTEXT = {"derived": True}
+
+
+def _derived(info: ValidationInfo) -> bool:
+    """Whether validation is running under :data:`_DERIVED_CONTEXT`."""
+    return bool((info.context or {}).get("derived"))
+
+
+def vat_group_key(
+    category: VatCategory, rate: Decimal | None
+) -> tuple[VatCategory, Decimal | None]:
+    """The ``(category, rate)`` key the VAT breakdown (BG-23) groups by.
+
+    Rates are compared numerically (``19`` and ``19.00`` are one group), and
+    category O is keyed without a rate at all: BR-O-05..07 say it carries none,
+    so an issuer's explicit ``0`` and an absent rate mean the same thing. Both
+    spellings occur in one document — a line with no ``cbc:Percent`` under a
+    subtotal that has one — and keying them apart splits the group in two.
+    """
+    if category is VatCategory.NOT_SUBJECT:
+        return category, None
+    return category, None if rate is None else rate.normalize()
+
+
+def _not_negative(value: Decimal, info: ValidationInfo) -> Decimal:
+    """Authoring-only non-negativity: an allowance is a positive amount under a
+    false charge indicator, not a negative charge."""
+    if value < 0 and not _derived(info):
+        raise ValueError("must not be negative")
+    return value
+
+
+def _positive(value: Decimal, info: ValidationInfo) -> Decimal:
+    """Authoring-only positivity (BT-149's base quantity)."""
+    if value <= 0 and not _derived(info):
+        raise ValueError("must be greater than zero")
+    return value
+
+
+_NonNegative = AfterValidator(_not_negative)
+
+
 # Closed-list string types (the BR-CL-* rules), enforced at construction.
 _Currency = Annotated[
     str, AfterValidator(_in_codelist(CURRENCY_CODES, "ISO 4217 currency"))
@@ -172,8 +243,10 @@ _NoteSubjectCode = Annotated[
 # Amounts carry at most two decimals (the BR-DEC-* budget); prices and quantities
 # are unbudgeted by EN 16931 and stay plain Decimals.
 _Money = Annotated[Decimal, Field(decimal_places=2)]
-_NonNegativeMoney = Annotated[Decimal, Field(ge=0, decimal_places=2)]
-_Rate = Annotated[Decimal, Field(ge=0, description="Percentage, e.g. 19 for 19%.")]
+_NonNegativeMoney = Annotated[Decimal, Field(decimal_places=2), _NonNegative]
+_Rate = Annotated[
+    Decimal, Field(description="Percentage, e.g. 19 for 19%."), _NonNegative
+]
 
 _VatCategory = Annotated[VatCategory, BeforeValidator(_member_by_name(VatCategory))]
 
@@ -193,64 +266,64 @@ _EXEMPTION_REASON_CATEGORIES = _ZERO_RATE_CATEGORIES - {VatCategory.ZERO_RATED} 
     VatCategory.NOT_SUBJECT
 }
 
-#: Validation context marking an entry that
-#: :meth:`InvoiceDocument.compute_vat_breakdown` derived from the lines. The
-#: BR-*-10 exemption reason is the one thing a computed entry cannot know, so
-#: requiring it at construction would make a *correctly authored* exempt document
-#: (category E/AE/K/G/O with no explicit ``vat_breakdown``) fail with a raw
-#: pydantic error deep inside ``compute_totals``/``render_invoice`` — outside the
-#: AnafError hierarchy, and from a function documented never to raise. Computed
-#: entries skip only that check; :func:`~.rules.validate` reports the gap as a
-#: proper ``BR-*-10`` finding instead.
-_COMPUTED_ENTRY_CONTEXT = {"computed_breakdown": True}
-
 # Contact shapes (BT-42/43, BT-57/58). Deliberately permissive: no e-Factura rule
 # constrains the address beyond its 100-char length. The alphanumerics-only
 # RO-EMAIL-REGEX this once mirrored belongs to the *e-Transport* Schematron —
 # where it is a declared-but-never-referenced `let`, so ANAF enforces it in
 # neither service — and ANAF accepts filings whose contact carries `_`, `-` or
-# `+`. The reader must never reject a document ANAF itself validated, so only
-# what is unambiguously malformed is refused: a missing/duplicated `@`,
-# whitespace, an empty side, or a leading/trailing dot on either side.
+# `+`. What remains is authoring hygiene only, refusing what is unambiguously
+# malformed: a missing/duplicated `@`, whitespace, an empty side, or a
+# leading/trailing dot on either side. Since ANAF validates neither BT-42 nor
+# BT-43, real filings do carry two addresses in one element or a stray `-` for a
+# phone number — so reading skips both checks rather than lose the invoice.
 _EMAIL = re.compile(r"^[^\s@.](?:[^\s@]*[^\s@.])?@[^\s@.](?:[^\s@]*[^\s@.])?$")
 
 
-def _valid_email(value: str) -> str:
-    if not _EMAIL.match(value):
+def _valid_email(value: str, info: ValidationInfo) -> str:
+    if not _EMAIL.match(value) and not _derived(info):
         raise ValueError(f"{value!r} is not a plausible email address")
     return value
 
 
-def _valid_telephone(value: str) -> str:
-    if sum(char.isdigit() for char in value) < 3:
+def _valid_telephone(value: str, info: ValidationInfo) -> str:
+    if sum(char.isdigit() for char in value) < 3 and not _derived(info):
         raise ValueError("a telephone number needs at least 3 digits")
     return value
 
 
 def _check_vat_rate_shape(
-    category: VatCategory, rate: Decimal | None, *, required: bool
+    category: VatCategory, rate: Decimal | None, *, required: bool, derived: bool
 ) -> Decimal | None:
     """The per-category VAT rate shape shared by lines, document-level
     allowances/charges and breakdown entries (BR-S/Z/E/AE/IC/G/O-05..09).
 
     Returns the effective rate: a ``None`` rate on a fixed-zero category is
-    filled with 0 rather than rejected.
+    filled with 0 rather than rejected. When ``derived``, the value's own rate is
+    returned as-is instead of being judged.
     """
     if category is VatCategory.NOT_SUBJECT:
-        if rate is not None:
-            raise ValueError("VAT category O (not subject to VAT) takes no rate")
-        return None
+        # BR-O-05/06/07: category O takes no rate. Reading keeps whatever the
+        # issuer sent (some send an explicit zero); authoring reads that same
+        # redundant zero as "no rate" and refuses anything else.
+        if derived:
+            return rate
+        if rate is None or rate == 0:
+            return None
+        raise ValueError("VAT category O (not subject to VAT) takes no rate")
     if category in _ZERO_RATE_CATEGORIES:
         if rate is None:
+            # Filled on the derived path too, on purpose: a wire line with no
+            # cbc:Percent must land in the same (category, 0) breakdown group
+            # as a subtotal that spells the fixed rate explicitly.
             return Decimal(0)
-        if rate != 0:
+        if rate != 0 and not derived:
             raise ValueError(f"VAT category {category.value} requires a 0% rate")
         return rate
     if rate is None:
-        if required:
+        if required and not derived:
             raise ValueError(f"VAT category {category.value} requires a rate")
         return None
-    if category is VatCategory.STANDARD and rate == 0:
+    if category is VatCategory.STANDARD and rate == 0 and not derived:
         raise ValueError("VAT category S (standard) requires a rate above zero")
     return rate
 
@@ -260,7 +333,7 @@ class Contact(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=100)  # BT-41/56
     telephone: Annotated[str, AfterValidator(_valid_telephone)] | None = Field(
-        default=None, min_length=3, max_length=100
+        default=None, min_length=1, max_length=100
     )  # BT-42/57
     email: Annotated[str, AfterValidator(_valid_email)] | None = Field(
         default=None, max_length=100
@@ -297,8 +370,10 @@ class PostalAddress(BaseModel):
     country: _Country  # BT-40/55/69/80
 
     @model_validator(mode="after")
-    def _romanian_subdivisions(self) -> PostalAddress:
-        if self.country != "RO":
+    def _romanian_subdivisions(self, info: ValidationInfo) -> PostalAddress:
+        if self.country != "RO" or _derived(info):
+            # Reading keeps the issuer's own spelling, so a round-trip stays
+            # byte-stable and an off-list county never costs the whole document.
             return self
         if self.county not in RO_COUNTY_CODES:
             raise ValueError(
@@ -337,7 +412,8 @@ class Party(BaseModel):
 
     ``name`` is the legal name (BT-27/44) and the address is mandatory
     (BR-08/10). The VAT identifier must carry its ISO 3166 country prefix
-    (BR-CO-09; Greece may use ``EL``).
+    (BR-CO-09; Greece may use ``EL``, and the rule's own list also admits
+    ``1A`` for Kosovo — the one non-alphabetic prefix).
     """
 
     name: str = Field(min_length=1, max_length=200)  # BT-27/44
@@ -348,7 +424,7 @@ class Party(BaseModel):
     legal_registration_id: str | None = Field(default=None, min_length=1)  # BT-30/47
     legal_registration_scheme: _IcdScheme | None = None
     vat_id: str | None = Field(
-        default=None, pattern=r"^[A-Z]{2}", min_length=3
+        default=None, pattern=r"^(?:[A-Z]{2}|1A)", min_length=3
     )  # BT-31/48
     tax_registration_id: str | None = Field(
         default=None,
@@ -376,7 +452,9 @@ class Party(BaseModel):
     contact: Contact | None = None  # BG-6/9
 
     @model_validator(mode="after")
-    def _scheme_needs_id(self) -> Party:
+    def _scheme_needs_id(self, info: ValidationInfo) -> Party:
+        if _derived(info):
+            return self
         if self.legal_registration_scheme and self.legal_registration_id is None:
             raise ValueError(
                 "legal_registration_scheme is set without a legal_registration_id"
@@ -410,7 +488,7 @@ class TaxRepresentative(BaseModel):
     postal address (BG-12) are mandatory (BR-56/19)."""
 
     name: str = Field(min_length=1, max_length=200)  # BT-62
-    vat_id: str = Field(pattern=r"^[A-Z]{2}", min_length=3)  # BT-63
+    vat_id: str = Field(pattern=r"^(?:[A-Z]{2}|1A)", min_length=3)  # BT-63
     address: PostalAddress  # BG-12
 
 
@@ -422,7 +500,9 @@ class Period(BaseModel):
     end: dt.date | None = None  # BT-74/135
 
     @model_validator(mode="after")
-    def _bounds(self) -> Period:
+    def _bounds(self, info: ValidationInfo) -> Period:
+        if _derived(info):
+            return self
         if self.start is None and self.end is None:
             raise ValueError("a period needs a start date, an end date, or both")
         if self.start is not None and self.end is not None and self.end < self.start:
@@ -443,9 +523,11 @@ class DeliveryInformation(BaseModel):
     address: PostalAddress | None = None  # BG-15
 
     @model_validator(mode="after")
-    def _address_needs_county(self) -> DeliveryInformation:
+    def _address_needs_county(self, info: ValidationInfo) -> DeliveryInformation:
         # BR-RO-211: unlike the party addresses, a delivery address requires the
         # country subdivision regardless of country.
+        if _derived(info):
+            return self
         if self.address is not None and self.address.county is None:
             raise ValueError("a delivery address requires the county (BT-79)")
         return self
@@ -508,8 +590,8 @@ class _AllowanceChargeBase(BaseModel):
     reason_code: str | None = Field(default=None, min_length=1)  # BT-98/105/140/145
 
     @model_validator(mode="after")
-    def _reason_required(self) -> _AllowanceChargeBase:
-        if self.reason is None and self.reason_code is None:
+    def _reason_required(self, info: ValidationInfo) -> _AllowanceChargeBase:
+        if self.reason is None and self.reason_code is None and not _derived(info):
             raise ValueError("an allowance/charge needs a reason or a reason code")
         return self
 
@@ -522,9 +604,12 @@ class _DocumentAllowanceChargeBase(_AllowanceChargeBase):
     vat_rate: _Rate | None = None  # BT-96/103
 
     @model_validator(mode="after")
-    def _rate_shape(self) -> _DocumentAllowanceChargeBase:
+    def _rate_shape(self, info: ValidationInfo) -> _DocumentAllowanceChargeBase:
         self.vat_rate = _check_vat_rate_shape(
-            self.vat_category, self.vat_rate, required=True
+            self.vat_category,
+            self.vat_rate,
+            required=True,
+            derived=_derived(info),
         )
         return self
 
@@ -587,11 +672,17 @@ class InvoiceLine(BaseModel):
     period: Period | None = None  # BG-26
     allowances: list[LineAllowance] = []  # BG-27
     charges: list[LineCharge] = []  # BG-28
-    unit_price: Decimal = Field(ge=0)  # BT-146 (BR-27: not negative)
-    price_base_quantity: Decimal | None = Field(default=None, gt=0)  # BT-149
+    # BT-146 carries no sign constraint: CIUS-RO 1.0.9 comments BR-27 out of the
+    # UBL binding ("to correct problems regarding negative values for item net
+    # price"), and Romanian practice does file a storno as a type-380 invoice
+    # with negative values rather than as a credit note.
+    unit_price: Decimal  # BT-146
+    price_base_quantity: Annotated[Decimal, AfterValidator(_positive)] | None = (
+        None  # BT-149
+    )
     price_base_unit: _UnitCode | None = None  # BT-150
-    gross_price: Decimal | None = Field(default=None, ge=0)  # BT-148 (BR-28)
-    price_discount: Decimal | None = Field(default=None, ge=0)  # BT-147
+    gross_price: Annotated[Decimal, _NonNegative] | None = None  # BT-148 (BR-28)
+    price_discount: Annotated[Decimal, _NonNegative] | None = None  # BT-147
     vat_category: _VatCategory  # BT-151 (BR-CO-04)
     vat_rate: _Rate | None = None  # BT-152
     name: str = Field(min_length=1, max_length=100)  # BT-153
@@ -607,10 +698,13 @@ class InvoiceLine(BaseModel):
     attributes: list[ItemAttribute] = Field(default=[], max_length=50)  # BG-32
 
     @model_validator(mode="after")
-    def _shape(self) -> InvoiceLine:
+    def _shape(self, info: ValidationInfo) -> InvoiceLine:
+        derived = _derived(info)
         self.vat_rate = _check_vat_rate_shape(
-            self.vat_category, self.vat_rate, required=True
+            self.vat_category, self.vat_rate, required=True, derived=derived
         )
+        if derived:
+            return self
         # BR-64: the standard item identifier requires its scheme.
         if self.standard_item_id is not None and self.standard_item_scheme is None:
             raise ValueError("standard_item_id (BT-157) requires its scheme (BR-64)")
@@ -655,19 +749,19 @@ class VatBreakdownEntry(BaseModel):
 
     @model_validator(mode="after")
     def _shape(self, info: ValidationInfo) -> VatBreakdownEntry:
-        self.rate = _check_vat_rate_shape(self.category, self.rate, required=True)
+        derived = _derived(info)
+        self.rate = _check_vat_rate_shape(
+            self.category, self.rate, required=True, derived=derived
+        )
+        if derived:
+            return self
         zero_tax = self.category in _ZERO_RATE_CATEGORIES | {VatCategory.NOT_SUBJECT}
         if zero_tax and self.tax_amount:
             raise ValueError(
                 f"VAT category {self.category.value} carries a zero tax amount"
             )
         has_reason = self.exemption_reason or self.exemption_reason_code
-        computed = bool((info.context or {}).get("computed_breakdown"))
-        if (
-            self.category in _EXEMPTION_REASON_CATEGORIES
-            and not has_reason
-            and not computed
-        ):
+        if self.category in _EXEMPTION_REASON_CATEGORIES and not has_reason:
             raise ValueError(
                 f"VAT category {self.category.value} requires an exemption reason "
                 "text or code (BT-120/121)"
@@ -682,16 +776,23 @@ class VatBreakdownEntry(BaseModel):
 class Totals(BaseModel):
     """The document totals (BG-22). Every member is optional: whatever is left
     ``None`` is computed (see :meth:`InvoiceDocument.effective_totals`); whatever
-    is supplied is preserved and checked by :func:`~.rules.validate`."""
+    is supplied is preserved and checked by :func:`~.rules.validate`.
+
+    No member is sign-constrained. EN 16931 and CIUS-RO put no such rule on any
+    of them, and Romanian practice files a *storno* as a type-380 invoice with
+    negative values throughout, so a negative BT-110 is ordinary inbox content.
+    Requiring otherwise also made a read storno unrenderable — the computed
+    totals are derived from the very amounts that make them negative.
+    """
 
     lines_total: _Money | None = None  # BT-106
-    allowance_total: _NonNegativeMoney | None = None  # BT-107
-    charge_total: _NonNegativeMoney | None = None  # BT-108
+    allowance_total: _Money | None = None  # BT-107
+    charge_total: _Money | None = None  # BT-108
     tax_exclusive: _Money | None = None  # BT-109
-    vat_total: _NonNegativeMoney | None = None  # BT-110
-    vat_total_tax_currency: _NonNegativeMoney | None = None  # BT-111
+    vat_total: _Money | None = None  # BT-110
+    vat_total_tax_currency: _Money | None = None  # BT-111
     tax_inclusive: _Money | None = None  # BT-112
-    prepaid: _NonNegativeMoney | None = None  # BT-113
+    prepaid: _Money | None = None  # BT-113
     rounding: _Money | None = None  # BT-114
     payable: _Money | None = None  # BT-115
 
@@ -719,7 +820,9 @@ class SupportingDocument(BaseModel):
     filename: str | None = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode="after")
-    def _embedded_needs_metadata(self) -> SupportingDocument:
+    def _embedded_needs_metadata(self, info: ValidationInfo) -> SupportingDocument:
+        if _derived(info):
+            return self
         if self.content is not None and (self.mime_code is None or not self.filename):
             raise ValueError("embedded content requires mime_code and filename")
         return self
@@ -820,13 +923,15 @@ class InvoiceDocument(BaseModel):
     totals: Totals | None = None  # BG-22
 
     @model_validator(mode="after")
-    def _shape(self) -> InvoiceDocument:
+    def _shape(self, info: ValidationInfo) -> InvoiceDocument:
         if self.type_code is None:
             self.type_code = (
                 InvoiceTypeCode.COMMERCIAL_INVOICE
                 if self.kind is DocumentKind.INVOICE
                 else InvoiceTypeCode.CREDIT_NOTE
             )
+        if _derived(info):
+            return self
         allowed = (
             INVOICE_TYPE_CODES
             if self.kind is DocumentKind.INVOICE
@@ -868,7 +973,7 @@ class InvoiceDocument(BaseModel):
         groups: dict[tuple[VatCategory, Decimal | None], Decimal] = {}
 
         def add(category: VatCategory, rate: Decimal | None, amount: Decimal) -> None:
-            key = (category, None if rate is None else rate.normalize())
+            key = vat_group_key(category, rate)
             groups[key] = groups.get(key, Decimal(0)) + amount
 
         for line in self.lines:
@@ -885,10 +990,7 @@ class InvoiceDocument(BaseModel):
         (BR-CO-17), zero for the exempt-style categories. Exemption reasons are
         carried over from matching explicit :attr:`vat_breakdown` entries."""
         explicit = {
-            (
-                entry.category,
-                None if entry.rate is None else entry.rate.normalize(),
-            ): entry
+            vat_group_key(entry.category, entry.rate): entry
             for entry in self.vat_breakdown
         }
         entries = []
@@ -908,9 +1010,11 @@ class InvoiceDocument(BaseModel):
             )
             match = explicit.get(key)
             entries.append(
-                # Built through the computed context: an exempt-style group with
-                # no matching explicit entry has no reason to carry, and that is
-                # rules.validate()'s BR-*-10 finding to report, not a crash here.
+                # Built through the derived context: this entry is our output,
+                # not the caller's input, so nothing here judges it. An
+                # exempt-style group with no matching explicit entry has no
+                # reason to carry, and that is rules.validate()'s BR-*-10
+                # finding to report, not a crash from inside compute_totals().
                 VatBreakdownEntry.model_validate(
                     {
                         "category": category,
@@ -922,7 +1026,7 @@ class InvoiceDocument(BaseModel):
                             match.exemption_reason_code if match else None
                         ),
                     },
-                    context=_COMPUTED_ENTRY_CONTEXT,
+                    context=_DERIVED_CONTEXT,
                 )
             )
         return entries
@@ -935,17 +1039,11 @@ class InvoiceDocument(BaseModel):
         if not self.vat_breakdown:
             return computed
         computed_map = {
-            (
-                entry.category,
-                None if entry.rate is None else entry.rate.normalize(),
-            ): entry
-            for entry in computed
+            vat_group_key(entry.category, entry.rate): entry for entry in computed
         }
         merged = []
         for entry in self.vat_breakdown:
-            match = computed_map.get(
-                (entry.category, None if entry.rate is None else entry.rate.normalize())
-            )
+            match = computed_map.get(vat_group_key(entry.category, entry.rate))
             update: dict[str, Decimal | None] = {}
             if entry.taxable_amount is None and match is not None:
                 update["taxable_amount"] = match.taxable_amount
@@ -994,17 +1092,22 @@ class InvoiceDocument(BaseModel):
             - (explicit.prepaid or Decimal(0))
             + (explicit.rounding or Decimal(0))
         )
-        return Totals(
-            lines_total=lines_total,
-            allowance_total=allowance_total,
-            charge_total=charge_total,
-            tax_exclusive=tax_exclusive,
-            vat_total=vat_total,
-            vat_total_tax_currency=explicit.vat_total_tax_currency,
-            tax_inclusive=tax_inclusive,
-            prepaid=explicit.prepaid,
-            rounding=explicit.rounding,
-            payable=payable,
+        # Derived context, like the breakdown entries above: these are sums of
+        # the caller's own amounts, and this method must never raise.
+        return Totals.model_validate(
+            {
+                "lines_total": lines_total,
+                "allowance_total": allowance_total,
+                "charge_total": charge_total,
+                "tax_exclusive": tax_exclusive,
+                "vat_total": vat_total,
+                "vat_total_tax_currency": explicit.vat_total_tax_currency,
+                "tax_inclusive": tax_inclusive,
+                "prepaid": explicit.prepaid,
+                "rounding": explicit.rounding,
+                "payable": payable,
+            },
+            context=_DERIVED_CONTEXT,
         )
 
     def effective_totals(self) -> Totals:
@@ -1021,4 +1124,4 @@ class InvoiceDocument(BaseModel):
             )
             for name in Totals.model_fields
         }
-        return Totals(**merged)
+        return Totals.model_validate(merged, context=_DERIVED_CONTEXT)

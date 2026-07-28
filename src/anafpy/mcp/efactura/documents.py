@@ -8,7 +8,7 @@ parsing is best-effort (an unparseable document yields ``None``, not an error).
 
 from __future__ import annotations
 
-from ...efactura.authoring import InvoiceDocument, read_invoice
+from ...efactura.authoring import InvoiceDocument, parse_invoice
 from ...efactura.models import UploadStandard, parse_ubl_document
 from ...efactura.ubl.maindoc import CreditNote
 from ...exceptions import AnafResponseError
@@ -34,18 +34,15 @@ def transform_standard(xml: bytes) -> TransformStandard:
 
 def invoice_view(xml: bytes) -> InvoiceDocument | None:
     """Full-fidelity flat projection of e-Factura UBL, or ``None`` if it does not
-    parse or the strict authoring reader cannot represent it.
+    parse or the authoring reader cannot represent it.
 
     Used for the ``efactura_prepare`` preview; wire amounts land in the explicit
     fields, never recomputed. A ``None`` preview does not block the filing — the
     bytes go to ANAF verbatim either way.
     """
-    doc = parse_ubl_document(xml)
-    if doc is None:
-        return None
     try:
-        return read_invoice(doc)
-    except ValueError:
+        return parse_invoice(xml)
+    except ValueError:  # includes pydantic.ValidationError
         return None
 
 

@@ -177,6 +177,8 @@ def test_vat_id_requires_country_prefix() -> None:
     with pytest.raises(ValidationError):
         make_seller(vat_id="12345678")
     assert make_seller(vat_id="EL123456789").vat_id == "EL123456789"
+    # Kosovo's 1A is the one non-alphabetic prefix on BR-CO-09's own list.
+    assert make_seller(vat_id="1A123456789").vat_id == "1A123456789"
 
 
 # --- periods, allowances, lines --------------------------------------------------
@@ -237,8 +239,11 @@ def test_vat_rate_shape_per_category() -> None:
         make_line(vat_category=VatCategory.REVERSE_CHARGE, vat_rate=Decimal("19"))
     not_subject = make_line(vat_category=VatCategory.NOT_SUBJECT, vat_rate=None)
     assert not_subject.vat_rate is None
+    # A redundant explicit zero on category O means "no rate", not a conflict.
+    redundant = make_line(vat_category=VatCategory.NOT_SUBJECT, vat_rate=Decimal("0"))
+    assert redundant.vat_rate is None
     with pytest.raises(ValidationError, match="no rate"):
-        make_line(vat_category=VatCategory.NOT_SUBJECT, vat_rate=Decimal("0"))
+        make_line(vat_category=VatCategory.NOT_SUBJECT, vat_rate=Decimal("19"))
 
 
 def test_vat_category_accepts_names_and_lowercase_codes() -> None:
@@ -264,13 +269,16 @@ def test_line_item_shape_checks() -> None:
         make_line(attributes=too_many)
 
 
-def test_unit_price_may_not_be_negative() -> None:
-    # BR-27
-    with pytest.raises(ValidationError):
-        make_line(unit_price=Decimal("-1"))
-    # ... but quantity and net amount may (credit-style corrections).
+def test_line_amounts_may_be_negative() -> None:
+    # CIUS-RO 1.0.9 comments BR-27 out of the UBL binding, precisely "to correct
+    # problems regarding negative values for item net price" — and RO practice
+    # files a storno as a type-380 invoice with negative values throughout.
+    assert make_line(unit_price=Decimal("-1")).unit_price == Decimal("-1")
     line = make_line(quantity=Decimal("-2"), net_amount=Decimal("-20.00"))
     assert line.effective_net_amount == Decimal("-20.00")
+    # BR-28 is still live, so the gross price stays non-negative when authoring.
+    with pytest.raises(ValidationError):
+        make_line(gross_price=Decimal("-1"))
 
 
 def test_supporting_document_embedded_content_needs_metadata() -> None:

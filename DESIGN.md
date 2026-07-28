@@ -44,13 +44,12 @@ invoicing system.
   original zip/XML/PDF **as-is**, and parse received UBL into the flat
   `InvoiceDocument` view. e-Transport stays outbound + own-declaration status
   only.
-- **One e-Factura flat surface.** `authoring.InvoiceDocument` is the strict,
-  full-fidelity bidirectional model (§4 Authoring). Strict reading is safe for
-  the inbox — every filed document already passed ANAF's validation, whose
-  rules the construction checks mirror — and `DownloadedMessage.view` degrades
-  to `None` (never raises) on the residual risk, e.g. code-list edition drift
-  until the vendored lists are refreshed. The e-Transport flat models keep the
-  same bidirectional contract.
+- **One e-Factura flat surface.** `authoring.InvoiceDocument` is the
+  full-fidelity bidirectional model (§4 Authoring) — strict when authoring,
+  lenient when reading (§4, *Reading is not authoring*, 2026-07-28).
+  `DownloadedMessage.view` degrades to `None` (never raises) on what remains
+  unreadable, e.g. code-list edition drift until the vendored lists are
+  refreshed. The e-Transport flat models keep the same bidirectional contract.
 - **Stateless** beyond the OAuth token store: callers own persistence of upload
   indices, message ids, and statuses. Discrete one-call-one-result methods, no
   transport retry.
@@ -283,10 +282,77 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
     `CompanyLegalForm` on the customer party. Renders default the marker per
     role: `FC` for the seller's BT-32, unchanged from what has been filed, and
     `!VAT` for the buyer, matching the market.
-- **The reader is strict and full-fidelity**: `read_invoice`/`parse_invoice`
-  land every wire amount in the explicit fields (never recomputed), so
-  round-trips are byte-stable and `validate()` can judge an upstream document's
-  arithmetic. `DownloadedMessage.view` wraps it never-raising for the inbox.
+- **The reader is full-fidelity**: `read_invoice`/`parse_invoice` land every
+  wire amount in the explicit fields (never recomputed), so round-trips are
+  byte-stable and `validate()` can judge an upstream document's arithmetic.
+  `DownloadedMessage.view` wraps it never-raising for the inbox.
+  - **Reading is not authoring** *(REVISED 2026-07-28; the reader was strict,
+    sharing the authoring construction checks)*. The premise — "every filed
+    document passed ANAF's validation, whose rules the checks mirror, so strict
+    reading is safe" — was simply false, and expensively so: across one
+    operator's real inbox of **85 valid CIUS-RO downloads, `read_invoice`
+    succeeded on zero**. All 85 parsed into `Invoice`/`CreditNote` and then died
+    in the flat translation, silently, because `view` swallows the error into
+    `None` (issue #9; found via `anaf-sync`, where every one landed as
+    `unknown_unknown_unknown_<id>`). Four families, partitioning the corpus:
+    negative amounts (34 — RO practice files a *storno* as a **type-380 invoice
+    with negative values**, not a type-381 credit note); an empty optional
+    element (25 — `<cbc:PostalZone/>` and friends, which UBL means as *absent*
+    and pydantic saw as a zero-length string); contact free-text (25 — two
+    addresses in one BT-43, a telephone of `-`); and a category-O line carrying
+    an explicit `0` rate (1). So the reader now validates through a
+    `_DERIVED_CONTEXT` marker that stands the construction checks down, while
+    coercion, defaults and normalisation still run; empty/whitespace-only
+    elements read as absent; and an orphan `schemeID` on an absent identifier
+    is dropped. Rejected alternatives: `model_construct` (loses the coercion and
+    defaults the reader needs) and an opt-in `strict=` flag (a default nobody
+    would find, guarding a contract nobody wants).
+    - **What stays fatal on read** is what the models genuinely cannot hold: a
+      missing mandatory element, and the closed `BR-CL-*` code lists — which is
+      the code-list drift tripwire `view` has always documented, now the *only*
+      thing it means. `view` no longer fails silently either: the cause is kept
+      on `view_error` and a `UserWarning` is emitted.
+    - **Two authoring checks were wrong, not merely strict**, and were relaxed
+      in both directions: BT-146's `ge=0` (CIUS-RO 1.0.9 **comments BR-27 out**
+      of its UBL binding — the file's own header says "to correct problems
+      regarding negative values for item net price"; BR-28 on BT-148 stays
+      live), and category O rejecting a redundant explicit `0`, now read as
+      "no rate". Everything else keeps its authoring strictness untouched.
+  - **Derived values are never re-judged either** *(2026-07-28, same change)*.
+    Running the 85-document corpus through the fixed reader found the leniency
+    leaking: 12 of them read fine and then **failed to render**, because
+    `compute_totals` / `effective_totals` rebuilt a plain `Totals` outside any
+    context and the authoring checks re-fired on sums derived from the very
+    amounts that make a storno negative. A read document that cannot render
+    breaks the bidirectional contract outright. So the marker covers both cases
+    and is named for the general one, `_DERIVED_CONTEXT`: a value the caller did
+    not author — read off the wire, or computed by this module — is never
+    judged. That subsumes the older `_COMPUTED_ENTRY_CONTEXT` (the BR-*-10 case
+    above), which was the same lesson learned narrowly. `Totals` also lost its
+    sign constraints outright: no EN 16931 or CIUS-RO rule constrains the sign
+    of BT-107/108/110/111/113, and 12/85 accepted documents carry a negative
+    BT-110.
+  - **The corpus found two more reader bugs**, both producing *spurious fatal
+    findings* on documents ANAF accepted — the failure mode a local rule set can
+    least afford:
+    - **BT-111 was dropped when BT-6 == BT-5** (48 of 85 documents). Issuers do
+      set the accounting currency equal to the invoice currency; the single
+      `TaxTotal` is then both BT-110 and BT-111, and BR-53 asks only that a
+      `TaxAmount` in the accounting currency *exists*. `_totals` read it with an
+      `elif`, so BT-111 stayed `None` and `validate` flagged a fatal BR-53.
+      (Rendering was always safe — `build.py` only writes the second `TaxTotal`
+      when the currencies differ.)
+    - **Category O's rate grouped two ways** (1 document). One file spells the
+      absent rate both ways: no `cbc:Percent` on the line, an explicit `0` on
+      the tax subtotal. Keying them apart split the BG-23 group and produced a
+      fatal BR-O-08. The four key constructions (three in `models.py`, one in
+      `rules.py`) now share one `vat_group_key`, which keys category O without a
+      rate at all per BR-O-05..07.
+  - **Verified against the corpus** (2026-07-28, 85 real ANAF-accepted
+    downloads): 85/85 read, 85/85 render back, 85/85 byte-stable on re-render,
+    and `validate()` reports **zero findings** across all of them — local
+    verdicts agreeing with ANAF's on every document, which is the strongest
+    signal the translated rule set has had outside `validare`.
 - `render_invoice` refuses fatally-invalid documents unless
   `skip_validation=True` (`InvoiceValidationError` carries the report);
   `EFacturaClient.upload_invoice` composes + uploads with the right `standard`.
@@ -324,7 +390,8 @@ exceptions — a rejection is data, not control flow.
 - `download` returns a **raw-preserving `DownloadedMessage`** with three tiers:
   (1) raw ZIP + raw signed-invoice XML bytes (the legally valid artifact, archived
   ~10 years) + signature; (2) lazily-parsed full `ubl.Invoice`; (3) the lazily-built
-  `InvoiceDocument` view (strict authoring reader; `None` instead of raising).
+  `InvoiceDocument` view (the authoring reader in its lenient wire mode; `None`
+  instead of raising, with the cause on `view_error` plus a warning).
   Tier 1 is authoritative; never parse-only.
 
 ### Validation

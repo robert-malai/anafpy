@@ -14,12 +14,20 @@ from __future__ import annotations
 
 import io
 import re
+import warnings
 import zipfile
 from enum import StrEnum
 from functools import cached_property
 from typing import TYPE_CHECKING, Annotated, cast
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    model_validator,
+)
 
 from .ubl.maindoc import CreditNote, Invoice
 
@@ -220,6 +228,8 @@ class DownloadedMessage(BaseModel):
     content_xml: bytes | None = None
     signature_xml: bytes | None = None
 
+    _view_error: Exception | None = PrivateAttr(default=None)
+
     @classmethod
     def from_zip(cls, raw_zip: bytes) -> DownloadedMessage:
         content: bytes | None = None
@@ -249,12 +259,18 @@ class DownloadedMessage(BaseModel):
         of :attr:`document`.
 
         ``None`` when the content is not a parseable UBL invoice/credit-note (a
-        ``nok`` errors file, a buyer message) **or** when the strict authoring
-        reader cannot represent it — never an exception. Every inbox document
-        passed ANAF's validation at filing, whose rules the authoring models
-        mirror, so a ``None`` on parseable UBL signals rule drift: fall back to
-        :attr:`document` / :attr:`content_xml` and consider re-vendoring the
-        CIUS-RO code lists.
+        ``nok`` errors file, a buyer message) **or** when the reader cannot
+        represent it — never an exception.
+
+        The reader is lenient about shape (it never re-judges a document ANAF
+        already accepted), so the second case now means something narrow: a
+        mandatory element is missing, or a value fails one of the ANAF-certain
+        mirrors (code lists, formats, lengths, decimal budgets) — i.e. the
+        vendored CIUS-RO edition has drifted. It is reported both ways: a
+        :class:`UserWarning` is emitted and the cause is kept on
+        :attr:`view_error`, so "unreadable" never passes for "empty". Fall back
+        to :attr:`document` / :attr:`content_xml`, and consider re-vendoring
+        (``schemas/README.md`` has the playbook).
         """
         # Imported lazily: authoring.read imports this module for
         # parse_ubl_document.
@@ -265,5 +281,19 @@ class DownloadedMessage(BaseModel):
             return None
         try:
             return read_invoice(doc)
-        except ValueError:  # includes pydantic.ValidationError
+        except ValueError as error:  # includes pydantic.ValidationError
+            self._view_error = error
+            warnings.warn(
+                f"the UBL document parsed but could not be read into an "
+                f"InvoiceDocument: {error}",
+                # 3 = past cached_property.__get__, at the code reading .view.
+                stacklevel=3,
+            )
             return None
+
+    @property
+    def view_error(self) -> Exception | None:
+        """Why :attr:`view` is ``None`` on parseable UBL — set when :attr:`view`
+        is first accessed, ``None`` before that and whenever the view
+        succeeded."""
+        return self._view_error
