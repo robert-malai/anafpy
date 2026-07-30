@@ -13,7 +13,27 @@ The `AnafError` hierarchy covers failures of the *machinery*:
 - `AnafResponseError` — ANAF answered, but not in a shape anafpy accepts.
 - `AnafRateLimitError` — HTTP 429, exposing `retry_after`. The client does
   **not** auto-back-off; scheduling the retry is yours.
+- `AnafWafRejectionError` — ANAF's firewall refused the request *body*; carries
+  the block page's `support_id`. See below.
 - `AnafConfigError` — configuration problems (missing credentials, bad env).
+
+Both `AnafRateLimitError` and `AnafWafRejectionError` subclass
+`AnafResponseError`, so code that already catches that keeps working.
+
+## The firewall block page
+
+ANAF fronts `webservicesp.anaf.ro` with a WAF that scans the invoice XML you post
+to `validare`/`transformare`, and answers a `Request Rejected` HTML page **with
+HTTP 200** when the document matches an attack signature. Real, ANAF-accepted
+invoices do — a relative path in `xsi:schemaLocation` looks like path traversal,
+a `;CP ` in a street address looks like a shell command.
+
+anafpy never hands that page back as if it were a result: it raises
+`AnafWafRejectionError` (in the shared transport, so every client is covered).
+It also defuses what can be defused — `xsi:schemaLocation` is advisory and is
+dropped before posting, and a `render_invoice_pdf(validate=False)` that gets
+blocked is retried once on the validating path, which is not subject to the same
+policy. You see a warning when that happens, and the PDF you asked for.
 
 ## Typed values: business outcomes
 
@@ -52,8 +72,10 @@ it idempotency-aware). The built-in `upload_and_wait` loop polls on the
 *business* "still processing" state only — a transport error inside it
 propagates immediately.
 
-The one deliberate exception is the [SPV client](spv.md): its reads
-(`list_messages`, `download_document`) retry transient *network* failures with
-backoff, because every SPV operation is an idempotent GET. Received HTTP
-answers — including 429 — still surface immediately, and `request_report`
-stays single-shot.
+Two deliberate exceptions. The [SPV client](spv.md): its reads (`list_messages`,
+`download_document`) retry transient *network* failures with backoff, because
+every SPV operation is an idempotent GET. Received HTTP answers — including
+429 — still surface immediately, and `request_report` stays single-shot. And
+`render_invoice_pdf(validate=False)`: a firewall block on the skip-validation URL
+is followed by one attempt at the validating URL (a different endpoint, on a
+stateless public service that files nothing) instead of losing the PDF.

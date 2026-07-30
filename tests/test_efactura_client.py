@@ -40,7 +40,12 @@ from anafpy.efactura.ubl.common.ubl_common_basic_components_2_1 import (
     IssueDate,
     PayableAmount,
 )
-from anafpy.exceptions import AnafConfigError, AnafRateLimitError, AnafResponseError
+from anafpy.exceptions import (
+    AnafConfigError,
+    AnafRateLimitError,
+    AnafResponseError,
+    AnafWafRejectionError,
+)
 
 BASE = "https://api.anaf.ro/test/FCTEL/rest"
 
@@ -343,6 +348,26 @@ async def test_download_non_zip_body_raises_response_error_with_body() -> None:
             await client.download("bogus")
     assert ei.value.status_code == 200
     assert "id invalid" in (ei.value.body or "")
+
+
+@respx.mock
+async def test_waf_block_page_raises_on_any_client() -> None:
+    # The firewall's block page is an HTTP 200 text/html body on every ANAF host,
+    # so the check sits in the shared transport, not in one client.
+    respx.get(f"{BASE}/descarcare").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                "<html><head><title>Request Rejected</title></head><body>The "
+                "requested URL was rejected. Please consult with your "
+                "administrator.<br><br>Your support ID is: 12345<br></body></html>"
+            ),
+        )
+    )
+    async with _client() as client:
+        with pytest.raises(AnafWafRejectionError) as ei:
+            await client.download("18")
+    assert ei.value.support_id == "12345"
 
 
 # --- lists ----------------------------------------------------------------------------

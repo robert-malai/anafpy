@@ -232,7 +232,11 @@ tests/                   # respx-mocked suite + opt-in live files (filing
   404-with-`found`/`notFound`-body is a returned "not found". It also carries
   the stateless `validate_invoice`/`render_invoice_pdf` (public, no-auth,
   **prod-only** — their TEST paths 404); only the MF signature check stays on
-  `EFacturaClient`.
+  `EFacturaClient`. Both document services **strip `xsi:schemaLocation`** before
+  posting and `render_invoice_pdf(validate=False)` **retries once on the
+  validating path** when ANAF's WAF blocks the `/DA` one — the two documented
+  accommodations for the firewall (DESIGN.md §6, reference §6.1); don't remove
+  them without re-checking the wire.
 - **SPV is the certificate outlier** (read-only by design — no submissions).
   The qualified certificate (keys non-exportable; Python's `ssl` cannot present
   them) is used only by the interactive login bootstrap, which drives the
@@ -373,9 +377,13 @@ browser login stays CLI-side. The tool inventory with per-tool descriptions is
 Hybrid, per design — do not collapse it:
 
 - **Exceptions** (`AnafError` → `AnafAuthError`, `AnafTransportError`/`AnafResponseError`,
-  `AnafRateLimitError`, `AnafConfigError`) are for transport / auth / programming errors.
-  HTTP 429 raises `AnafRateLimitError` exposing `retry_after`; the client does **not**
-  auto-back-off.
+  `AnafRateLimitError`, `AnafWafRejectionError`, `AnafConfigError`) are for transport /
+  auth / programming errors. HTTP 429 raises `AnafRateLimitError` exposing
+  `retry_after`; the client does **not** auto-back-off. ANAF's WAF block page —
+  `Request Rejected` HTML at **HTTP 200**, tripped by legitimate invoices
+  (reference §6.1) — is caught for every client in `_request_checked` and raises
+  `AnafWafRejectionError`; it is infrastructure refusing the call, never a verdict
+  on the document.
 - **Business outcomes** (e-Factura `nok`/`REJECTED`, upload rejections with BR-RO
   findings) are returned as **typed values** (e.g. `UploadResult.accepted is False`,
   `MessageStatus.state`), never raised.

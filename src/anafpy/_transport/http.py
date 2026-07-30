@@ -8,7 +8,7 @@ from typing import Any, Self
 import httpx
 
 from ..exceptions import AnafConfigError, AnafTransportError
-from .base import raise_for_status
+from .base import raise_for_status, raise_for_waf_rejection
 
 __all__ = ["HttpClientBase"]
 
@@ -100,10 +100,16 @@ class HttpClientBase:
         outcome — the e-Factura register's 404-with-a-``found``-body is the one
         case in the library.
 
+        A firewall block page raises
+        :class:`~anafpy.exceptions.AnafWafRejectionError` whatever the status —
+        it arrives as HTTP 200 and *tolerate* is about ANAF's answers, not about
+        never reaching ANAF at all.
+
         Callers that must inspect the raw response first (SPV's auth flow needs
         to see 302s) use :meth:`_request_http` directly.
         """
         response = await self._request_http(method, url, **kwargs)
+        raise_for_waf_rejection(response)
         if response.status_code not in tolerate:
             raise_for_status(response)
         return response

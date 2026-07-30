@@ -50,9 +50,11 @@ async def render_pdf(ctx: AppContext, xml: bytes) -> bytes:
     """Render downloaded e-Factura XML to PDF via ANAF's ``transformare``.
 
     ``validate=False``: the message already passed ANAF's validation when it was
-    filed, so re-validating here could only spuriously block the rendering.
-    ``transformare`` still answers 200 with a JSON error body when it cannot render,
-    so a non-PDF response is raised as :class:`AnafResponseError`, not written out.
+    filed, so re-validating here could only spuriously block the rendering (the
+    client falls back to the validating path by itself when ANAF's firewall
+    refuses the skip-validation one). ``transformare`` still answers 200 with a
+    JSON error body when it cannot render, so a non-PDF response is raised as
+    :class:`AnafResponseError`, not written out.
     """
     pdf = await ctx.public.render_invoice_pdf(
         xml, standard=transform_standard(xml), validate=False

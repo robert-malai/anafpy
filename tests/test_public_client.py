@@ -20,6 +20,7 @@ from anafpy.exceptions import (
     AnafConfigError,
     AnafRateLimitError,
     AnafResponseError,
+    AnafWafRejectionError,
 )
 from anafpy.public import PublicClient, TransformStandard
 
@@ -601,3 +602,118 @@ async def test_render_invoice_pdf_novalidation_appends_da_segment() -> None:
             b"<CreditNote/>", standard=TransformStandard.CREDIT_NOTE, validate=False
         )
     assert route.called
+
+
+# --- ANAF's WAF: the block page, and the two accommodations ---------------------------
+
+# The F5 in front of `webservicesp.anaf.ro` scans the posted XML and answers this
+# page — HTTP 200, text/html — when the document matches an attack signature.
+# Live-confirmed 2026-07-30 on four real inbound invoices; see
+# docs/anaf-reference/efactura/api.md §6.
+_WAF_BLOCK_PAGE = (
+    "<html><head><title>Request Rejected</title></head><body>The requested URL was "
+    "rejected. Please consult with your administrator.<br><br>Your support ID is: "
+    "9826645832961917351<br><br><a href='javascript:history.back();'>[Go Back]</a>"
+    "</body></html>"
+)
+
+
+def _waf_block() -> httpx.Response:
+    return httpx.Response(
+        200, text=_WAF_BLOCK_PAGE, headers={"Content-Type": "text/html; charset=utf-8"}
+    )
+
+
+@respx.mock
+async def test_waf_block_page_raises_instead_of_passing_as_a_result() -> None:
+    respx.post(f"{EFACTURA_DOC_BASE}/validare/FACT1").mock(return_value=_waf_block())
+    async with _client() as client:
+        with pytest.raises(AnafWafRejectionError) as caught:
+            await client.validate_invoice(b"<Invoice/>")
+    assert caught.value.support_id == "9826645832961917351"
+    assert caught.value.status_code == 200
+    assert isinstance(caught.value, AnafResponseError)  # catchable as before
+
+
+@respx.mock
+async def test_render_invoice_pdf_falls_back_to_validating_path_on_block() -> None:
+    # The `/DA` (skip-validation) path carries the stricter WAF policy: the same
+    # document renders through `transformare/{std}`.
+    blocked = respx.post(f"{EFACTURA_DOC_BASE}/transformare/FACT1/DA").mock(
+        return_value=_waf_block()
+    )
+    validating = respx.post(f"{EFACTURA_DOC_BASE}/transformare/FACT1").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7 ...")
+    )
+    async with _client() as client:
+        with pytest.warns(UserWarning, match="firewall rejected"):
+            pdf = await client.render_invoice_pdf(b"<Invoice/>", validate=False)
+    assert pdf.startswith(b"%PDF")
+    assert blocked.called and validating.called
+
+
+@respx.mock
+async def test_render_invoice_pdf_blocked_on_both_paths_raises() -> None:
+    respx.post(f"{EFACTURA_DOC_BASE}/transformare/FACT1/DA").mock(
+        return_value=_waf_block()
+    )
+    respx.post(f"{EFACTURA_DOC_BASE}/transformare/FACT1").mock(
+        return_value=_waf_block()
+    )
+    async with _client() as client:
+        with pytest.warns(UserWarning), pytest.raises(AnafWafRejectionError):
+            await client.render_invoice_pdf(b"<Invoice/>", validate=False)
+
+
+@respx.mock
+async def test_render_invoice_pdf_validating_path_does_not_retry_a_block() -> None:
+    route = respx.post(f"{EFACTURA_DOC_BASE}/transformare/FACT1").mock(
+        return_value=_waf_block()
+    )
+    async with _client() as client:
+        with pytest.raises(AnafWafRejectionError):
+            await client.render_invoice_pdf(b"<Invoice/>", validate=True)
+    assert route.call_count == 1
+
+
+# The attribute is advisory (ANAF renders identically without it) and is the WAF
+# bait seen most often: issuers whose software writes a relative path there trip
+# the path-traversal signature on every document they emit.
+_SCHEMA_LOCATION = (
+    'xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 '
+    '../../UBL-2.1(1)/xsd/maindoc/UBL-Invoice-2.1.xsd"'
+)
+
+
+@respx.mock
+async def test_document_services_strip_the_root_schema_location() -> None:
+    route = respx.post(f"{EFACTURA_DOC_BASE}/transformare/FACT1/DA").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7 ...")
+    )
+    xml = (
+        f'<?xml version="1.0"?>\n<Invoice {_SCHEMA_LOCATION} '
+        'xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">'
+        "<cbc:Note>gt &gt; and a quoted &quot;attr&quot;</cbc:Note></Invoice>"
+    ).encode()
+    async with _client() as client:
+        await client.render_invoice_pdf(xml, validate=False)
+    sent = route.calls.last.request.content
+    assert b"schemaLocation" not in sent
+    assert b"../../" not in sent
+    assert sent.endswith(
+        b"<cbc:Note>gt &gt; and a quoted &quot;attr&quot;</cbc:Note></Invoice>"
+    )
+    assert b'xmlns="urn:oasis' in sent
+
+
+@respx.mock
+async def test_schema_location_stripping_leaves_element_text_alone() -> None:
+    # Only the document element's start tag is rewritten — an invoice that quotes
+    # the attribute in its own content (an attachment, a note) goes out verbatim.
+    route = respx.post(f"{EFACTURA_DOC_BASE}/validare/FACT1").mock(
+        return_value=httpx.Response(200, json={"stare": "ok"})
+    )
+    xml = f"<Invoice><cbc:Note>see {_SCHEMA_LOCATION}</cbc:Note></Invoice>".encode()
+    async with _client() as client:
+        await client.validate_invoice(xml)
+    assert route.calls.last.request.content == xml

@@ -46,6 +46,13 @@ Both are prod-only on ANAF's side (their TEST paths answer 404), which is anothe
 reason they live on `PublicClient`: they work regardless of how — or whether —
 your OAuth credentials are configured.
 
+Both also work around the firewall ANAF puts in front of this host, which scans
+the XML you post and rejects perfectly legitimate invoices with an HTML page at
+HTTP 200 (see [Error model](errors.md#the-firewall-block-page)). anafpy strips
+the advisory `xsi:schemaLocation` before posting, retries a blocked
+`render_invoice_pdf(validate=False)` on the validating path, and raises
+`AnafWafRejectionError` rather than returning the block page as "PDF" bytes.
+
 ## Request pacing
 
 Unlike the OAuth clients (which never back off on their own), `PublicClient`

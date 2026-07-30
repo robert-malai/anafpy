@@ -494,6 +494,35 @@ Mirrors e-Factura, with differences (see `docs/anaf-reference/etransport/api.md`
   business "not found" (returned), while a non-200 `cod` inside an HTTP 200
   envelope raises `AnafResponseError`. Membership always reads from the status
   booleans (RegAgric/RegCult return unknown CUIs under `found`).
+- *(ADDED 2026-07-30)* **ANAF's WAF is a third channel, and it is ours to
+  absorb.** The F5 fronting `webservicesp.anaf.ro` scans the posted invoice XML
+  and answers a `Request Rejected` HTML page **with HTTP 200** when the document
+  matches an attack signature — which real, ANAF-accepted invoices do (4 of ~525
+  archived inbound messages: a relative `xsi:schemaLocation` reads as path
+  traversal, `;CP ` in an address reads as a shell command). Wire facts and the
+  live matrix: `docs/anaf-reference/efactura/api.md` §6.1. Three decisions:
+  - **Detected in the shared transport, raised as
+    `AnafWafRejectionError(AnafResponseError)`.** It is neither a PDF nor ANAF's
+    JSON error shape, so without this every caller has to sniff `%PDF` itself and
+    a naive one writes HTML into a `.pdf`. It belongs in `_request_checked`
+    rather than in `PublicClient` because the page is infrastructure, not a
+    service's answer — and it subclasses `AnafResponseError` so existing handlers
+    keep working. It is *not* a business outcome: ANAF never judged the document.
+  - **`xsi:schemaLocation` is stripped before posting** to `validare` and
+    `transformare`. The attribute is advisory (the PDF is byte-identical with it,
+    without it, and with an `http://` URL there), and it is the bait one issuer
+    class emits on *every* document. Only the root start tag is rewritten, so
+    element text that quotes the attribute survives untouched.
+  - **`render_invoice_pdf(validate=False)` retries once on the validating path**
+    when the `/DA` URL — which carries the stricter policy of the two — is
+    blocked. A deliberate, narrow exception to "discrete methods do no transport
+    retry": the service is stateless, public, and files nothing, the retried
+    request is a different URL rather than a repeat, and the alternative is
+    losing the artifact for documents ANAF itself accepted. It warns, so a caller
+    who asked to skip validation learns that ANAF validated after all. Content
+    signatures (`;CP `) are *not* neutralised — XML character references do not
+    fool the WAF (tested), and rewriting an address would change what the PDF
+    shows.
 
 ## 7. Local ANAF reference docs
 

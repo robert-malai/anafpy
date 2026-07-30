@@ -11,6 +11,7 @@ from .exceptions import (
     AnafRateLimitError,
     AnafResponseError,
     AnafTransportError,
+    AnafWafRejectionError,
 )
 
 __version__ = "0.7.0"
@@ -22,6 +23,7 @@ __all__ = [
     "AnafRateLimitError",
     "AnafResponseError",
     "AnafTransportError",
+    "AnafWafRejectionError",
     "Environment",
     "__version__",
 ]

@@ -22,7 +22,9 @@ This file also holds the ``validare``/``transformare`` checks. Those endpoints a
 credentials, and file nothing anywhere. ``test_validare_agrees_with_local_rules``
 doubles as the **drift tripwire**: when ANAF revises the CIUS-RO rule set, the
 local ``authoring.validate()`` verdict and ANAF's stop agreeing and this test
-announces it.
+announces it. The two ``waf`` tests are the second tripwire — they keep the
+firewall accommodations (reference §6.1) honest: one proves a signature-tripping
+document still renders, the other that the firewall still blocks it at all.
 """
 
 from __future__ import annotations
@@ -50,6 +52,7 @@ from anafpy.efactura.authoring import (
     validate,
 )
 from anafpy.efactura.models import MessageState
+from anafpy.exceptions import AnafWafRejectionError
 from anafpy.public import PublicClient
 
 pytestmark = [
@@ -222,3 +225,39 @@ async def test_transformare_renders_authored_invoice_to_pdf(cif: str) -> None:
     async with PublicClient() as client:
         pdf = await client.render_invoice_pdf(xml)
     assert pdf.startswith(b"%PDF"), pdf[:200]
+
+
+async def test_transformare_survives_the_waf_signature(cif: str) -> None:
+    """A document ANAF's firewall refuses still renders (public prod, read-only).
+
+    The **WAF tripwire** for the accommodations in
+    ``docs/anaf-reference/efactura/api.md`` §6.1: the address carries the ``;CP ``
+    shell-command signature that blocks real inbound invoices on the ``/DA``
+    (skip-validation) path, so this exercises the fallback to the validating
+    path end to end. Should ANAF ever fix the WAF, this test keeps passing — it
+    is `test_waf_still_blocks_the_da_path` below that announces it.
+    """
+    now = dt.datetime.now(dt.UTC)
+    document = _minimal_invoice(cif, f"ANAFPY-WAF-{now:%Y%m%d%H%M%S}", now.date())
+    document.buyer.address.street = "Loc.Periam Nr. 868;CP 307315"
+    async with PublicClient() as client:
+        pdf = await client.render_invoice_pdf(render_invoice(document), validate=False)
+    assert pdf.startswith(b"%PDF"), pdf[:200]
+
+
+async def test_waf_still_blocks_the_da_path(cif: str) -> None:
+    """The firewall behaviour the workarounds exist for is still real.
+
+    When this fails, ANAF has relaxed the policy on ``transformare/{std}/DA`` and
+    the fallback in ``render_invoice_pdf`` can be reconsidered (the
+    ``xsi:schemaLocation`` strip stays regardless — it is free).
+    """
+    now = dt.datetime.now(dt.UTC)
+    document = _minimal_invoice(cif, f"ANAFPY-WAF-{now:%Y%m%d%H%M%S}", now.date())
+    document.buyer.address.street = "Loc.Periam Nr. 868;CP 307315"
+    async with PublicClient() as client:
+        with pytest.raises(AnafWafRejectionError):
+            # The private poster bypasses the fallback: this is the raw wire fact.
+            await client._post_document(
+                "transformare/FACT1/DA", render_invoice(document)
+            )

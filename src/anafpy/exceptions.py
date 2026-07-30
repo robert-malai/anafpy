@@ -14,6 +14,7 @@ __all__ = [
     "AnafRateLimitError",
     "AnafResponseError",
     "AnafTransportError",
+    "AnafWafRejectionError",
 ]
 
 
@@ -47,6 +48,34 @@ class AnafResponseError(AnafTransportError):
         super().__init__(message)
         self.status_code = status_code
         self.body = body
+
+
+class AnafWafRejectionError(AnafResponseError):
+    """ANAF's web-application firewall refused the request *body*.
+
+    The F5 fronting ANAF's hosts scans request bodies and answers its ``Request
+    Rejected`` HTML page — **with HTTP 200** — when one matches an attack
+    signature. Legitimate, ANAF-accepted invoices do: a relative path in
+    ``xsi:schemaLocation`` reads as path traversal, ``;CP `` in an address reads
+    as a shell command (see ``docs/anaf-reference/efactura/api.md`` §6). Raising
+    keeps the block page from ever being mistaken for a result; it is ANAF's
+    infrastructure refusing the call, not a verdict on the document.
+
+    Attributes:
+        support_id: the F5 incident id from the block page (quote it to ANAF),
+            or ``None`` if the page carried none.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int = 200,
+        body: str | None = None,
+        support_id: str | None = None,
+    ) -> None:
+        super().__init__(message, status_code=status_code, body=body)
+        self.support_id = support_id
 
 
 class AnafRateLimitError(AnafResponseError):

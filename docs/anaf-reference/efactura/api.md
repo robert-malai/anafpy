@@ -25,7 +25,7 @@ sources:
     local_copy: ../_sources/limiteApeluriAPI.txt
 compiled: 2026-06-28
 compiled_by: claude-opus-4-8
-last_verified: 2026-07-07
+last_verified: 2026-07-30
 status: draft
 ---
 
@@ -264,6 +264,52 @@ guarantee correctness of the PDF for unvalidated XML). Also available no-auth on
 
 > Provenance: PDF p. 5.
 
+### 6.1 The firewall in front of the body — undocumented, live-observed
+
+`webservicesp.anaf.ro` is fronted by an **F5 WAF that scans the posted XML**. When the
+document matches one of its attack signatures the answer is the block page
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+
+<html><head><title>Request Rejected</title></head><body>The requested URL was rejected.
+Please consult with your administrator.<br><br>Your support ID is: 9826645832961917351…
+```
+
+— **HTTP 200**, so it is neither a PDF nor the JSON error shape. Legitimate,
+ANAF-accepted invoices trip it (observed 2026-07-30 on 4 of ~525 archived inbound
+messages, from 3 issuers, deterministically):
+
+- **path traversal** — a *relative* path in `xsi:schemaLocation`
+  (`… ../../UBL-2.1(1)/xsd/maindoc/UBL-Invoice-2.1.xsd`), which some issuing software
+  emits on every document (3 of the 4);
+- **shell command** — `;CP ` inside an address (`Loc.Periam Nr. 868;CP 307315`) matches
+  the `;cp ` signature (`;rm ` likewise; `;CP307315` without the space passes).
+
+Two behaviours matter and are the basis of `anafpy`'s handling (all live-confirmed
+2026-07-30 with the four real invoices):
+
+| Path | Same blocked document |
+|---|---|
+| `transformare/{std}/DA` (skip validation) | **block page** |
+| `transformare/{std}` (validating) | **renders** — the `/DA` URL carries the stricter policy |
+| `validare/{std}` | passes |
+| `api.anaf.ro` (OAuth host, e.g. `upload`) | passes — the policy is this host's, so **filing is unaffected** |
+
+- **Dropping `xsi:schemaLocation`** clears the traversal class: the attribute is
+  advisory (ANAF renders against its own schemas) and the PDF is byte-identical with
+  it, without it, and with an `http://` URL there.
+- The content-signature class (`;CP `) **cannot** be defused without altering what the
+  PDF displays — XML character references do not help (`&#32;` for the space is still
+  blocked, so the WAF decodes entities before matching) — but the validating path
+  renders it unchanged.
+
+`anafpy`: `raise_for_waf_rejection` (shared transport) turns the block page into
+`AnafWafRejectionError` on every client; `PublicClient` strips `xsi:schemaLocation`
+from both document services and retries `render_invoice_pdf(validate=False)` once on
+the validating path. Nothing about this is in ANAF's documentation.
+
 ## 7. Validate signature — `POST /api/validate/signature`
 
 ```
@@ -334,3 +380,7 @@ limit — the limits file is newer and is the authority.)
 - `validare`/`transformare` are stateless, public no-auth, prod-only (see §5/§6),
   so they live on `PublicClient` (`validate_invoice`/`render_invoice_pdf`) — no
   Bearer header, no `environment`, no OAuth credentials needed.
+- **The WAF (§6.1)** is handled in two places: the shared transport raises
+  `AnafWafRejectionError` for the block page (it is an HTTP 200, so nothing else
+  would notice), and `PublicClient` strips `xsi:schemaLocation` before posting and
+  retries a blocked `render_invoice_pdf(validate=False)` on the validating path.

@@ -13,10 +13,13 @@ different host, ``webservicesp.anaf.ro``, with **no test/prod split** — so
 model shared by all clients: non-success HTTP raises (429 as
 :class:`~anafpy.exceptions.AnafRateLimitError` with ``retry_after``); business
 outcomes are the clients' job to return as values.
+:func:`raise_for_waf_rejection` covers the case that is neither — ANAF's firewall
+answering its block page *with HTTP 200*.
 """
 
 from __future__ import annotations
 
+import re
 import time
 import unicodedata
 from email.utils import parsedate_to_datetime
@@ -26,7 +29,12 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from ..exceptions import AnafConfigError, AnafRateLimitError, AnafResponseError
+from ..exceptions import (
+    AnafConfigError,
+    AnafRateLimitError,
+    AnafResponseError,
+    AnafWafRejectionError,
+)
 
 __all__ = [
     "OAUTH_HOST",
@@ -39,6 +47,7 @@ __all__ = [
     "is_empty_result_message",
     "normalize_cui",
     "raise_for_status",
+    "raise_for_waf_rejection",
     "retry_after_seconds",
     "service_base_url",
     "strip_accents",
@@ -146,6 +155,38 @@ def raise_for_status(response: httpx.Response) -> None:
         f"ANAF returned HTTP {response.status_code}",
         status_code=response.status_code,
         body=body,
+    )
+
+
+#: The F5 block page's own wording — no ANAF payload contains it, on any host.
+_WAF_REJECTION_MARKER = b"The requested URL was rejected"
+_WAF_SUPPORT_ID = re.compile(rb"support ID is:\s*([\w-]+)", re.IGNORECASE)
+#: Only the head of a body is scanned: the block page is ~250 bytes, while a
+#: legitimate body can be a multi-megabyte ZIP.
+_WAF_SCAN_BYTES = 4096
+
+
+def raise_for_waf_rejection(response: httpx.Response) -> None:
+    """Raise when ANAF's firewall answered its block page instead of a payload.
+
+    The page arrives as ``text/html`` **with HTTP 200** (live-confirmed
+    2026-07-30 on ``transformare``), so nothing else in the stack would notice it
+    — a caller would write an HTML file with a ``.pdf`` extension. A no-op on
+    every real response; see :class:`~anafpy.exceptions.AnafWafRejectionError`.
+    """
+    head = response.content[:_WAF_SCAN_BYTES]
+    if _WAF_REJECTION_MARKER not in head:
+        return
+    match = _WAF_SUPPORT_ID.search(head)
+    support_id = match.group(1).decode() if match else None
+    quoted = f" (support ID {support_id})" if support_id else ""
+    raise AnafWafRejectionError(
+        f"ANAF's firewall rejected the request body{quoted}: the content matched "
+        "an attack signature. This is infrastructure refusing the call, not an "
+        "ANAF verdict on the document.",
+        status_code=response.status_code,
+        body=as_text(head),
+        support_id=support_id,
     )
 
 

@@ -19,6 +19,12 @@ OAuth clients:
    100 (taxpayer, e-Factura register) or 500 (RegAgric, RegCult) per request.
 4. The RO e-Factura register answers **HTTP 404 when no queried CUI has data** —
    that is a business "not found" (returned), not a transport error (raised).
+5. **A firewall scans the document bodies.** ANAF fronts this host with an F5 that
+   matches attack signatures against the posted XML and answers a block page with
+   HTTP 200; real, ANAF-accepted invoices trip it. The two document services
+   defuse what can be defused (:func:`_strip_schema_location`) and never hand a
+   block page back as a result — see :meth:`PublicClient.render_invoice_pdf` and
+   ``docs/anaf-reference/efactura/api.md`` §6.
 
 The synchronous services only. The async job variant of the taxpayer lookup
 (``/AsynchWebService/…``) is deliberately not wrapped: its result is downloadable
@@ -31,6 +37,8 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import re
+import warnings
 from collections.abc import Sequence
 from typing import Any
 
@@ -49,6 +57,7 @@ from .._transport.http import HttpClientBase
 from ..exceptions import (
     AnafConfigError,
     AnafResponseError,
+    AnafWafRejectionError,
 )
 from .models import (
     CultLookup,
@@ -80,6 +89,15 @@ _EFACTURA_DOC_PREFIX = f"prod/{Service.EFACTURA.value}"
 # being XML.
 _XML_BODY_HEADERS = {"Content-Type": "text/plain"}
 
+#: ``xsi:schemaLocation`` / ``xsi:noNamespaceSchemaLocation`` — any prefix bound to
+#: the XSI namespace, either quoting style.
+_SCHEMA_LOCATION_ATTR = re.compile(
+    rb"\s+[A-Za-z_][\w.-]*:(?:noNamespace)?[sS]chemaLocation\s*=\s*"
+    rb"(?:\"[^\"]*\"|'[^']*')"
+)
+_QUOTES = b"\"'"
+_TAG_END = ord(">")
+
 
 def _normalize_cui(value: int | str) -> int:
     """Return the positive integer the public APIs expect.
@@ -91,6 +109,46 @@ def _normalize_cui(value: int | str) -> int:
     if normalized <= 0:
         raise AnafConfigError(f"invalid CUI: {value!r}")
     return normalized
+
+
+def _root_start_tag_span(body: bytes) -> tuple[int, int] | None:
+    """Span of the document element's start tag, or ``None`` if there is none.
+
+    Everything ahead of it (declaration, comments, doctype) starts ``<?`` or
+    ``<!``, so the first ``<`` followed by a name character opens the root; the
+    forward scan honours quoting, so a ``>`` inside an attribute value does not
+    end the tag early.
+    """
+    if (opening := re.search(rb"<[A-Za-z_]", body)) is None:
+        return None
+    quote: int | None = None
+    for index, char in enumerate(body[opening.start() :], opening.start()):
+        if quote is not None:
+            if char == quote:
+                quote = None
+        elif char in _QUOTES:
+            quote = char
+        elif char == _TAG_END:
+            return opening.start(), index + 1
+    return None
+
+
+def _strip_schema_location(body: bytes) -> bytes:
+    """Return *body* without the root element's ``xsi:schemaLocation``.
+
+    The attribute is advisory: ANAF validates and renders against its own
+    schemas, and dropping it leaves the rendered PDF byte-identical
+    (live-confirmed 2026-07-30). It is also the WAF bait seen most often in the
+    wild — issuers whose software writes a *relative* path there
+    (``../../UBL-2.1/xsd/maindoc/…``) trip the firewall's path-traversal
+    signature on every document they emit. Only the document element's start tag
+    is rewritten, so an invoice that merely *mentions* the attribute in its text
+    is passed through untouched.
+    """
+    if (span := _root_start_tag_span(body)) is None:
+        return body
+    start, end = span
+    return body[:start] + _SCHEMA_LOCATION_ATTR.sub(b"", body[start:end]) + body[end:]
 
 
 def _query_date(date: datetime.date | str | None) -> str:
@@ -361,6 +419,10 @@ class PublicClient(HttpClientBase):
         document is returned as a :class:`RemoteValidationResult` with
         ``valid=False`` and the findings in ``messages``, not raised. Nothing is
         filed anywhere.
+
+        The document's ``xsi:schemaLocation`` is dropped before sending (see
+        :func:`_strip_schema_location`); ANAF ignores it, and it is what most
+        often trips the firewall in front of this host.
         """
         response = await self._post_document(f"validare/{standard.value}", xml)
         return _parse_validate(response.content)
@@ -378,19 +440,40 @@ class PublicClient(HttpClientBase):
         PDF — use it for documents that already passed validation at filing). A
         body that cannot be rendered still answers HTTP 200, with a JSON error
         payload instead of PDF bytes; callers decide how strictly to check.
+
+        Two firewall accommodations, both live-confirmed 2026-07-30 against real
+        inbound invoices (see ``docs/anaf-reference/efactura/api.md`` §6):
+        ``xsi:schemaLocation`` is dropped before sending, and — because the
+        ``/DA`` (skip-validation) path carries the stricter WAF policy of the two
+        — a block page there is followed by **one** retry on the validating path,
+        with a warning, rather than losing the PDF. The retry is safe by
+        construction: the service is stateless and public, nothing is filed. If
+        ANAF then finds the document invalid the answer is its JSON error, and a
+        block page on the validating path raises
+        :class:`~anafpy.exceptions.AnafWafRejectionError`.
         """
         path = f"transformare/{standard.value}"
-        if not validate:
-            path += "/DA"
-        response = await self._post_document(path, xml)
-        return response.content
+        if validate:
+            return (await self._post_document(path, xml)).content
+        try:
+            return (await self._post_document(f"{path}/DA", xml)).content
+        except AnafWafRejectionError as rejection:
+            support_id = rejection.support_id
+            quoted = f" (support ID {support_id})" if support_id else ""
+            warnings.warn(
+                "ANAF's firewall rejected this document on the skip-validation "
+                f"path{quoted}; retrying with ANAF's validation on, which renders "
+                "the same PDF unless the document is invalid today.",
+                stacklevel=2,
+            )
+        return (await self._post_document(path, xml)).content
 
     async def _post_document(self, path: str, xml: str | bytes) -> httpx.Response:
         body = xml.encode("utf-8") if isinstance(xml, str) else xml
         return await self._request(
             "POST",
             f"{_EFACTURA_DOC_PREFIX}/{path}",
-            content=body,
+            content=_strip_schema_location(body),
             headers=_XML_BODY_HEADERS,
         )
 
