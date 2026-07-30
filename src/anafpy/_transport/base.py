@@ -44,6 +44,7 @@ __all__ = [
     "Environment",
     "Service",
     "as_text",
+    "is_download_expired_message",
     "is_empty_result_message",
     "normalize_cui",
     "raise_for_status",
@@ -220,3 +221,18 @@ def is_empty_result_message(text: str) -> bool:
     not a genuine error (bad CIF/interval). Matched accent-insensitively."""
     normalized = strip_accents(text)
     return any(marker in normalized for marker in _EMPTY_RESULT_MARKERS)
+
+
+#: The stable core (accent-stripped) of ANAF's "past the 60-day download window" note,
+#: observed as ``"Fisierul nu mai poate fi descarcat pentru ca a trecut perioada de 60
+#: de zile in care este disponibil"``. Deliberately just the clause that carries the
+#: terminal meaning — ANAF rewords the rest — and deliberately *narrow*: recognising
+#: this lets a caller stop retrying for good, so a false positive is worse than a miss.
+_DOWNLOAD_EXPIRED_MARKER = "nu mai poate fi descarcat"
+
+
+def is_download_expired_message(text: str) -> bool:
+    """True when an ANAF ``eroare`` string says the file aged out of the 60-day
+    download window — a *terminal* condition, not a transient one. Matched
+    accent-insensitively, on whitespace-collapsed text."""
+    return _DOWNLOAD_EXPIRED_MARKER in " ".join(strip_accents(text).split())

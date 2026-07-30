@@ -7,6 +7,7 @@ from ._transport.base import Environment
 from .exceptions import (
     AnafAuthError,
     AnafConfigError,
+    AnafDownloadExpiredError,
     AnafError,
     AnafRateLimitError,
     AnafResponseError,
@@ -19,6 +20,7 @@ __version__ = "0.7.0"
 __all__ = [
     "AnafAuthError",
     "AnafConfigError",
+    "AnafDownloadExpiredError",
     "AnafError",
     "AnafRateLimitError",
     "AnafResponseError",

@@ -42,6 +42,7 @@ from anafpy.efactura.ubl.common.ubl_common_basic_components_2_1 import (
 )
 from anafpy.exceptions import (
     AnafConfigError,
+    AnafDownloadExpiredError,
     AnafRateLimitError,
     AnafResponseError,
     AnafWafRejectionError,
@@ -348,6 +349,97 @@ async def test_download_non_zip_body_raises_response_error_with_body() -> None:
             await client.download("bogus")
     assert ei.value.status_code == 200
     assert "id invalid" in (ei.value.body or "")
+
+
+# The body ANAF returns once a message leaves the 60-day download window, verbatim
+# from a client archive (3 messages, 2026-07-30).
+_EXPIRED_BODY = {
+    "eroare": (
+        "Fisierul nu mai poate fi descarcat pentru ca a trecut perioada de 60 de "
+        "zile in care este disponibil"
+    ),
+    "titlu": "Descarcare mesaj",
+}
+
+
+@respx.mock
+async def test_download_past_60_day_window_raises_expired() -> None:
+    respx.get(f"{BASE}/descarcare").mock(
+        return_value=httpx.Response(200, json=_EXPIRED_BODY)
+    )
+    async with _client() as client:
+        with pytest.raises(AnafDownloadExpiredError) as ei:
+            await client.download("7592624055")
+    # Terminal and identifiable: the caller can stop asking for this id for good.
+    assert ei.value.message_id == "7592624055"
+    assert ei.value.status_code == 200
+    assert "60-day download window" in str(ei.value)
+    assert _EXPIRED_BODY["eroare"] in (ei.value.body or "")
+    # Still an AnafResponseError, so existing handlers keep working.
+    assert isinstance(ei.value, AnafResponseError)
+
+
+@respx.mock
+async def test_download_expired_matches_with_diacritics() -> None:
+    # ANAF's Romanian texts arrive both with and without diacritics.
+    respx.get(f"{BASE}/descarcare").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "eroare": (
+                    "Fișierul nu mai poate fi descărcat pentru că a trecut "
+                    "perioada de 60 de zile în care este disponibil"
+                )
+            },
+        )
+    )
+    async with _client() as client:
+        with pytest.raises(AnafDownloadExpiredError):
+            await client.download("7592624055")
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        pytest.param(
+            httpx.Response(200, json={"eroare": "id invalid"}), id="other-json"
+        ),
+        pytest.param(
+            httpx.Response(200, json={"eroare": ["nu mai poate fi descarcat"]}),
+            id="eroare-not-a-string",
+        ),
+        pytest.param(
+            httpx.Response(200, json={"titlu": "Descarcare mesaj"}), id="no-eroare"
+        ),
+        pytest.param(
+            httpx.Response(200, json=["nu mai poate fi descarcat"]),
+            id="json-not-object",
+        ),
+        pytest.param(
+            httpx.Response(200, text="<html><body>Service unavailable</body></html>"),
+            id="html",
+        ),
+        pytest.param(httpx.Response(200, content=b""), id="empty"),
+        pytest.param(
+            # Malformed JSON that *does* carry the wording: parsing must fail closed
+            # rather than fall back to substring-matching the raw bytes.
+            httpx.Response(200, text='{"eroare": "Fisierul nu mai poate fi descarcat'),
+            id="malformed-json",
+        ),
+    ],
+)
+@respx.mock
+async def test_download_other_non_zip_bodies_stay_generic(
+    response: httpx.Response,
+) -> None:
+    # Under-match on purpose: only the recognised wording is terminal, everything
+    # else stays a plain (retryable/fixable) AnafResponseError.
+    respx.get(f"{BASE}/descarcare").mock(return_value=response)
+    async with _client() as client:
+        with pytest.raises(AnafResponseError) as ei:
+            await client.download("18")
+    assert not isinstance(ei.value, AnafDownloadExpiredError)
+    assert "non-ZIP body" in str(ei.value)
 
 
 @respx.mock

@@ -15,10 +15,12 @@ The `AnafError` hierarchy covers failures of the *machinery*:
   **not** auto-back-off; scheduling the retry is yours.
 - `AnafWafRejectionError` — ANAF's firewall refused the request *body*; carries
   the block page's `support_id`. See below.
+- `AnafDownloadExpiredError` — the message left ANAF's 60-day download window;
+  carries `message_id`. **Terminal**. See below.
 - `AnafConfigError` — configuration problems (missing credentials, bad env).
 
-Both `AnafRateLimitError` and `AnafWafRejectionError` subclass
-`AnafResponseError`, so code that already catches that keeps working.
+`AnafRateLimitError`, `AnafWafRejectionError` and `AnafDownloadExpiredError` all
+subclass `AnafResponseError`, so code that already catches that keeps working.
 
 ## The firewall block page
 
@@ -34,6 +36,33 @@ It also defuses what can be defused — `xsi:schemaLocation` is advisory and is
 dropped before posting, and a `render_invoice_pdf(validate=False)` that gets
 blocked is retried once on the validating path, which is not subject to the same
 policy. You see a warning when that happens, and the PDF you asked for.
+
+## The closed download window
+
+ANAF keeps an e-Factura message downloadable for 60 days. Past that, `descarcare`
+answers **HTTP 200** with `{"eroare": "Fisierul nu mai poate fi descarcat pentru
+ca a trecut perioada de 60 de zile in care este disponibil", …}` instead of the
+ZIP — see the [reference](../anaf-reference/efactura/api.md) §4.1.
+
+`download` raises `AnafDownloadExpiredError` for exactly that note, with the id
+on `message_id`. It means **stop**: the file is gone from the SPV, and no retry
+will ever succeed. Every other non-ZIP body — an unknown id, a malformed request
+— stays a plain `AnafResponseError`, which is worth retrying or fixing. The
+recognizer under-matches on purpose (it reads the parsed `eroare` field and one
+accent-insensitive core phrase), because a false positive would make an archiver
+drop an invoice for good.
+
+You meet this in normal operation, not just through caller error: `listaMesaje`
+and `descarcare` anchor their 60 days differently, so ANAF lists messages it then
+refuses to hand over. A first sync — or one catching up after a gap — with a
+60-day lookback lands in that boundary band:
+
+```python
+try:
+    message = await client.download(item.id)
+except AnafDownloadExpiredError:
+    mark_permanently_unavailable(item.id)  # never ask again
+```
 
 ## Typed values: business outcomes
 

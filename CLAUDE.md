@@ -377,13 +377,21 @@ browser login stays CLI-side. The tool inventory with per-tool descriptions is
 Hybrid, per design — do not collapse it:
 
 - **Exceptions** (`AnafError` → `AnafAuthError`, `AnafTransportError`/`AnafResponseError`,
-  `AnafRateLimitError`, `AnafWafRejectionError`, `AnafConfigError`) are for transport /
+  `AnafRateLimitError`, `AnafWafRejectionError`, `AnafDownloadExpiredError`,
+  `AnafConfigError`) are for transport /
   auth / programming errors. HTTP 429 raises `AnafRateLimitError` exposing
   `retry_after`; the client does **not** auto-back-off. ANAF's WAF block page —
   `Request Rejected` HTML at **HTTP 200**, tripped by legitimate invoices
   (reference §6.1) — is caught for every client in `_request_checked` and raises
   `AnafWafRejectionError`; it is infrastructure refusing the call, never a verdict
   on the document.
+- **Terminal vs retryable is typed, not prose.** A `descarcare` 200 whose `eroare`
+  says the message left the 60-day download window (reference §4.1) raises
+  `AnafDownloadExpiredError` carrying `message_id` — unrecoverable, so a caller may
+  stop for good; every other non-ZIP body stays a plain `AnafResponseError`. The
+  classifier is `_transport.base.is_download_expired_message`, and it **under-matches
+  by design** (parsed `eroare` only, one accent-stripped core clause, any doubt falls
+  through): a false positive would make an archiver drop an invoice permanently.
 - **Business outcomes** (e-Factura `nok`/`REJECTED`, upload rejections with BR-RO
   findings) are returned as **typed values** (e.g. `UploadResult.accepted is False`,
   `MessageStatus.state`), never raised.

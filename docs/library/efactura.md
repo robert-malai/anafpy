@@ -90,6 +90,13 @@ an exception — and the raw bytes plus the UBL model stay authoritative. That
 second case is never silent: `view_error` carries the cause and a `UserWarning`
 is emitted, so "unreadable" cannot be mistaken for "empty".
 
+A message stays downloadable for **60 days**, and the boundary is real: ANAF
+lists messages `descarcare` then refuses to hand over, so any 60-day lookback
+eventually asks for one. That refusal raises `AnafDownloadExpiredError` — a
+terminal verdict you can act on directly instead of parsing Romanian prose (see
+[the error model](errors.md#the-closed-download-window)). It is one more reason
+the durable archive lives on your side, not in the SPV.
+
 `validate_signature` checks the Ministry of Finance signature over a downloaded
 archive.
 

@@ -393,6 +393,32 @@ exceptions — a rejection is data, not control flow.
   `InvoiceDocument` view (the authoring reader in its lenient wire mode; `None`
   instead of raising, with the cause on `view_error` plus a warning).
   Tier 1 is authoritative; never parse-only.
+- *(ADDED 2026-07-30)* **The closed 60-day window is its own exception,
+  `AnafDownloadExpiredError(AnafResponseError)`.** `descarcare` answers HTTP 200
+  with `{"eroare": "Fisierul nu mai poate fi descarcat …"}` once a message ages
+  out (live-observed on 3 messages of a client archive; wire facts in
+  `docs/anaf-reference/efactura/api.md` §4.1). Lumping it in with unknown-id and
+  malformed-request faults left callers substring-matching Romanian prose out of
+  `str(exc)` to tell "retry this" from "this is gone" — and ANAF's vocabulary is
+  anafpy's job, not theirs. It is not a business outcome (nothing was judged) and
+  not a returned value: `download` has no shape for "no document", and a caller
+  who ignores it would archive nothing silently. Two constraints follow:
+  - **The recognizer under-matches by design.** A downstream archiver uses this
+    to skip a message *permanently*, so a false positive loses an invoice once
+    the real window shuts. It parses the JSON body and reads `eroare` (never the
+    composed message), matches one accent-stripped core clause rather than the
+    whole sentence (ANAF rewords), and treats a parse failure, a missing/non-string
+    `eroare`, or an unrecognised wording as "not this" — falling through to the
+    plain `AnafResponseError`.
+  - **Classification only, no retry change.** It subclasses `AnafResponseError`,
+    which every `tenacity` predicate in the tree already excludes (the SPV reads'
+    `retry_if_not_exception_type(AnafResponseError)`), so a terminal condition can
+    never become retryable by inheritance. The wording test lives beside
+    `is_empty_result_message` in `_transport/base.py`, ready for the same note on
+    another endpoint.
+  - Reachable without caller error: `listaMesaje` and `descarcare` anchor their
+    60 days differently, so ANAF lists messages it then refuses to hand over —
+    any 60-day lookback meets the boundary band.
 
 ### Validation
 

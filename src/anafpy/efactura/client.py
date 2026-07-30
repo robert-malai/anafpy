@@ -36,6 +36,7 @@ from .._transport.base import (
     Environment,
     Service,
     as_text,
+    is_download_expired_message,
     is_empty_result_message,
     service_base_url,
 )
@@ -44,6 +45,7 @@ from .._transport.poll import poll_until
 from ..auth.provider import AnafAuth, TokenProvider
 from ..exceptions import (
     AnafConfigError,
+    AnafDownloadExpiredError,
     AnafResponseError,
 )
 from .authoring import DocumentKind, InvoiceDocument, render_invoice
@@ -128,6 +130,26 @@ def _header_errors(root: ET.Element) -> list[str]:
         if _local(child.tag) == "Errors" and (message := child.get("errorMessage")):
             errors.append(message)
     return errors
+
+
+def _expired_download_note(body: bytes) -> str | None:
+    """ANAF's ``eroare`` note when a body says the 60-day download window closed.
+
+    Narrow by construction: the body must be a JSON object whose ``eroare`` is a
+    string carrying the recognised wording. Anything else — not JSON, no
+    ``eroare``, a differently worded fault — returns ``None``, and the caller
+    falls back to the generic :class:`AnafResponseError`. Never guess: a caller
+    that trusts the terminal verdict stops downloading the message for good, so
+    a false positive loses an invoice once the real window shuts.
+    """
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return None
+    match data:
+        case {"eroare": str(note)} if is_download_expired_message(note):
+            return note
+    return None
 
 
 def _parse_xml_header(body: bytes, operation: str) -> ET.Element:
@@ -290,8 +312,14 @@ class EFacturaClient(HttpClientBase):
         """Download the ZIP (signed invoice/errors + MF signature) for a message id.
 
         Raises:
-            AnafResponseError: ANAF answered 200 with a non-ZIP body (it reports
-                e.g. an unknown id as an error payload, not an HTTP error).
+            AnafDownloadExpiredError: the message is past ANAF's 60-day download
+                window — **terminal**, so stop retrying this id. ANAF lists
+                messages it then refuses to hand over (the two endpoints anchor
+                their 60 days differently), so a 60-day lookback meets this at
+                the boundary.
+            AnafResponseError: ANAF answered 200 with any other non-ZIP body (it
+                reports e.g. an unknown id as an error payload, not an HTTP
+                error) — worth retrying or fixing.
         """
         response = await self._request_checked(
             "GET", "descarcare", params={"id": message_id}
@@ -299,11 +327,20 @@ class EFacturaClient(HttpClientBase):
         try:
             return DownloadedMessage.from_zip(response.content)
         except zipfile.BadZipFile as exc:
+            body = as_text(response.content)
+            if (note := _expired_download_note(response.content)) is not None:
+                raise AnafDownloadExpiredError(
+                    f"descarcare: message {message_id!r} is past ANAF's 60-day "
+                    f"download window and can no longer be fetched: {note}",
+                    status_code=response.status_code,
+                    body=body,
+                    message_id=message_id,
+                ) from exc
             raise AnafResponseError(
                 f"descarcare returned a non-ZIP body for id {message_id!r}: "
-                f"{as_text(response.content)[:200]}",
+                f"{body[:200]}",
                 status_code=response.status_code,
-                body=as_text(response.content),
+                body=body,
             ) from exc
 
     def list_messages(

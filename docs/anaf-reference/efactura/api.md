@@ -229,6 +229,40 @@ electronic signature**.
 >
 > Provenance: PDF p. 4.
 
+### 4.1 Error payloads — HTTP 200 with a JSON note, undocumented
+
+`descarcare` reports failures the way the listing endpoints do: **HTTP 200** with a JSON
+body instead of the ZIP. The one wording confirmed in the field is the closed download
+window (observed 2026-07-30 on 3 messages of a client archive):
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"eroare":"Fisierul nu mai poate fi descarcat pentru ca a trecut perioada de 60 de zile
+ in care este disponibil","titlu":"Descarcare mesaj"}
+```
+
+This is **terminal** — the file is gone from the SPV, and no retry will ever succeed.
+It is reachable without any caller error: `listaMesaje` and `descarcare` anchor their
+60 days differently, so ANAF **lists messages it then refuses to hand over**. A first
+sync, or one catching up after a gap, with a 60-day lookback walks straight into that
+boundary band.
+
+Other failures (unknown id, malformed request) arrive in the same 200-with-`eroare`
+shape; their wordings are not catalogued here — only the one above is live-observed.
+
+> `anafpy`: `download` raises **`AnafDownloadExpiredError(AnafResponseError)`** for this
+> note, carrying `message_id`, so an archiver can skip the message permanently instead
+> of substring-matching Romanian prose. The recognizer (`is_download_expired_message`,
+> shared transport) reads the parsed JSON `eroare` field and matches the accent-stripped
+> core *"nu mai poate fi descarcat"* only — every other non-ZIP body, including a body
+> it cannot parse, stays a plain `AnafResponseError`. It under-matches deliberately: a
+> false positive would lose an invoice for good.
+>
+> Provenance: live-observed in production 2026-07-30 (3 messages, anaf-sync archive);
+> not in ANAF's documentation or the swagger.
+
 ## 5. Validate XML — `POST /FCTEL/rest/validare/{std}`
 
 ```
@@ -377,6 +411,9 @@ limit — the limits file is newer and is the authority.)
   the latter **raises `AnafResponseError`** (matched by wording; see
   `is_empty_result_message`; the official wordings are catalogued in §3).
 - `download` returns a **ZIP** (binary) — handle as bytes, unzip to the two XML members.
+  A non-ZIP 200 body is an error note (§4.1): the recognised "past the 60-day window"
+  wording raises `AnafDownloadExpiredError` (terminal — stop retrying that id), every
+  other body a plain `AnafResponseError`.
 - `validare`/`transformare` are stateless, public no-auth, prod-only (see §5/§6),
   so they live on `PublicClient` (`validate_invoice`/`render_invoice_pdf`) — no
   Bearer header, no `environment`, no OAuth credentials needed.
