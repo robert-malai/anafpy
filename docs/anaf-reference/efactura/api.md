@@ -159,6 +159,26 @@ Range rules (per the lista swagger's error catalog): `endTime` cannot be before
 from the request moment ("nu poate fi mai vechi de 60 de zile fata de momentul
 requestului") — messages are retained for 60 days.
 
+**Both ends are judged against ANAF's clock, and the rejection can quote it.** The
+swagger's examples state the phrase bare, but the live endpoint appends its own
+request moment, in the same `DD-MM-YYYY HH:MM:SS` format and in **Romania wall
+time** (field-observed 2026-07-30, a caller one second ahead):
+
+```
+endTime = 30-07-2026 15:15:28 nu poate in viitor fata de momentul requestului = 30-07-2026 15:15:27
+```
+
+One second of clock disagreement is therefore enough to fail an entire listing, and
+a `zile=60`-equivalent window sits on *both* limits at once, so it can fail from
+either end. The sibling start-side fault (`nu poate fi mai vechi de 60 de zile fata
+de momentul requestului`) has not been observed carrying a value.
+
+> `anafpy`: `list_messages`'s `days` path computes the window a margin inside each
+> limit (5 min at `start`, 60 s at `end`) instead of exactly on it; an explicit
+> `start`/`end` is sent untouched. When a rejection quotes `momentul requestului`,
+> the window is rebuilt against that clock and the request retried **once**
+> (`_transport.base.request_moment_from_message`, parsed as Romania wall time).
+
 **`filtru`** (optional): `E`=ERORI FACTURA, `T`=FACTURA TRIMISĂ, `P`=FACTURA PRIMITĂ,
 `R`=MESAJ CUMPĂRĂTOR PRIMIT / MESAJ CUMPĂRĂTOR TRANSMIS (both directions).
 
@@ -213,7 +233,9 @@ is a genuine error.
 >
 > Provenance: PDF pp. 2–4; envelope + `eroare` catalog + `Mesaj` schema from the lista
 > swagger ([listamesaje.html](../_sources/efactura-swagger/listamesaje.html));
-> `cif_emitent`/`cif_beneficiar` absence live-confirmed in production 2026-07-06.
+> `cif_emitent`/`cif_beneficiar` absence live-confirmed in production 2026-07-06;
+> the clock-quoting form of the `endTime`-in-the-future fault field-observed in
+> production 2026-07-30.
 
 ## 4. Download — `GET /FCTEL/rest/descarcare`
 

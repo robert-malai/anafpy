@@ -18,7 +18,11 @@ from xsdata.models.datatype import XmlDate
 from xsdata_pydantic.bindings import XmlSerializer
 
 from _authoring import make_invoice
-from anafpy._transport.base import Environment
+from anafpy._transport.base import (
+    ROMANIA_TZ,
+    Environment,
+    request_moment_from_message,
+)
 from anafpy.auth import MemoryTokenStore, TokenProvider, TokenSet
 from anafpy.auth.oauth import TOKEN_URL
 from anafpy.efactura import (
@@ -30,6 +34,11 @@ from anafpy.efactura import (
     UploadStandard,
 )
 from anafpy.efactura.authoring import InvoiceValidationError, PrecedingInvoice
+from anafpy.efactura.client import (
+    _END_CLOCK_SKEW_MS,
+    _START_CLOCK_SKEW_MS,
+    _days_window,
+)
 from anafpy.efactura.ubl.common.ubl_common_aggregate_components_2_1 import (
     AccountingCustomerParty,
     AccountingSupplierParty,
@@ -486,12 +495,16 @@ async def test_list_messages_days_window_drives_paginated_endpoint() -> None:
     assert [m.id for m in items] == ["18"]
     first = dict(route.calls[0].request.url.params)
     assert first["cif"] == "123" and first["pagina"] == "1" and first["filtru"] == "T"
-    # days=30 maps to a 30-day millisecond window.
-    assert int(first["endTime"]) - int(first["startTime"]) == 30 * 86_400_000
+    # days=30 maps to a 30-day millisecond window, less the clock-skew margin held
+    # at each end (see the days-window tests below).
+    span = int(first["endTime"]) - int(first["startTime"])
+    assert span == 30 * 86_400_000 - _START_CLOCK_SKEW_MS - _END_CLOCK_SKEW_MS
 
 
 @respx.mock
 async def test_list_messages_explicit_range_passes_exact_ms() -> None:
+    # An explicit window is the caller's stated intent: the skew margins of the
+    # `days` path must not move it, in either direction, by even a millisecond.
     # Relative to now so the range always sits inside ANAF's 60-day retention.
     end = datetime.now(tz=UTC) - timedelta(days=1)
     start = end - timedelta(days=28)
@@ -505,6 +518,137 @@ async def test_list_messages_explicit_range_passes_exact_ms() -> None:
     params = dict(route.calls[0].request.url.params)
     assert params["startTime"] == str(int(start.timestamp() * 1000))
     assert params["endTime"] == str(int(end.timestamp() * 1000))
+
+
+# --- clock skew: the window ANAF's clock accepts --------------------------------------
+
+#: The fault ANAF answered a `days=60` listing with when the caller's clock ran one
+#: second ahead (field-observed 2026-07-30; reference §3b).
+_CLOCK_FAULT = (
+    "endTime = 30-07-2026 15:15:28 nu poate in viitor fata de "
+    "momentul requestului = 30-07-2026 15:15:27"
+)
+#: The same moment as epoch ms — 15:15:27 **Romania wall time**, which in July is
+#: UTC+3. Reading it as UTC (or in the machine's zone) would shift every corrected
+#: window by hours.
+_ANAF_NOW_MS = int(
+    datetime(2026, 7, 30, 15, 15, 27, tzinfo=ROMANIA_TZ).timestamp() * 1000
+)
+
+
+def test_request_moment_parses_as_romania_wall_time() -> None:
+    moment = request_moment_from_message(_CLOCK_FAULT)
+    assert moment is not None
+    assert moment.utcoffset() == timedelta(hours=3)  # EEST, not UTC
+    assert moment == datetime(2026, 7, 30, 12, 15, 27, tzinfo=UTC)
+    # Winter, on the same wire format: UTC+2.
+    winter = request_moment_from_message(
+        "endTime = 02-12-2022 11:49:24 nu poate in viitor fata de "
+        "momentul requestului = 02-12-2022 11:49:23"
+    )
+    assert winter == datetime(2022, 12, 2, 9, 49, 23, tzinfo=UTC)
+
+
+def test_request_moment_is_none_without_a_quoted_clock() -> None:
+    # The swagger's own examples of both window faults state the phrase bare; a
+    # phrase with nothing to read is not a correction.
+    assert request_moment_from_message("endTime nu poate fi o data din viitor") is None
+    assert (
+        request_moment_from_message(
+            "startTime = 09-07-2022 10:41:11 nu poate fi mai vechi de 60 de zile "
+            "fata de momentul requestului"
+        )
+        is None
+    )
+    assert request_moment_from_message("Nu aveti drept in SPV pentru CIF=1") is None
+
+
+def test_days_window_stays_inside_both_anaf_limits_under_skew() -> None:
+    # days=60 touches ANAF's two limits at once, so it can fail from either end.
+    # Both are checked against ANAF's clock, not ours: shift that clock by the
+    # margin each end buys and the window must still be one ANAF accepts.
+    local_now_ms = 1_753_881_327_000
+    window = _days_window(60, local_now_ms)
+    for skew_ms in (-_END_CLOCK_SKEW_MS, 0, _START_CLOCK_SKEW_MS):
+        anaf_now_ms = local_now_ms + skew_ms  # ANAF behind us / level / ahead
+        assert window.end_ms <= anaf_now_ms, "endTime would be in ANAF's future"
+        assert window.start_ms >= anaf_now_ms - 60 * 86_400_000, (
+            "startTime would predate ANAF's 60-day floor"
+        )
+
+
+@respx.mock
+async def test_list_messages_corrects_the_window_from_anaf_clock() -> None:
+    route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        side_effect=[
+            httpx.Response(200, json={"eroare": _CLOCK_FAULT, "titlu": "Lista Mesaje"}),
+            httpx.Response(200, json={"mesaje": [_msg("18")]}),
+            httpx.Response(200, json={"mesaje": []}),
+        ]
+    )
+    async with _client() as client:
+        items = [m async for m in client.list_messages(days=60, cif="123")]
+
+    assert [m.id for m in items] == ["18"]
+    # The rejected page is re-asked, not skipped, on a window rebuilt against the
+    # clock ANAF quoted — drift of any size, not just the static margin's worth.
+    assert [c.request.url.params["pagina"] for c in route.calls] == ["1", "1", "2"]
+    retried = dict(route.calls[1].request.url.params)
+    assert int(retried["endTime"]) == _ANAF_NOW_MS - _END_CLOCK_SKEW_MS
+    assert int(retried["startTime"]) == (
+        _ANAF_NOW_MS - 60 * 86_400_000 + _START_CLOCK_SKEW_MS
+    )
+
+
+@respx.mock
+async def test_list_messages_corrects_an_explicit_range_by_clamping_end_only() -> None:
+    # The caller named absolute instants: the correction pulls `end` back inside
+    # ANAF's now and leaves `start` exactly where they put it.
+    end = datetime.now(tz=UTC) - timedelta(seconds=1)
+    start = end - timedelta(days=3)
+    route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        side_effect=[
+            httpx.Response(200, json={"eroare": _CLOCK_FAULT}),
+            httpx.Response(200, json={"mesaje": []}),
+        ]
+    )
+    async with _client() as client:
+        items = [m async for m in client.list_messages(start=start, end=end, cif="9")]
+
+    assert items == []
+    retried = dict(route.calls[1].request.url.params)
+    assert retried["startTime"] == str(int(start.timestamp() * 1000))
+    assert int(retried["endTime"]) == _ANAF_NOW_MS - _END_CLOCK_SKEW_MS
+
+
+@respx.mock
+async def test_list_messages_corrects_the_window_at_most_once() -> None:
+    # A second clock fault is not skew — no loop, no re-correction: it surfaces.
+    route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        return_value=httpx.Response(200, json={"eroare": _CLOCK_FAULT})
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError) as ei:
+            [m async for m in client.list_messages(days=60, cif="123")]
+
+    assert route.call_count == 2
+    assert ei.value.status_code == 200
+    assert "momentul requestului" in str(ei.value)
+
+
+@respx.mock
+async def test_list_messages_window_fault_without_a_clock_raises_unchanged() -> None:
+    # Nothing to correct from: the recogniser under-matches by design, and the
+    # error stays the plain AnafResponseError it always was — one request, no retry.
+    route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
+        return_value=httpx.Response(
+            200, json={"eroare": "endTime nu poate fi o data din viitor"}
+        )
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError, match="din viitor"):
+            [m async for m in client.list_messages(days=60, cif="123")]
+    assert route.call_count == 1
 
 
 @respx.mock

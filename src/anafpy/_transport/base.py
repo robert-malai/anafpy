@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 import time
 import unicodedata
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 from enum import StrEnum
 from typing import Self
@@ -49,6 +50,7 @@ __all__ = [
     "normalize_cui",
     "raise_for_status",
     "raise_for_waf_rejection",
+    "request_moment_from_message",
     "retry_after_seconds",
     "service_base_url",
     "strip_accents",
@@ -236,3 +238,35 @@ def is_download_expired_message(text: str) -> bool:
     download window — a *terminal* condition, not a transient one. Matched
     accent-insensitively, on whitespace-collapsed text."""
     return _DOWNLOAD_EXPIRED_MARKER in " ".join(strip_accents(text).split())
+
+
+#: ANAF's own clock, as the e-Factura list endpoint's window faults quote it:
+#: ``"endTime = 30-07-2026 15:15:28 nu poate in viitor fata de momentul requestului =
+#: 30-07-2026 15:15:27"`` (field-observed 2026-07-30 — a one-second disagreement
+#: between the caller's clock and ANAF's was enough to fail the whole listing).
+#: The value is required: the swagger's own examples of the same faults state the
+#: phrase *without* one (reference §3b), and a phrase with nothing to read is not a
+#: correction. ``DD-MM-YYYY HH:MM:SS``, Romania wall time — never UTC, and never the
+#: caller's zone.
+_REQUEST_MOMENT = re.compile(
+    r"momentul requestului\s*=\s*(\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2})"
+)
+
+
+def request_moment_from_message(text: str) -> datetime | None:
+    """ANAF's clock at request time, parsed out of an ``eroare`` that quotes it.
+
+    ``None`` when the note carries no such value — the caller then keeps whatever
+    error handling it already had. Narrow like its siblings above: only the
+    ``momentul requestului = <timestamp>`` form is read, and only as a
+    :data:`ROMANIA_TZ` wall time, since reading it as UTC would shift a corrected
+    window by the offset — three hours in summer.
+    """
+    match = _REQUEST_MOMENT.search(" ".join(strip_accents(text).split()))
+    if match is None:
+        return None
+    try:
+        moment = datetime.strptime(match.group(1), "%d-%m-%Y %H:%M:%S")
+    except ValueError:  # a well-formed-looking but impossible date (32-13-2026)
+        return None
+    return moment.replace(tzinfo=ROMANIA_TZ)

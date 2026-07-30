@@ -274,7 +274,12 @@ tests/                   # respx-mocked suite + opt-in live files (filing
   so the non-idempotent `upload` POST is never silently repeated. Consumers
   bring their own retry. `tenacity` appears only in the business-state poll
   loops (`upload_and_wait`, `wait_for_report` — all three go through
-  `_transport/poll.py`'s `poll_until`) and the SPV read deviation.
+  `_transport/poll.py`'s `poll_until`) and the SPV read deviation. One more
+  deviation, and it is a *correction* rather than a retry: e-Factura
+  `list_messages` re-asks a page **once** per walk when ANAF rejects the window
+  by quoting its own clock (`request_moment_from_message`), rebuilding the
+  window on that clock — the `days` path also holds a skew margin inside each of
+  ANAF's limits, while an explicit `start`/`end` is never moved (DESIGN.md §4).
 - **Module style**: `from __future__ import annotations`, explicit `__all__`,
   module + class docstrings, Google-style docstring sections. Line length 88.
   Keep new code in the voice of the surrounding files.

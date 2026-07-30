@@ -30,6 +30,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 
 import httpx
+from pydantic import BaseModel, ConfigDict
 
 from .._transport.base import (
     OAUTH_HOST,
@@ -38,6 +39,7 @@ from .._transport.base import (
     as_text,
     is_download_expired_message,
     is_empty_result_message,
+    request_moment_from_message,
     service_base_url,
 )
 from .._transport.http import HttpClientBase
@@ -74,14 +76,60 @@ _MAX_LIST_PAGES = 10_000
 _PAGE_COUNT_KEY = "numar_total_pagini"
 
 
+_DAY_MS = 86_400_000
+
+#: Tolerance the ``days`` convenience window leaves at each end so a disagreement
+#: between this machine's clock and ANAF's does not fail the listing outright. ANAF
+#: checks both ends against *its own* clock — ``end`` may not be in the future,
+#: ``start`` may not predate its 60-day floor (reference §3b) — and a bare ``days=60``
+#: window lands exactly on both, so any drift in either direction fails everything.
+#: Named after ``auth/tlscert.py``'s ``_CLOCK_SKEW``, the same idea applied to a
+#: certificate's validity span.
+#:
+#: The two ends are deliberately not symmetric. The start margin is generous: what it
+#: gives up is 60 days old and about to leave ANAF's retention anyway. The end margin
+#: *is* a freshness trade — the listing goes blind to the last minute of filings — so
+#: it stays the smallest value that covers an undisciplined clock (ANAF's own fault
+#: text shows the listing failing at **one second** of drift). It costs little in
+#: practice: list entries are indexed asynchronously, seconds to ~15 minutes after
+#: processing, so the newest minute is not where fresh messages live. Drift larger
+#: than either margin is corrected once from ANAF's own clock — see
+#: :func:`_rebuild_window`.
+_START_CLOCK_SKEW_MS = 5 * 60 * 1000
+_END_CLOCK_SKEW_MS = 60 * 1000
+
+
 def _to_ms(moment: datetime) -> int:
     return int(moment.timestamp() * 1000)
 
 
+class _Window(BaseModel):
+    """A resolved ``listaMesajePaginatieFactura`` window, in epoch milliseconds.
+
+    ``days`` is kept when the window came from the convenience path, because the
+    two forms are rebuilt differently on ANAF's clock (:func:`_rebuild_window`).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    start_ms: int
+    end_ms: int
+    days: int | None = None
+
+
+def _days_window(days: int, now_ms: int) -> _Window:
+    """The last ``days`` days, held strictly inside both of ANAF's limits."""
+    return _Window(
+        start_ms=now_ms - days * _DAY_MS + _START_CLOCK_SKEW_MS,
+        end_ms=now_ms - _END_CLOCK_SKEW_MS,
+        days=days,
+    )
+
+
 def _resolve_window(
     days: int | None, start: datetime | None, end: datetime | None
-) -> tuple[int, int]:
-    """Normalise the requested window to a ``(start_ms, end_ms)`` pair.
+) -> _Window:
+    """Normalise the requested window.
 
     Exactly one of ``days`` (1-60) or both ``start`` and ``end`` must be given.
     The range form mirrors ANAF's own documented rules for
@@ -89,6 +137,12 @@ def _resolve_window(
     not before ``start``, ``end`` not in the future, and ``start`` at most 60
     days before the request — ANAF retains e-Factura messages for 60 days, so
     an older window can never match anything.
+
+    The ``days`` path shrinks by :data:`_START_CLOCK_SKEW_MS` /
+    :data:`_END_CLOCK_SKEW_MS` so the window ANAF receives sits inside those limits
+    rather than exactly on them. An explicit ``start``/``end`` pair is passed
+    through to the millisecond: the caller stated the instants they want, and
+    anafpy does not silently move them.
     """
     has_days = days is not None
     has_range = start is not None or end is not None
@@ -100,8 +154,7 @@ def _resolve_window(
         assert days is not None
         if not 1 <= days <= 60:
             raise AnafConfigError("list_messages: `days` must be between 1 and 60")
-        end_ms = int(time.time() * 1000)
-        return end_ms - days * 86_400_000, end_ms
+        return _days_window(days, int(time.time() * 1000))
     if start is not None and end is not None:
         start_ms, end_ms = _to_ms(start), _to_ms(end)
         now_ms = int(time.time() * 1000)
@@ -109,13 +162,54 @@ def _resolve_window(
             raise AnafConfigError("list_messages: `end` cannot be before `start`")
         if end_ms > now_ms:
             raise AnafConfigError("list_messages: `end` cannot be in the future")
-        if start_ms < now_ms - 60 * 86_400_000:
+        if start_ms < now_ms - 60 * _DAY_MS:
             raise AnafConfigError(
                 "list_messages: `start` cannot be older than 60 days — ANAF "
                 "retains e-Factura messages for 60 days"
             )
-        return start_ms, end_ms
+        return _Window(start_ms=start_ms, end_ms=end_ms)
     raise AnafConfigError("list_messages: pass `days` or both `start` and `end`")
+
+
+def _rebuild_window(window: _Window, moment: datetime) -> _Window | None:
+    """Re-resolve ``window`` against ANAF's own clock, or ``None`` if nothing moves.
+
+    A ``days`` window is relative by construction — "the last N days" means N days
+    on ANAF's clock — so it is simply recomputed there, which absorbs drift of any
+    size rather than the fixed margin's worth. An explicit ``start``/``end`` pair
+    names absolute instants the caller chose, so it is never reinterpreted: only the
+    ``end`` ANAF called "in the future" is pulled back inside that clock's now, and
+    if doing so would leave nothing at all (the whole window is ahead of ANAF), the
+    correction is declined and ANAF's error stands.
+    """
+    now_ms = _to_ms(moment)
+    if window.days is not None:
+        rebuilt = _days_window(window.days, now_ms)
+    else:
+        rebuilt = window.model_copy(
+            update={"end_ms": min(window.end_ms, now_ms - _END_CLOCK_SKEW_MS)}
+        )
+        if rebuilt.end_ms <= window.start_ms:
+            return None
+    return None if rebuilt == window else rebuilt
+
+
+def _clock_fault_moment(body: bytes) -> datetime | None:
+    """ANAF's clock, when a list page came back as a window fault that quotes it.
+
+    Narrow by construction, like :func:`_expired_download_note`: the body must be a
+    JSON object whose ``eroare`` is a string carrying the ``momentul requestului =
+    <timestamp>`` form. Anything else returns ``None`` and stays whatever error it
+    already was.
+    """
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return None
+    match data:
+        case {"eroare": str(note)}:
+            return request_moment_from_message(note)
+    return None
 
 
 def _local(tag: str) -> str:
@@ -364,6 +458,15 @@ class EFacturaClient(HttpClientBase):
         :class:`MessageListItem` across all pages of
         ``listaMesajePaginatieFactura``; an empty window yields nothing.
 
+        ANAF judges both ends against **its own** clock, so the ``days`` window is
+        computed a short margin inside each limit (:data:`_START_CLOCK_SKEW_MS` /
+        :data:`_END_CLOCK_SKEW_MS`) rather than exactly on it — ``days=60``
+        otherwise touches both, and a one-second disagreement fails the listing.
+        An explicit ``start``/``end`` is sent to the millisecond, untouched. Should
+        the clocks differ by more than the margin, ANAF's rejection quotes its own
+        time; the window is then rebuilt against it and the request retried
+        **once**, after which the error surfaces.
+
         Consume with ``async for``; materialise via
         ``[m async for m in client.list_messages(...)]``.
 
@@ -373,17 +476,21 @@ class EFacturaClient(HttpClientBase):
                 a benign "no messages" note yields an empty iterator instead.
             AnafRateLimitError / AnafTransportError: as for any request.
         """
-        start_ms, end_ms = _resolve_window(days, start, end)  # eager validation
-        return self._iter_messages(start_ms, end_ms, cif, filter)
+        return self._iter_messages(
+            _resolve_window(days, start, end),  # eager validation
+            cif,
+            filter,
+        )
 
     async def _iter_messages(
-        self, start_ms: int, end_ms: int, cif: str, filter: Filter | None
+        self, window: _Window, cif: str, filter: Filter | None
     ) -> AsyncIterator[MessageListItem]:
         page = 1
+        corrected = False
         while page <= _MAX_LIST_PAGES:
             params = {
-                "startTime": str(start_ms),
-                "endTime": str(end_ms),
+                "startTime": str(window.start_ms),
+                "endTime": str(window.end_ms),
                 "cif": cif,
                 "pagina": str(page),
             }
@@ -392,6 +499,17 @@ class EFacturaClient(HttpClientBase):
             response = await self._request_checked(
                 "GET", "listaMesajePaginatieFactura", params=params
             )
+            if (
+                not corrected
+                and (moment := _clock_fault_moment(response.content)) is not None
+            ):
+                # ANAF stated its own clock: rebuild the window on it and re-ask
+                # this page. Exactly one correction per walk — a second fault is
+                # not skew, and re-correcting would loop.
+                corrected = True
+                if (rebuilt := _rebuild_window(window, moment)) is not None:
+                    window = rebuilt
+                    continue
             messages, total_pages = self._parse_message_page(response.content)
             if not messages:
                 break  # empty/no-results page terminates the walk

@@ -61,6 +61,18 @@ A single async iterator that pages ANAF's message list under the hood — window
 ANAF error **raises** `AnafResponseError` (ANAF overloads the same response note
 for both cases; anafpy classifies them).
 
+**Clock skew is handled, so `days=60` is safe.** ANAF checks both ends of the
+window against *its own* clock — `end` may not be in the future, `start` may not
+predate its 60-day floor — and a full 60-day window sits on both limits at once,
+where a one-second disagreement between your machine's clock and ANAF's fails the
+whole listing. The `days` path therefore builds the window a short margin inside
+each limit (5 minutes at the start, 60 seconds at the end — so the listing trails
+the very newest filings by a minute, well under ANAF's own indexing lag). Larger
+drift is corrected from ANAF itself: its rejection quotes its request moment, and
+the window is rebuilt on that clock and retried **once**. An explicit
+`start`/`end` window is never moved by the margins — you named those instants —
+but the same one-shot correction applies to it.
+
 Note a production-confirmed quirk (2026-07-06): the list's `cif_emitent` /
 `cif_beneficiar` fields are never actually emitted by ANAF despite being
 documented — partner CIFs ride only inside the free-text `detalii`. See the

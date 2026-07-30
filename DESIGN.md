@@ -385,6 +385,48 @@ and the SPV client's idempotent-GET reads; and the hybrid error model keeps
 ANAF's business verdicts (`nok`, BR-RO findings) as typed return values, never
 exceptions — a rejection is data, not control flow.
 
+### Listing
+
+- *(ADDED 2026-07-31)* **The `days` window is computed inside ANAF's limits, and
+  ANAF's own clock corrects the rest.** `listaMesajePaginatieFactura` validates
+  both ends against the *server's* clock — `endTime` not in the future,
+  `startTime` not past the 60-day floor — so the obvious `days` implementation
+  (both ends pinned to `time.time()`) leaves zero tolerance at `days=60`, which
+  touches both limits at once. Field-observed: a listing failed with `"endTime =
+  30-07-2026 15:15:28 nu poate in viitor fata de momentul requestului =
+  30-07-2026 15:15:27"` — **one second** of drift, and the symmetric failure
+  (`startTime` too old) is the same window seen from the other end. Downstream
+  schedulers default to `days=60`, so an undisciplined Windows clock breaks the
+  whole strand on its own. Two layers, both narrow:
+  - **A margin, on the convenience path only** (`_START_CLOCK_SKEW_MS` = 5 min,
+    `_END_CLOCK_SKEW_MS` = 60 s — named after `auth/tlscert.py`'s `_CLOCK_SKEW`).
+    Asymmetric on purpose: the start margin gives up messages that are 60 days
+    old and leaving retention anyway, while the end margin is a real freshness
+    trade, so it stays the smallest value covering a drifting clock — and ANAF's
+    own indexing lag (seconds to ~15 min) already exceeds it. An explicit
+    `start`/`end` is **not** touched: the caller stated the instants they want,
+    and silently moving them would be anafpy inventing a window.
+  - **One correction from ANAF's stated clock.** The rejection quotes
+    `momentul requestului`; `request_moment_from_message` reads it (beside the
+    other two recognizers in `_transport/base.py`, and under-matching the same
+    way — the value must be present, which the swagger's own examples of these
+    faults are not), the window is rebuilt on that clock, and the page is
+    re-asked **once** per walk. That absorbs drift of any size without a
+    configuration knob. This layer *does* apply to an explicit window — it is
+    ANAF stating the correction, not anafpy second-guessing — but even there it
+    only clamps the `end` ANAF called future, never reinterprets `start`. A
+    second fault is not skew: it surfaces as the `AnafResponseError` it always
+    was, and so does any fault with no clock to read.
+  - **Known gap: a clock running *behind* ANAF's by more than the start margin
+    is not recoverable.** That direction fails on `startTime`, and the
+    start-side fault has never been observed quoting a moment (the swagger's
+    example does not), so there is nothing to correct from — layer 2 covers
+    only the `endTime` direction, and layer 1 is the whole tolerance on the
+    other. Widening `_START_CLOCK_SKEW_MS` costs almost nothing (the messages
+    it forgoes are leaving retention anyway) and is the lever if this is ever
+    seen in the field; guessing a correction out of a fault that states only
+    "too old" is not.
+
 ### Download
 
 - `download` returns a **raw-preserving `DownloadedMessage`** with three tiers:
