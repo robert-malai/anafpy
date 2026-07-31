@@ -4,8 +4,9 @@ description: >
   File a Romanian RO e-Transport declaration and obtain a UIT code from transport
   data found in any source — an email, a PDF invoice, a CMR, a spreadsheet, or the
   conversation. Use when the user wants to declare a transport, get/generate a UIT,
-  file an e-Transport declaration, or correct an already-issued one. Drives the
-  anafpy MCP tools (etransport_prepare_declaration → etransport_submit).
+  file an e-Transport declaration, correct an already-issued one, or asks whether a
+  transport must be declared and what the law requires of them. Drives the anafpy
+  MCP tools (etransport_prepare_declaration → etransport_submit).
 ---
 
 # File an e-Transport declaration
@@ -26,13 +27,17 @@ Two rules override everything else:
   conversation. The confirmation token is single-use and bound to the exact XML —
   pass back the `xml` the prepare tool returned, verbatim.
 
-## Step 0 — does this transport need declaring at all?
+## Step 0 — legal orientation: does this need declaring, and by whom?
 
 Quick orientation (not legal advice — when unclear, state the rule and let the user
-decide). RO e-Transport (OUG 41/2022, as amended) requires a UIT for road transports
-in vehicles with a maximum authorized mass of **≥ 2.5 t** carrying goods with total
-gross mass **> 500 kg** or total value **> 10,000 RON** (excl. VAT), when the
-transport is:
+decide; the compiled legal reference is the `anafref://etransport/legal` resource).
+RO e-Transport (OUG 41/2022, as amended; procedure in Ordinul ANAF/AVR
+1337/1268/2024) is in full force since **1 January 2026** — non-declaration carries
+fines of 20,000–100,000 RON for companies plus, on repeat offences within 12
+months, graduated confiscation of the undeclared goods' value. It requires a UIT
+for road transports in vehicles with a maximum authorized mass of **≥ 2.5 t**
+carrying goods with total gross mass **> 500 kg** or total value **> 10,000 RON**
+(excl. VAT), when the transport is:
 
 - **domestic** (TTN) carrying goods on ANAF's **high-fiscal-risk list** (fruits &
   vegetables, alcohol, mineral products, clothing/footwear, iron & steel, etc.), or
@@ -40,12 +45,38 @@ transport is:
   import/export (IMP/EXP), lohn (LHI/LHE), call-off stock (SCI/SCE), or
   intra-community transit with storage/regrouping in Romania (DIN/DIE).
 
+**Exemptions** — if one applies, say so and stop; do not declare what the law does
+not ask to be declared:
+
+- transports for diplomatic missions, consular offices, international
+  organizations, NATO/EU/Partnership-for-Peace forces, or under
+  security-classified contracts;
+- excise goods moving through EMCS with an e-DA/e-DAS (duty suspension, or duty
+  paid in the dispatch member state);
+- postal parcels carried by postal service providers;
+- agricultural products bought from producers on the *carnet de comercializare*,
+  transports by individual agricultural producers to the point of sale, and
+  vegetal agricultural products moved after harvest.
+
+**Who must declare** is fixed by law per operation — check that the filing CIF (from
+`auth_status`) is the obligated party, and flag a mismatch instead of filing past
+it: the RO supplier (TTN, LIC, call-off stock out), the RO beneficiary/client (AIC,
+call-off stock in), the consignee/shipper named in the customs declaration
+(IMP/EXP), the RO service provider or beneficiary of the processing (lohn), the
+depozitar (DIN/DIE).
+
 Timing constraints the user must be able to meet:
 
 - The UIT may be obtained at most **3 calendar days before** the declared
-  `transport_date`, and **before the vehicle starts moving** on national roads.
-- The UIT is valid **5 calendar days** from the declared transport date
-  (**15 days** for intra-community acquisitions and call-off stock operations).
+  `transport_date`, and no later than the border crossing on entry / the place of
+  import, respectively **before the vehicle starts moving**, as the case may be.
+- The UIT is valid **5 calendar days** from the declared transport date — **15
+  days** for intra-community acquisitions (AIC), transit to storage (DIN), and the
+  national nontransfer / call-off stock legs (LHI/LHE, SCI/SCE). Using a UIT past
+  its window is a sanctioned contravention, not a formality.
+- Once the vehicle starts moving (or crosses the border inbound), the declared
+  data **can no longer be changed** — the one exception is the vehicle
+  identification (see "After filing").
 
 ## Step 1 — check the connection
 
@@ -211,12 +242,41 @@ returns the **UIT** immediately, but it only becomes valid once processing finis
 poll `etransport_get_status` with the returned `upload_id` until the state leaves
 `in prelucrare` (usually seconds).
 
-- **`ok`** — report the UIT prominently, plus: the declarant must communicate it to
-  the transporter/driver before departure, and its validity window (step 0).
-  Optionally confirm the record via `etransport_list` or `etransport_lookup`.
+- **`ok`** — report the UIT prominently, plus its validity window (step 0) and the
+  legal obligations that now attach to it — relay them with the UIT, the user may
+  not know them:
+  - hand the UIT to the transport operator/driver **before the vehicle moves** (or
+    by border entry); the driver must present it — in any intelligible form —
+    together with the transport documents at a control (ANAF, customs, police);
+  - the transport operator must keep the vehicle's GPS positioning data flowing
+    for the whole route, and the driver must switch the positioning device on
+    before departure and off only after delivery / leaving the country —
+    sanctioned since 1 January 2026;
+  - the declaration is now immutable except for a vehicle change (see "After
+    filing") — a data mistake discovered later needs a correction filing.
+- **Render the UIT card by default.** Call `etransport_lookup` on the UIT — it
+  confirms the record and returns ANAF's `data_exp_uit` — then
+  `etransport_uit_card` with the filed `xml`, the UIT, `uit_expiry` from the
+  lookup (never computed yourself), and a `save_as` full path named after the
+  code (e.g. `UIT-<code>.pdf`), in the folder the source documents came from or
+  wherever the user keeps artifacts — ask when there is no natural place. Give
+  the user the saved path with the returned `summary_text` as the accompanying
+  message — that text is also how the driver copies the code on a phone whose
+  PDF viewer won't select text.
+- **Offer the detail document** — `etransport_uit_details`, the whole filing on
+  A4 with the goods table, the copy for the partner company or the user's own
+  records — and render it only if the user wants it (`notes` carry
+  filing-specific observations only, never boilerplate). Both documents are
+  generated locally, not issued by ANAF, and say so on their face; an existing
+  file is never replaced unless the user asks for `overwrite=true`.
 - **`nok`** — report ANAF's error messages verbatim, propose the fix, and go back to
   step 3: the token was consumed, so a corrected filing needs a fresh prepare **and a
   fresh approval**.
+- **ANAF outage**: if the upload fails because the system is down **and ANAF/MF
+  have announced the outage on their websites**, the legal deadline defers to the
+  end of the next working day after service is restored — including for transports
+  already completed by then. Tell the user; the transport itself is not blocked by
+  an announced outage.
 
 ## After filing
 
@@ -228,6 +288,10 @@ poll `etransport_get_status` with the returned `upload_id` until the state leave
 - **Transport cancelled**: `etransport_prepare_deletion` → `etransport_submit`.
 - **Goods received** (beneficiary side): `etransport_prepare_confirmation` with
   `CONFIRMAT` / `CONFIRMAT_PARTIAL` / `INFIRMAT`.
+
+After an accepted correction (new UIT) or vehicle change (new plates), any card
+or detail document rendered earlier is stale — re-render it (step 5's flow) so
+the driver carries the current data.
 
 All of these are two-step gated the same way: preview, explicit user approval, then
 submit with the token. Present them with step 4's frame, adapted:

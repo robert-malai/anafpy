@@ -29,6 +29,19 @@ conversation itself. The playbook walks Claude through the full flow:
 4. **Show you the preview for approval.** Nothing has been filed yet.
 5. **Submit** on your explicit approval — `etransport_submit` with the token.
 6. **Poll** the status until ANAF issues a valid UIT, and report it.
+7. **Render the driver's UIT card** (`etransport_uit_card` — a phone-shaped PDF
+   with the code set large and a QR) by default, and offer the A4 detail
+   document (`etransport_uit_details`) for the partner company or the user's
+   records.
+
+Before extracting anything, the playbook orients on the legal requirements
+(OUG 41/2022 and the ANAF/AVR procedure): whether the transport must be declared
+at all — exemptions included — whether the filing CIF is the party the law
+obliges to declare, and the UIT timing windows. After filing, it relays the
+obligations that attach to the issued UIT: handing it to the driver before
+departure, GPS tracking for the whole route, and the declaration's immutability
+once the vehicle moves. The compiled legal reference behind this guidance is
+served to the model as the `anafref://etransport/legal` resource.
 
 It also handles corrections of an already-issued UIT (`correction_of_uit`).
 

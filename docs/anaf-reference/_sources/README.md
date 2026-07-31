@@ -11,6 +11,7 @@ frontmatter.
 | `etransport_29072024.pdf` | https://mfinante.gov.ro/static/10/eTransport/etransport_29072024.pdf | 29.07.2024 | 2026-06-28 |
 | `limiteApeluriAPI.txt` | https://mfinante.gov.ro/static/10/eFactura/limiteApeluriAPI.txt | (undated) | 2026-07-02 |
 | `eTransport-validation_v.2.0.2_12082024.sch` | https://mfinante.gov.ro/static/10/eTransport/eTransport-validation_v.2.0.2_12082024.sch | v2.0.2, 12.08.2024 | 2026-07-03 |
+| `Ghid_RO_e_Transport_2025.pdf` | https://static.anaf.ro/static/10/Anaf/AsistentaContribuabili_r/Ghid_RO_e_Transport_2025.pdf | Ghid 2025 (reflects OUG 29/2025) | 2026-08-01 |
 
 ## Swagger presentations (per-endpoint OpenAPI specs)
 

@@ -16,6 +16,7 @@ are the authority on any discrepancy.
 | OAuth (shared) | [oauth/authentication.md](oauth/authentication.md) | draft |
 | e-Factura | [efactura/api.md](efactura/api.md) | draft |
 | e-Transport | [etransport/api.md](etransport/api.md) | draft |
+| e-Transport — legal framework (OUG 41/2022) | [etransport/legal.md](etransport/legal.md) | draft |
 | Public no-auth services (registries, bilanț) | [public/api.md](public/api.md) | draft |
 | SPV web services (inbox, downloads, report requests) | [spv/api.md](spv/api.md) | draft |
 | Declarations — DUKIntegrator (validate, render, sign) | [declaratii/duk.md](declaratii/duk.md) | draft |

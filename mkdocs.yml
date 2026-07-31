@@ -92,6 +92,7 @@ nav:
       - OAuth: anaf-reference/oauth/authentication.md
       - e-Factura: anaf-reference/efactura/api.md
       - e-Transport: anaf-reference/etransport/api.md
+      - e-Transport (legal framework): anaf-reference/etransport/legal.md
       - Public services: anaf-reference/public/api.md
       - SPV: anaf-reference/spv/api.md
       - Declarations (forms inventory): anaf-reference/declaratii/forms/README.md
