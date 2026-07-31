@@ -63,8 +63,17 @@ context when a file on disk is what the user wants.
 
 To pre-check an invoice, `efactura_validate` runs ANAF's own server-side validator
 without filing (authoritative; public and no-auth, so it needs no login). e-Transport
-has no standalone validator — ANAF validates on upload. If a tool reports "not
-authenticated", the user must run `anafpy auth login` host-side.
+has no standalone validator — ANAF validates on upload.
+
+After a declaration is filed, its UIT renders to a PDF at a path you name — the
+binary goes to disk, never into the context. `etransport_uit_card` is the driver
+card (phone-shaped, QR + plates + dates) and also returns `summary_text`, the
+message to send alongside it and the way a driver copies the code when a phone's
+PDF viewer will not select text; `etransport_uit_details` is the A4 detail
+document for the partner. Render either, or both. Informative, not issued by ANAF.
+
+If a tool reports "not authenticated", the user must run `anafpy auth login`
+host-side.
 
 The `spv_*` tools read the taxpayer's SPV (Spațiul Privat Virtual) mailbox —
 receipts, decisions, notifications — and request official reports (VECTOR FISCAL,

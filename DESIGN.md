@@ -1069,3 +1069,87 @@ at all is only answerable on a real box, and the same box owes the strand's two
 other unverified Windows legs — a live DUK `-v`/`-p` run, and the portal curl
 bootstrap (Schannel by thumbprint, never yet exercised). The D406T live filing is
 the end-to-end proof.
+
+## 13. UIT presentation artifacts (2026-08-01)
+
+An e-Transport filing yields a UIT, and the code then has to travel: to the
+driver, who must carry it, and often to the partner company. ANAF issues no
+document for that, so both ends improvise. This strand renders two PDFs from a
+filing anafpy already holds — `anafpy[cards]` (fpdf2 + segno), the library entry
+`anafpy.etransport.card`, the CLI `anafpy etransport card` / `details`, and the
+MCP `etransport_uit_card` / `etransport_uit_details`. Card and detail document
+are **separate commands and separate tools** (split 2026-08-01, from one
+`details` flag): the two artifacts have different audiences and different
+options (`notes` exists only on the detail document, `summary_text` only on the
+card), and a skill deciding to produce both should read as two calls, not a
+flag flip. Both tools write the PDF to a caller-given path — the binary never
+enters the model's context; only the card's `summary_text` returns as text,
+deliberately, because it IS a message.
+
+**The card is a PDF, not an image.** The obvious artifact is a PNG to send over
+WhatsApp, and several were prototyped (`design/`). They lost on one point: a PNG
+is pixels, so nothing on it can be copied, and the code's whole purpose is to be
+transcribed into someone else's system. The PDF holds the same layout with every
+value as selectable text and the QR drawn as vector rectangles. It is sized
+**90×195mm — a phone's own 19.5:9** — so a viewer fitting the page to the screen
+fills it and the phone becomes the document. Copyability still depends on the
+viewer, so `UitCard.summary_text()` returns the same facts as plain text with the
+bare UIT alone on the first line: pasted as the accompanying chat message, it is
+the one path that works on every phone.
+
+**The QR carries the raw UIT and nothing else.** Verified by decoding a real
+card produced by Romanian invoicing software (2026-07-31). There is no official
+ANAF QR format — inspectors look the code up in their own system — so this is a
+scan-to-copy convenience following the de-facto convention, not a claim to be
+machine-readable evidence.
+
+**Wallet passes were rejected.** An Apple Wallet pass would give the nicest
+lifecycle, but signing one needs a per-user Apple Developer membership and a
+Pass Type ID certificate, and live updates need a hosted service — out of scope
+per §11. The card prints the validity date instead and renders a red `EXPIRAT`
+banner past it, which covers the actual need: a stale card announces itself.
+
+**ANAF owns the expiry clock.** `uit_expiry` is only ever what ANAF reports as
+`data_exp_uit`; with none supplied the card prints the transport date alone
+rather than computing a 15-day window. The same restraint as everywhere else in
+this repo: we do not synthesise a value ANAF is authoritative for.
+
+**Layout rules that are load-bearing rather than cosmetic**, arrived at by
+rendering the alternatives rather than reasoning about them:
+
+- Short codes sit **two per row, never three** — at a third of the width they
+  fit-shrink to roughly half the size. Every plate is a peer with its own cell,
+  so two trailers take three cells over two rows; folding the second into a
+  sub-line would rank it below the first, which the law does not. With no
+  trailer the row collapses to a full-width `VEHICUL` rather than pairing the
+  plate with a date, which keeps the plate as the anchor and the two dates side
+  by side where they compare.
+- The **QR is sized last**, from whatever vertical space the table leaves
+  (clamped 560–860px), so a rarer shape gives up QR instead of crowding the
+  footer.
+- Fiscal codes print **verbatim** — a foreign VAT number already carries its
+  country prefix, so "Ungaria (HU) · HU11223344" says it twice. A Romanian code
+  carries none, which is why `country` stays a field of its own and the detail
+  document keeps a `Țara` row.
+- The partner is labelled **by direction** (`Furnizor` / `Client` / `Partener`),
+  read off ANAF's operation code, matching what the reference card does.
+
+**Fonts are vendored, subset, and committed** (`scripts/vendor_card_fonts.py`).
+fpdf2's built-in core fonts are Latin-1 only, so `ș`/`ț` are unrepresentable in
+them and a Romanian document cannot use them; discovering a system font instead
+would make output vary by machine and could fail at run time. Subsetting Noto
+Sans + Noto Sans Mono to Latin/Greek/Cyrillic takes 1.8 MB down to 356 kB, which
+matters because **a wheel's contents are not conditional on extras** — every
+install carries them.
+
+**Nomenclature labels moved down a layer.** The human labels lived in the MCP
+package; the renderer needs the same facts, and the library may not import from
+an optional extra, so they now live in `anafpy.etransport.labels` with the MCP
+nomenclature tool importing from there. Counties gained labels in the process
+(the enum documents them only by number), which the `etransport_nomenclature`
+tool now surfaces too.
+
+**Not yet verified.** No live filing has been rendered end to end — the PDFs are
+exercised against constructed declarations, and the layout decisions were made
+against two real reference documents rather than a live `info` response. The
+`uit_expiry` field has not been round-tripped from a real `data_exp_uit`.

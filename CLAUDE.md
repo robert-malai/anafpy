@@ -39,7 +39,9 @@ The service strands:
 - **e-Transport** (goods transport) — **fully translated**: bidirectional flat
   models author a filing and view a parsed one, covering all four operations
   (declaration/correction, deletion, confirmation, vehicle change); XML input
-  remains supported.
+  remains supported. **UIT presentation** (extra `anafpy[cards]`, DESIGN.md §13)
+  renders a filed declaration into two PDFs — a phone-shaped driver card and an
+  A4 detail document — locally, informative, never issued by ANAF.
 - **Public no-auth services** (`anafpy.public`) — registry lookups, financial
   statements, and the stateless e-Factura `validare`/`transformare`.
 - **SPV** (`anafpy.spv`) — read-only mailbox over a certificate cookie session.
@@ -89,6 +91,7 @@ Windows-on-ARM — SPV reference §1.1) is read at the transport layer, not by
 Codegen (only when re-vendoring XSDs / Schematron sources — see "Generated code"):
 
 ```bash
+uv run python scripts/vendor_card_fonts.py   # only when re-vendoring the card fonts
 uv run python scripts/generate_ubl.py
 uv run python scripts/generate_etransport.py
 uv run python scripts/generate_efactura_codelists.py  # BR-CL code lists from the .sch
@@ -122,7 +125,7 @@ src/anafpy/
                          # taxonomy; subclasses own choreography + judgment
   auth/                  # OAuth2 layer: models, store, oauth, provider,
                          # callback, tlscert
-  cli/main.py            # cyclopts CLI: `anafpy auth|spv|declaratii|duk ...`
+  cli/main.py            # cyclopts CLI: `anafpy auth|spv|declaratii|etransport|duk ...`
   efactura/
     README.md            # module map: layer diagram (flat <-> UBL <-> wire),
                          # outbound/inbound flows, who-owns-what table
@@ -138,6 +141,12 @@ src/anafpy/
     client.py            # ETransportClient — incl. upload_document
     models.py            # value types + bidirectional flat models (4 ops)
                          # + read/build/render
+    labels.py            # display labels for the nomenclatures — the ONE home,
+                         # shared by cardpdf and the MCP nomenclature tool
+    card.py              # UitCard + summary_text + load_cardpdf loader (no
+                         # optional imports; missing extra -> AnafConfigError)
+    cardpdf.py           # the fpdf2/segno renderer — needs anafpy[cards]
+    _fonts/              # VENDORED OFL Noto subsets (scripts/vendor_card_fonts.py)
   public/
     client.py            # PublicClient (no auth): lookups + validare/transformare
     models.py            # lookup value types + RemoteValidationResult
@@ -203,7 +212,8 @@ plugins/anafpy-workflows/skills/  # the workflow playbooks' SINGLE home
                          # the MCP server's same-name prompts; never duplicate
 schemas/                 # vendored XSDs + Schematron sources (git-tracked, not
                          # shipped; feed the codegen)
-scripts/                 # codegen scripts
+scripts/                 # codegen scripts + vendor_card_fonts.py (the card's
+                         # OFL font subsets; committed, like the XSDs)
 imgs/                    # brand assets; README hotlinks the social preview
 docs/                    # MkDocs source tree (mkdocs.yml at repo root; RTD
                          # builds via uv); docs/assets/ = site image copies

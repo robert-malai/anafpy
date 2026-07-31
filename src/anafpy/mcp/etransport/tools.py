@@ -9,6 +9,8 @@ explicit ``confirm=True``. The STEP-2 skeleton is the shared
 
 from __future__ import annotations
 
+import asyncio
+import datetime as dt
 from collections.abc import Callable
 from inspect import cleandoc
 from typing import Any
@@ -16,6 +18,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
+from ...etransport.card import UitCard, load_cardpdf
 from ...etransport.client import ETransportClient
 from ...etransport.models import (
     FlatConfirmation,
@@ -23,10 +26,18 @@ from ...etransport.models import (
     FlatSubmission,
     FlatTransport,
     FlatVehicleChange,
+    parse_etransport_document,
+    read_flat_transport,
     render_etransport,
 )
-from ...exceptions import AnafError
-from ..artifacts import MUTATING, READ_ONLY
+from ...exceptions import AnafConfigError, AnafError
+from ..artifacts import (
+    ARTIFACT_SAVING,
+    MUTATING,
+    READ_ONLY,
+    ensure_writable,
+    write_artifact,
+)
 from ..config import ServerConfig
 from ..context import AppContext
 from ..gate import SubmitResult, issue_token, run_submit, submission_context
@@ -97,6 +108,103 @@ def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
             "items": [i.model_dump() for i in result.items],
             "error": result.error,
         }
+
+    @mcp.tool(
+        title="e-Transport: UIT card",
+        annotations=ARTIFACT_SAVING,
+        description=cleandoc("""
+            Render the driver card for a filed declaration's UIT — one PDF page
+            at a phone's aspect ratio — to disk, and return the saved path plus
+            the message text to send with it; the binary never enters the
+            context. `document` is the declaration that was filed ({"xml": ...}
+            or {"path": ...}); `uit` is the code ANAF issued for it.
+
+            The card carries the code set large, a QR encoding the bare UIT,
+            and the plates and dates a roadside check asks for. Send it to the
+            driver; `summary_text` is the accompanying chat message, and the
+            way the driver copies the code on a phone whose PDF viewer will not
+            select text.
+
+            Optional context sharpens it: `uit_expiry` (ANAF's data_exp_uit,
+            from etransport_lookup — never computed here) prints the validity
+            and marks a lapsed UIT EXPIRAT; `declarant_name` /
+            `declarant_code` identify who filed.
+
+            Name the file with `save_as` (a full path). An existing file is
+            never replaced unless overwrite=true. The card is informative:
+            generated locally, not issued by ANAF, and it says so on its face.
+
+            For the partner company's copy — the whole filing on A4 — use
+            etransport_uit_details.
+        """),
+    )
+    async def etransport_uit_card(
+        document: EtransportXmlInput,
+        uit: str,
+        save_as: str,
+        uit_expiry: str | None = None,
+        declarant_name: str | None = None,
+        declarant_code: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, object]:
+        return await _render_uit_pdf(
+            document,
+            uit,
+            save_as,
+            details=False,
+            uit_expiry=uit_expiry,
+            declarant_name=declarant_name,
+            declarant_code=declarant_code,
+            notes=None,
+            overwrite=overwrite,
+        )
+
+    @mcp.tool(
+        title="e-Transport: UIT detail document",
+        annotations=ARTIFACT_SAVING,
+        description=cleandoc("""
+            Render the detail document for a filed declaration's UIT — the
+            whole filing on A4, goods table included — to disk, and return the
+            saved path; the binary never enters the context. It is the copy for
+            the partner company or the declarant's own records. `document` is
+            the declaration that was filed ({"xml": ...} or {"path": ...});
+            `uit` is the code ANAF issued for it.
+
+            Optional context sharpens it: `uit_expiry` (ANAF's data_exp_uit,
+            from etransport_lookup — never computed here) prints the validity
+            and marks a lapsed UIT EXPIRAT; `declarant_name` /
+            `declarant_code` identify who filed; `notes` are the caller's own
+            observations, printed in an Observații section — filing-specific
+            facts only, never boilerplate.
+
+            Name the file with `save_as` (a full path). An existing file is
+            never replaced unless overwrite=true. The document is informative:
+            generated locally, not issued by ANAF, and it says so on its face.
+
+            For the driver's phone-shaped card, use etransport_uit_card.
+        """),
+    )
+    async def etransport_uit_details(
+        document: EtransportXmlInput,
+        uit: str,
+        save_as: str,
+        uit_expiry: str | None = None,
+        declarant_name: str | None = None,
+        declarant_code: str | None = None,
+        notes: list[str] | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, object]:
+        return await _render_uit_pdf(
+            document,
+            uit,
+            save_as,
+            details=True,
+            uit_expiry=uit_expiry,
+            declarant_name=declarant_name,
+            declarant_code=declarant_code,
+            notes=notes,
+            overwrite=overwrite,
+        )
 
     @mcp.tool(
         title="e-Transport: Code lists",
@@ -377,3 +485,92 @@ def _prepare_message(*, parsed: bool) -> str:
         "not pre-validated (ANAF is authoritative). Review the preview with the "
         "user, then submit with the confirmation token."
     )
+
+
+async def _render_uit_pdf(
+    document: EtransportXmlInput,
+    uit: str,
+    save_as: str,
+    *,
+    details: bool,
+    uit_expiry: str | None,
+    declarant_name: str | None,
+    declarant_code: str | None,
+    notes: list[str] | None,
+    overwrite: bool,
+) -> dict[str, object]:
+    """The shared body of the two UIT rendering tools: PDF to disk, facts back.
+
+    Only the card result carries ``summary_text`` — it is the chat message to
+    send alongside the card; the detail document travels as a file, not a
+    message.
+    """
+    try:
+        xml = document.resolve()
+        renderer = load_cardpdf()
+        card = _uit_card(
+            xml,
+            uit,
+            uit_expiry=uit_expiry,
+            declarant_name=declarant_name,
+            declarant_code=declarant_code,
+            notes=notes,
+        )
+        # Fail a name collision BEFORE rendering.
+        target = ensure_writable(save_as, overwrite=overwrite)
+        pdf = renderer.render_details(card) if details else renderer.render_card(card)
+        path = await asyncio.to_thread(write_artifact, target, pdf, overwrite=overwrite)
+    except (AnafError, ValidationError) as exc:
+        return {"ok": False, "message": str(exc)}
+    result: dict[str, object] = {
+        "ok": True,
+        "saved_as": path,
+        "uit": card.uit,
+        "expired": card.is_expired(),
+    }
+    if not details:
+        result["summary_text"] = card.summary_text()
+    return result
+
+
+def _uit_card(
+    xml: bytes,
+    uit: str,
+    *,
+    uit_expiry: str | None,
+    declarant_name: str | None,
+    declarant_code: str | None,
+    notes: list[str] | None,
+) -> UitCard:
+    """The card's data from a filed declaration, or an ``AnafError`` saying why not."""
+    document = parse_etransport_document(xml)
+    if document is None:
+        raise AnafConfigError(
+            "the document did not parse as an e-Transport declaration — a card "
+            "is rendered from the declaration that was filed"
+        )
+    submission = read_flat_transport(document)
+    if not isinstance(submission, FlatTransport):
+        raise AnafConfigError(
+            "the document is a deletion/confirmation/vehicle-change notification, "
+            "not a declaration — only a declaration carries what a card prints"
+        )
+    return UitCard(
+        uit=uit,
+        transport=submission,
+        uit_expiry=_iso_date(uit_expiry, "uit_expiry"),
+        declarant_name=declarant_name,
+        declarant_code=declarant_code,
+        notes=notes or [],
+    )
+
+
+def _iso_date(value: str | None, field: str) -> dt.date | None:
+    if value is None:
+        return None
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError as exc:
+        raise AnafConfigError(
+            f"{field} must be an ISO date (YYYY-MM-DD): {exc}"
+        ) from exc

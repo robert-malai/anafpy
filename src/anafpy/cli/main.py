@@ -10,6 +10,7 @@ client (and the MCP ``spv_*`` tools) then ride non-interactively.
 
 from __future__ import annotations
 
+import datetime as dt
 import secrets
 import ssl
 import sys
@@ -50,6 +51,7 @@ from ..spv.certs import DEFAULT_IDENTITY_PATH
 
 if TYPE_CHECKING:
     from ..declaratii import DukFinding, DukInstallReport, DukIntegrator
+    from ..etransport import UitCard
 
 DEFAULT_STORE = "~/.anafpy/tokens.json"
 
@@ -87,6 +89,10 @@ declaratii_app = App(
     name="declaratii",
     help="tax-declaration validation, rendering, signing, and filing status",
 )
+etransport_app = App(
+    name="etransport",
+    help="e-Transport presentation artifacts (UIT card, detail document)",
+)
 duk_app = App(
     name="duk",
     help="DUKIntegrator provisioning — managed dist from ANAF's update feed",
@@ -94,6 +100,7 @@ duk_app = App(
 app.command(auth_app)
 app.command(spv_app)
 app.command(declaratii_app)
+app.command(etransport_app)
 app.command(duk_app)
 
 # Shared option shapes, mirrored across commands the way argparse's helper
@@ -811,6 +818,141 @@ async def duk_update(*, duk_dir: _DukDirOption = None) -> int:
     name that says what it is for.
     """
     return await duk_install(duk_dir=duk_dir)
+
+
+# --- etransport -------------------------------------------------------------------
+
+
+def _uit_card(
+    xml: Path,
+    uit: str,
+    expiry: str | None,
+    declarant: str | None,
+    declarant_code: str | None,
+    filed_on: str | None,
+    note: tuple[str, ...],
+) -> UitCard:
+    """Assemble the card from a declaration XML plus what ANAF returned for it."""
+    from ..etransport import UitCard, read_flat_transport
+    from ..etransport.models import FlatTransport, parse_etransport_document
+
+    document = parse_etransport_document(_read_bytes(xml.expanduser(), "declaration"))
+    if document is None:
+        raise AnafConfigError(f"{str(xml)!r} is not a parseable e-Transport document")
+    submission = read_flat_transport(document)
+    if not isinstance(submission, FlatTransport):
+        raise AnafConfigError(
+            "the document is a deletion/confirmation/vehicle-change notification, "
+            "not a declaration — only a declaration carries what a card prints"
+        )
+    return UitCard(
+        uit=uit,
+        transport=submission,
+        uit_expiry=_date_option(expiry, "--expiry"),
+        declarant_name=declarant,
+        declarant_code=declarant_code,
+        filed_on=_date_option(filed_on, "--filed-on"),
+        notes=list(note),
+    )
+
+
+def _date_option(value: str | None, flag: str) -> dt.date | None:
+    if value is None:
+        return None
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError as exc:
+        raise AnafConfigError(
+            f"{flag} must be an ISO date (YYYY-MM-DD): {exc}"
+        ) from exc
+
+
+# Options shared by `etransport card` and `etransport details`.
+_UitOutputOption = Annotated[
+    Path,
+    Parameter(
+        name=["--output", "-o"],
+        help="output PDF path (an existing file is overwritten, with a notice)",
+    ),
+]
+_UitExpiryOption = Annotated[
+    str | None,
+    Parameter(help="UIT expiry ANAF reports (data_exp_uit), YYYY-MM-DD"),
+]
+_UitDeclarantOption = Annotated[str | None, Parameter(help="declarant name")]
+_UitDeclarantCodeOption = Annotated[
+    str | None, Parameter(help="declarant fiscal code, printed verbatim")
+]
+_UitFiledOnOption = Annotated[str | None, Parameter(help="filing date, YYYY-MM-DD")]
+
+
+@etransport_app.command(name="card")
+def etransport_card(
+    xml: Path,
+    uit: str,
+    *,
+    output: _UitOutputOption,
+    expiry: _UitExpiryOption = None,
+    declarant: _UitDeclarantOption = None,
+    declarant_code: _UitDeclarantCodeOption = None,
+    filed_on: _UitFiledOnOption = None,
+) -> int:
+    """Render the driver card for a filed declaration's UIT.
+
+    One PDF page at a phone's aspect ratio, to send to the driver; the message
+    text to send with it is printed. Informative — generated locally, not
+    issued by ANAF.
+
+    Args:
+        xml: Path to the declaration XML that was filed.
+        uit: The UIT code ANAF issued for it.
+    """
+    from ..etransport import load_cardpdf
+
+    card = _uit_card(xml, uit, expiry, declarant, declarant_code, filed_on, ())
+    pdf = load_cardpdf().render_card(card)
+    out = output.expanduser()
+    _write_bytes(out, pdf, "card PDF")
+    print(f"✓ Rendered card -> {out}")
+    print("  Message text to send with it:")
+    for line in card.summary_text().splitlines():
+        print(f"    {line}")
+    return 0
+
+
+@etransport_app.command(name="details")
+def etransport_details(
+    xml: Path,
+    uit: str,
+    *,
+    output: _UitOutputOption,
+    expiry: _UitExpiryOption = None,
+    declarant: _UitDeclarantOption = None,
+    declarant_code: _UitDeclarantCodeOption = None,
+    filed_on: _UitFiledOnOption = None,
+    note: Annotated[
+        tuple[str, ...],
+        Parameter(help="an observation for the Observații section (repeatable)"),
+    ] = (),
+) -> int:
+    """Render the A4 detail document for a filed declaration's UIT.
+
+    The whole filing — parties, route, documents, goods — for the partner
+    company or your own records. Informative — generated locally, not issued
+    by ANAF.
+
+    Args:
+        xml: Path to the declaration XML that was filed.
+        uit: The UIT code ANAF issued for it.
+    """
+    from ..etransport import load_cardpdf
+
+    card = _uit_card(xml, uit, expiry, declarant, declarant_code, filed_on, note)
+    pdf = load_cardpdf().render_details(card)
+    out = output.expanduser()
+    _write_bytes(out, pdf, "detail document PDF")
+    print(f"✓ Rendered detail document -> {out}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

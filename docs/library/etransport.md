@@ -97,3 +97,51 @@ gross ≥ net weight, `ALTELE` requiring a note, and so on. This is data hygiene
 not validation: e-Transport has no standalone validator, ANAF validates on
 upload, and the operation-type *conditional* rules stay ANAF's (they appear only
 as field descriptions). There is deliberately no local rule engine.
+
+## Presenting the UIT
+
+A filing yields a UIT, and the code then has to travel — to the driver, who must
+carry it, and often to the partner company. ANAF issues no document for that, so
+`anafpy[cards]` renders two PDFs from a filing you already have:
+
+```python
+import datetime as dt
+from anafpy.etransport import UitCard, load_cardpdf
+
+card = UitCard.from_upload(
+    declaration, result,                      # the flat model + the UploadResult
+    declarant_name="SC EXEMPLU AGRO SRL",
+    declarant_code="RO12345678",              # printed verbatim, prefix and all
+    filed_on=dt.date.today(),
+)
+render = load_cardpdf()
+Path("card.pdf").write_bytes(render.render_card(card))
+Path("details.pdf").write_bytes(render.render_details(card))
+print(card.summary_text())                    # the message to send alongside
+```
+
+The **card** is one page at a phone's own aspect ratio (90×195mm), so the driver
+opens it full-screen and the phone *is* the document: the code set large, a QR
+carrying the bare UIT, and the plates and dates a roadside check asks for. The
+**detail document** is A4 and carries the whole filing, goods table included,
+for the partner company. Both keep every value as selectable text — that is why
+they are PDFs rather than images — and `summary_text()` is the paste-into-a-chat
+fallback for phones whose PDF viewer will not select text.
+
+`uit_expiry` is not computed: ANAF owns that clock and reports it as
+`data_exp_uit` on the `info` endpoint. Pass it and the card prints the validity
+and marks a lapsed UIT `EXPIRAT`; omit it and the card shows the transport date
+alone rather than inventing a window.
+
+Both documents are **informative** — generated locally, not issued by ANAF, and
+they say so on their face. The QR encodes the raw 16-character UIT and nothing
+else: there is no official ANAF QR format, so it is a scan-to-copy convenience
+matching what Romanian invoicing software already prints.
+
+Each shape is its own CLI command and MCP tool (`etransport_uit_card` /
+`etransport_uit_details`), so a workflow can render either, or both:
+
+```bash
+anafpy etransport card declaration.xml <UIT> -o card.pdf --expiry 2026-08-15
+anafpy etransport details declaration.xml <UIT> -o details.pdf --note "..."
+```

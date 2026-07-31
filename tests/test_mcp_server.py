@@ -830,10 +830,99 @@ async def test_scalar_prepare_tools_all_take_declarant_ref(tmp_path: Path) -> No
         assert 'refDeclarant="REF-42"' in prepared["xml"], name
 
 
+async def test_etransport_uit_card_writes_a_pdf_and_offers_the_message_text(
+    tmp_path: Path,
+) -> None:
+    """Read-first: the card is rendered from a declaration the caller already
+    has, so there is nothing to gate — but the PDF goes to disk, never into the
+    context, and the tool hands back the text to send with it."""
+    server = create_server(_config(tmp_path))
+    out = tmp_path / "card.pdf"
+    result = await _call(
+        server,
+        "etransport_uit_card",
+        document=_transport_doc(),
+        uit=_UIT,
+        save_as=str(out),
+        uit_expiry="2026-08-15",
+        declarant_name="SC EXEMPLU AGRO SRL",
+    )
+    assert result["ok"] is True
+    assert result["saved_as"] == str(out)
+    assert out.read_bytes().startswith(b"%PDF")
+    assert result["summary_text"].splitlines()[0] == _UIT
+    assert "base64" not in str(result)
+
+
+async def test_etransport_uit_details_writes_the_a4_document(tmp_path: Path) -> None:
+    """The partner copy is its own tool: same disk-only contract, but no
+    summary_text — the detail document travels as a file, not a message."""
+    server = create_server(_config(tmp_path))
+    out = tmp_path / "details.pdf"
+    result = await _call(
+        server,
+        "etransport_uit_details",
+        document=_transport_doc(),
+        uit=_UIT,
+        save_as=str(out),
+        notes=["Greutatea brută este comunicată de expeditor cu mențiunea „cca.”."],
+    )
+    assert result["ok"] is True
+    assert result["saved_as"] == str(out)
+    assert out.read_bytes().startswith(b"%PDF")
+    assert "summary_text" not in result
+
+
+async def test_etransport_uit_card_refuses_to_clobber(tmp_path: Path) -> None:
+    server = create_server(_config(tmp_path))
+    out = tmp_path / "card.pdf"
+    out.write_bytes(b"an earlier card")
+    result = await _call(
+        server,
+        "etransport_uit_card",
+        document=_transport_doc(),
+        uit=_UIT,
+        save_as=str(out),
+    )
+    assert result["ok"] is False
+    assert "refusing to overwrite" in result["message"]
+    assert out.read_bytes() == b"an earlier card"
+
+    replaced = await _call(
+        server,
+        "etransport_uit_card",
+        document=_transport_doc(),
+        uit=_UIT,
+        save_as=str(out),
+        overwrite=True,
+    )
+    assert replaced["ok"] is True
+    assert out.read_bytes().startswith(b"%PDF")
+
+
+async def test_etransport_uit_card_reports_a_bad_expiry_as_a_result(
+    tmp_path: Path,
+) -> None:
+    server = create_server(_config(tmp_path))
+    result = await _call(
+        server,
+        "etransport_uit_card",
+        document=_transport_doc(),
+        uit=_UIT,
+        save_as=str(tmp_path / "card.pdf"),
+        uit_expiry="15.08.2026",
+    )
+    assert result["ok"] is False
+    assert "ISO date" in result["message"]
+    assert not (tmp_path / "card.pdf").exists()
+
+
 async def test_etransport_nomenclature_lists_names_and_codes(tmp_path: Path) -> None:
     server = create_server(_config(tmp_path))
     counties = await _call(server, "etransport_nomenclature", kind="counties")
-    assert {"name": "CLUJ", "code": 12} in counties["entries"]
+    # Counties gained labels when the card renderer needed them for its route
+    # lines: the enum's own member names are ASCII (BISTRITA_NASAUD).
+    assert {"name": "CLUJ", "code": 12, "label": "Cluj"} in counties["entries"]
     ops = await _call(server, "etransport_nomenclature", kind="operation_types")
     ttn = next(e for e in ops["entries"] if e["name"] == "TTN")
     assert ttn["code"] == 30

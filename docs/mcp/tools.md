@@ -58,6 +58,8 @@ Read tools, freely callable:
 | `etransport_list` | Recent notifications for a CIF |
 | `etransport_get_status` | An upload's processing status |
 | `etransport_lookup` | Active declarations / UIT lookups |
+| `etransport_uit_card` | Render a filed declaration's UIT as the driver card — a phone-shaped PDF written to a caller-given path — plus the plain-text message to send with it |
+| `etransport_uit_details` | Render the whole filing as the A4 detail document (goods table, caller's observations), written to a caller-given path |
 | `etransport_nomenclature` | The XSD code lists (counties, border points, customs offices, operation types, …) plus the UN/ECE unit codes — names are accepted anywhere a coded field is |
 
 Filing is split **prepare → confirm → submit**, and nothing reaches ANAF without

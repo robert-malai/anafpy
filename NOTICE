@@ -15,3 +15,11 @@ the Ministry of Finance.
 Reference material under docs/anaf-reference/_sources/ is reproduced from official
 ANAF / Ministry of Finance publications and remains the property of its respective
 authors; it is included for reference only.
+
+---
+
+This package embeds subsets of the Noto Sans and Noto Sans Mono fonts
+(src/anafpy/etransport/_fonts/), used to render the e-Transport UIT card and
+detail document. The Noto fonts are Copyright The Noto Project Authors and are
+licensed under the SIL Open Font License, Version 1.1, a copy of which is
+distributed alongside them as _fonts/OFL.txt.
