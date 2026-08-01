@@ -18,8 +18,8 @@ import httpx
 import jsonschema
 import pytest
 import respx
-from mcp.server.fastmcp.exceptions import ToolError
-from mcp.types import GetPromptResult, TextContent
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import GetPromptResult, InputRequiredResult, TextContent
 
 from _authoring import make_invoice
 from _wire import build_flat_transport, credit_note_xml, invoice_xml, transport_xml
@@ -66,8 +66,8 @@ def _config(
 
 
 async def _call(server: Any, name: str, **arguments: Any) -> dict[str, Any]:
-    _content, structured = await server.call_tool(name, arguments)
-    return cast("dict[str, Any]", structured)
+    result = await server.call_tool(name, arguments)
+    return cast("dict[str, Any]", result.structured_content)
 
 
 # --- auth ---------------------------------------------------------------------------
@@ -305,8 +305,10 @@ async def test_efactura_message_pdf_resource(tmp_path: Path) -> None:
     )
     server = create_server(_config(tmp_path))
     templates = await server.list_resource_templates()
-    assert "anafmsg://{message_id}/pdf" in {t.uriTemplate for t in templates}
-    contents = list(await server.read_resource("anafmsg://55/pdf"))
+    assert "anafmsg://{message_id}/pdf" in {t.uri_template for t in templates}
+    result = await server.read_resource("anafmsg://55/pdf")
+    assert not isinstance(result, InputRequiredResult)
+    contents = list(result)
     assert contents[0].content == b"%PDF-1.7 fake"
     assert contents[0].mime_type == "application/pdf"
 
@@ -766,8 +768,8 @@ async def test_prepare_declaration_output_matches_declared_schema(
         for t in await server.list_tools()
         if t.name == "etransport_prepare_declaration"
     )
-    assert tool.outputSchema is not None
-    jsonschema.validate(prepared, tool.outputSchema)
+    assert tool.output_schema is not None
+    jsonschema.validate(prepared, tool.output_schema)
 
 
 async def test_prepare_deletion_composes_stergere(tmp_path: Path) -> None:
@@ -1086,7 +1088,9 @@ async def test_forms_guide_resolves_through_resource_layer(
     tmp_path: Path, _docs: Path
 ) -> None:
     server = create_server(_config(tmp_path))
-    (content,) = await server.read_resource("anafref://declaratii/forms/d300")
+    result = await server.read_resource("anafref://declaratii/forms/d300")
+    assert not isinstance(result, InputRequiredResult)
+    (content,) = result
     assert content.content == "# D300 guide"
     assert content.mime_type == "text/markdown"
 
@@ -1180,7 +1184,8 @@ def _skills(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     yield skills
 
 
-def _prompt_text(result: GetPromptResult) -> str:
+def _prompt_text(result: GetPromptResult | InputRequiredResult) -> str:
+    assert isinstance(result, GetPromptResult)
     (message,) = result.messages
     assert isinstance(message.content, TextContent)
     return message.content.text

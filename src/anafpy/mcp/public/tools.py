@@ -9,7 +9,7 @@ from __future__ import annotations
 from inspect import cleandoc
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from ...public.models import RegistryLookup
 from ..artifacts import READ_ONLY
@@ -18,7 +18,7 @@ from ..context import AppContext
 __all__ = ["register"]
 
 
-def register(mcp: FastMCP, ctx: AppContext) -> None:
+def register(mcp: MCPServer, ctx: AppContext) -> None:
     @mcp.tool(
         title="ANAF Info: Taxpayer lookup",
         annotations=READ_ONLY,

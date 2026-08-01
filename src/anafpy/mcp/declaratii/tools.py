@@ -29,7 +29,7 @@ back as ``signed=false`` + guidance, never as exceptions). PDFs are written to
 caller-given paths through the shared ``write_artifact`` collision guard, never
 returned as base64.
 
-Every tool description is an inline ``cleandoc`` literal: FastMCP ships the
+Every tool description is an inline ``cleandoc`` literal: MCPServer ships the
 description verbatim (it dedents nothing of its own), and paragraphs and
 bullets read better than one packed line — the ANAF state wordings, the
 per-form ``nr_evid`` inputs, and the three filing verdicts are tables.
@@ -42,7 +42,7 @@ from datetime import date
 from inspect import cleandoc
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from ...declaratii import (
     obligation_evidence_number,
@@ -198,7 +198,7 @@ def _staleness(
     }
 
 
-def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
+def register(mcp: MCPServer, ctx: AppContext, config: ServerConfig) -> None:
     file_it = _FILE_IT_PORTAL if config.declaratii_upload else _FILE_IT_MANUAL
 
     @mcp.tool(
@@ -611,7 +611,9 @@ def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
         _register_upload_tools(mcp, ctx, config)
 
 
-def _register_upload_tools(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
+def _register_upload_tools(
+    mcp: MCPServer, ctx: AppContext, config: ServerConfig
+) -> None:
     """The portal-filing tools — served unless ``ANAFPY_DECLARATII_UPLOAD`` opts out."""
 
     @mcp.tool(

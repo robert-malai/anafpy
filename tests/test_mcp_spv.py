@@ -8,7 +8,8 @@ from typing import Any, ClassVar, cast
 
 import pytest
 import respx
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import InputRequiredResult
 
 from anafpy.mcp import create_server
 from anafpy.mcp.config import ServerConfig
@@ -76,8 +77,8 @@ def _config(tmp_path: Path, *, with_session: bool = True) -> ServerConfig:
 
 
 async def _call(server: Any, name: str, **arguments: Any) -> dict[str, Any]:
-    _content, structured = await server.call_tool(name, arguments)
-    return cast("dict[str, Any]", structured)
+    result = await server.call_tool(name, arguments)
+    return cast("dict[str, Any]", result.structured_content)
 
 
 # --- spv_status -------------------------------------------------------------------
@@ -171,8 +172,10 @@ async def test_spv_message_pdf_resource(tmp_path: Path) -> None:
     respx.get(f"{BASE}/descarcare").respond(content=b"%PDF-1.7 doc")
     server = create_server(_config(tmp_path))
     templates = await server.list_resource_templates()
-    assert "spvmsg://{mesaj_id}/pdf" in {t.uriTemplate for t in templates}
-    contents = list(await server.read_resource("spvmsg://100/pdf"))
+    assert "spvmsg://{mesaj_id}/pdf" in {t.uri_template for t in templates}
+    result = await server.read_resource("spvmsg://100/pdf")
+    assert not isinstance(result, InputRequiredResult)
+    contents = list(result)
     assert contents[0].content == b"%PDF-1.7 doc"
     assert contents[0].mime_type == "application/pdf"
 
@@ -214,9 +217,9 @@ async def test_cerere_is_annotated_as_a_mutating_request(tmp_path: Path) -> None
     server = create_server(_config(tmp_path))
     tool = next(t for t in await server.list_tools() if t.name == "spv_cerere")
     assert tool.annotations is not None
-    assert tool.annotations.readOnlyHint is False
-    assert tool.annotations.destructiveHint is False
-    assert tool.annotations.idempotentHint is False
+    assert tool.annotations.read_only_hint is False
+    assert tool.annotations.destructive_hint is False
+    assert tool.annotations.idempotent_hint is False
 
 
 async def test_cerere_validates_parameters_before_the_wire(tmp_path: Path) -> None:

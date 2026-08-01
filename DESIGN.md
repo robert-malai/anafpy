@@ -740,6 +740,18 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   interactive login stays the host-side CLI (an in-session `begin_login` tool is
   deferred by design). A read-only `auth_status` reports validity; authenticated
   tools fail with a clear "run `anafpy auth login`" remediation.
+- **MCP SDK v2** (2026-08-01). The SDK's 2.0.0 (2026-07-28) removed
+  `mcp.server.fastmcp` — `FastMCP` became `mcp.server.MCPServer` — so the
+  open-ended `mcp>=1.10` pin left every fresh `anafpy[mcp]` install crashing at
+  import while our lock stayed on 1.x. Migrated rather than capped: v1 is
+  maintenance-mode (security fixes only), the decorator surface is unchanged,
+  and the port was mechanical (import rename, snake_case `ToolAnnotations`
+  kwargs — the wire stays camelCase via aliases — and the tests' `call_tool`
+  tuple becoming `CallToolResult.structured_content` plus
+  `| InputRequiredResult` narrowing). Pin `mcp>=2,<3`; `pydantic-settings`
+  stays a direct dependency because v2 dropped it from the SDK's own set while
+  `ServerConfig` still builds on it. v2 serves 2025-era clients from the same
+  stdio server, so nothing changes for end users.
 
 ## 9. Tooling
 

@@ -13,7 +13,7 @@ from typing import Any, ClassVar, cast
 import httpx
 import pytest
 import respx
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 
 from anafpy.declaratii.duk import DukIntegrator
 from anafpy.declaratii.install import MANIFEST_NAME
@@ -51,8 +51,8 @@ def _config(
 
 
 async def _call(server: Any, name: str, **arguments: Any) -> dict[str, Any]:
-    _content, structured = await server.call_tool(name, arguments)
-    return cast("dict[str, Any]", structured)
+    result = await server.call_tool(name, arguments)
+    return cast("dict[str, Any]", result.structured_content)
 
 
 def _fake_run(err: str = "ok", *, write_pdf: bool = True) -> Any:
@@ -442,8 +442,8 @@ async def test_nr_evid_annotations_are_local(tmp_path: Path) -> None:
     server = create_server(_config(tmp_path))
     tool = next(t for t in await server.list_tools() if t.name == "declaratie_nr_evid")
     assert tool.annotations is not None
-    assert tool.annotations.readOnlyHint is True
-    assert tool.annotations.openWorldHint is False
+    assert tool.annotations.read_only_hint is True
+    assert tool.annotations.open_world_hint is False
 
 
 # --- status / recipisa (StareD112 — needs no DUK) ----------------------------------

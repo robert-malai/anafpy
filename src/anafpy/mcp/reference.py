@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from .config import ServerConfig, bundled_dir
 
@@ -18,7 +18,7 @@ _REPO_DOCS = Path(__file__).resolve().parents[3] / "docs" / "anaf-reference"
 _PACKAGED_DOCS = Path(__file__).resolve().parent / "_reference"
 
 
-def register(mcp: FastMCP, cfg: ServerConfig) -> None:
+def register(mcp: MCPServer, cfg: ServerConfig) -> None:
     """Expose the compiled ANAF reference Markdown as read-only resources."""
     docs = bundled_dir(cfg.docs_dir, _REPO_DOCS, _PACKAGED_DOCS)
     if docs is None:

@@ -1,4 +1,4 @@
-"""Composition root: build the configured :class:`FastMCP` server.
+"""Composition root: build the configured :class:`MCPServer` server.
 
 Owns the model-facing server instructions, the lifespan (one :class:`AppContext`,
 closed on shutdown) and the ``auth_status`` tool, and delegates everything else to
@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from inspect import cleandoc
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from . import declaratii, efactura, etransport, prompts, public, reference, spv
 from .artifacts import READ_ONLY
@@ -129,19 +129,19 @@ ANAF's 1 request/second rule, so large batches take time.
 """
 
 
-def create_server(config: ServerConfig | None = None) -> FastMCP:
-    """Build the configured :class:`FastMCP` server (stdio transport)."""
+def create_server(config: ServerConfig | None = None) -> MCPServer:
+    """Build the configured :class:`MCPServer` server (stdio transport)."""
     cfg = config or ServerConfig()
     ctx = AppContext(cfg)
 
     @asynccontextmanager
-    async def lifespan(_server: FastMCP) -> AsyncIterator[None]:
+    async def lifespan(_server: MCPServer) -> AsyncIterator[None]:
         try:
             yield
         finally:
             await ctx.aclose()
 
-    mcp = FastMCP("anafpy", instructions=_INSTRUCTIONS, lifespan=lifespan)
+    mcp = MCPServer("anafpy", instructions=_INSTRUCTIONS, lifespan=lifespan)
 
     @mcp.tool(
         title="ANAF: Authentication status",

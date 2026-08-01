@@ -324,7 +324,8 @@ tests/                   # respx-mocked suite + opt-in live files (filing
 
 ## MCP server (`anafpy.mcp`)
 
-`create_server(config)` returns a `FastMCP`; `AppContext` owns one
+`create_server(config)` returns an `MCPServer` (MCP SDK v2; the class v1 called
+`FastMCP`); `AppContext` owns one
 `TokenProvider` plus lazily-built clients, closed in the server lifespan. The
 server reads the existing token store and refreshes headlessly — the OAuth
 browser login stays CLI-side. The tool inventory with per-tool descriptions is
@@ -373,7 +374,7 @@ browser login stays CLI-side. The tool inventory with per-tool descriptions is
   `name`/`description` frontmatter fails at server start). Never duplicate a
   playbook.
 - **Tool descriptions are `cleandoc` literals**, written inline in the
-  `@mcp.tool` / `@mcp.resource` decorator — FastMCP ships a description verbatim
+  `@mcp.tool` / `@mcp.resource` decorator — `MCPServer` ships a description verbatim
   (it dedents nothing of its own), so `inspect.cleandoc` is what strips the
   decorator indent and the framing blank lines. Structure the shipped text:
   a paragraph per concern, `-` bullets for every enumeration (the ANAF state

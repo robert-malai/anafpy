@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Annotated
 
 import frontmatter
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 from pydantic import BaseModel, Field
 
 from ..exceptions import AnafConfigError
@@ -73,7 +73,7 @@ def load_skills(skills_dir: Path) -> list[SkillDocument]:
     return [_parse_skill(path) for path in sorted(skills_dir.glob("*/SKILL.md"))]
 
 
-def register(mcp: FastMCP, cfg: ServerConfig) -> None:
+def register(mcp: MCPServer, cfg: ServerConfig) -> None:
     """Expose the workflow skills as user-invoked MCP prompts."""
     if (skills := bundled_dir(cfg.skills_dir, _REPO_SKILLS, _PACKAGED_SKILLS)) is None:
         return

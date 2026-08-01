@@ -43,7 +43,7 @@ from datetime import datetime
 from inspect import cleandoc
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from ..._transport.base import ROMANIA_TZ
 from ...exceptions import AnafAuthError, AnafConfigError, AnafError
@@ -106,7 +106,7 @@ def _save_target(save_as: str | None, dest_dir: str | None, default_name: str) -
     return str(Path(dest_dir) / default_name)
 
 
-def register(mcp: FastMCP, ctx: AppContext, config: ServerConfig) -> None:
+def register(mcp: MCPServer, ctx: AppContext, config: ServerConfig) -> None:
     @mcp.tool(
         title="SPV: List certificates",
         annotations=READ_ONLY,

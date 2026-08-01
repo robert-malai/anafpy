@@ -20,21 +20,29 @@ __all__ = [
     "write_artifact",
 ]
 
-READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
+READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=True)
 # Pure local computation — no network, no subprocess, no filesystem: a closed
 # world, unlike the ANAF-backed reads above (e.g. declaratie_nr_evid).
-LOCAL_READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
-MUTATING = ToolAnnotations(readOnlyHint=False, idempotentHint=False, openWorldHint=True)
+LOCAL_READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
+MUTATING = ToolAnnotations(
+    read_only_hint=False, idempotent_hint=False, open_world_hint=True
+)
 # Files an additive request with ANAF: nothing is overwritten or deleted, but a
 # repeat files again — honest hints for a mutating, non-idempotent, non-destructive
 # operation (a host must not treat it as an auto-invokable read).
 REQUESTING = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=False,
+    open_world_hint=True,
 )
 # Reads from ANAF but may write local files at caller-given paths — honest hints
-# (not readOnlyHint), yet freely callable: the two-step gate is for ANAF filings only.
+# (not read_only_hint), yet freely callable: the two-step gate is for ANAF filings only.
 ARTIFACT_SAVING = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=True,
 )
 # Downloads official ANAF artifacts and converges local install state (the DUK
 # dist): mutating yet idempotent and non-destructive — the ARTIFACT_SAVING hint

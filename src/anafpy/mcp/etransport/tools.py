@@ -15,7 +15,7 @@ from collections.abc import Callable
 from inspect import cleandoc
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 from pydantic import ValidationError
 
 from ...etransport.card import UitCard, load_cardpdf
@@ -49,7 +49,7 @@ __all__ = ["register"]
 _TRANSPORT_KIND = "etransport.declaration"
 
 
-def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
+def register(mcp: MCPServer, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Transport: List notifications",
         annotations=READ_ONLY,

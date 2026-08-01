@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import datetime
 from inspect import cleandoc
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from ...efactura.authoring import InvoiceDocument, render_invoice
 from ...efactura.authoring import validate as validate_invoice_rules
@@ -39,7 +39,7 @@ __all__ = ["register"]
 _INVOICE_KIND = "efactura.invoice"
 
 
-def register(mcp: FastMCP, ctx: AppContext, cfg: ServerConfig) -> None:
+def register(mcp: MCPServer, ctx: AppContext, cfg: ServerConfig) -> None:
     @mcp.tool(
         title="e-Factura: List messages",
         annotations=READ_ONLY,
