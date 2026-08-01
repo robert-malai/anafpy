@@ -28,7 +28,7 @@ The session is a bearer credential, persisted like the OAuth tokens: an
 owner-only (`0600`) JSON file, `~/.anafpy/spv-session.json` by default. The
 layering mirrors the OAuth clients exactly — `SpvClient` takes an
 `SpvSessionProvider` the way `EFacturaClient` takes a `TokenProvider`, and an
-`SpvAuth` (`httpx.Auth`) flow attaches the cookies to every request. When the
+`SpvAuth` (`httpx2.Auth`) flow attaches the cookies to every request. When the
 session expires, the next call raises `AnafAuthError` telling you to log in
 again — the client never re-runs the interactive login on its own.
 

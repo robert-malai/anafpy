@@ -169,13 +169,13 @@ full Claude Desktop + ANAF setup — also available
 > [`docs/anaf-reference/`](docs/anaf-reference/) for a compiled local reference of ANAF's
 > APIs.
 
-Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**.
+Requires **Python 3.12+**. Built on **httpx2** and **Pydantic v2**.
 
 ## What works today
 
 - **OAuth2 auth layer** — Authorization-Code bootstrap (browser + qualified
   certificate), local token store, and headless refresh, exposed via the `anafpy` CLI
-  and an `httpx.Auth` integration for the clients.
+  and an `httpx2.Auth` integration for the clients.
 - **`EFacturaClient`** (async) — `upload` (ready-made XML) and `upload_invoice`
   (an authored `InvoiceDocument`), `get_status`, `download`,
   `validate_signature` (checks the MF signature over a downloaded invoice), the

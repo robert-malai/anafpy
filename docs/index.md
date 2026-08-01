@@ -18,7 +18,7 @@ for easy display. **e-Transport** is fully translated too: you author
 declarations, UIT deletions, confirmations, and vehicle changes from structured
 fields, no XML handling needed.
 
-Requires **Python 3.12+**. Built on **httpx** and **Pydantic v2**. Licensed
+Requires **Python 3.12+**. Built on **httpx2** and **Pydantic v2**. Licensed
 [Apache-2.0](https://github.com/robert-malai/anafpy/blob/main/LICENSE) —
 independent / unofficial, not affiliated with ANAF, provided **as-is**.
 
