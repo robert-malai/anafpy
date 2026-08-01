@@ -1,5 +1,6 @@
 """Shared test setup: load a repo-root ``.env`` (if present) for the live suites,
-and provide an in-memory keyring backend so store tests never touch the OS vault.
+provide an in-memory keyring backend so store tests never touch the OS vault,
+and teach respx to intercept httpx2 traffic.
 
 The respx suite is credential-free; only the ``live``-marked tests read these
 variables. Values already present in the environment win over the file.
@@ -10,15 +11,41 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import ClassVar
 
 import keyring
 import keyring.backend
 import pytest
 from keyring.errors import PasswordDeleteError
+from respx.mocks import HTTPCoreMocker
 
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenStore
 
 _ENV_FILE = Path(__file__).parent.parent / ".env"
+
+
+class HTTPCore2Mocker(HTTPCoreMocker):
+    """respx mocker patching httpcore2 — the transport under ``httpx2``.
+
+    respx only knows classic httpx/httpcore; anafpy's clients run on httpx2.
+    Interception at the httpcore2 layer keeps the whole respx router API
+    working unchanged (requests and responses cross that boundary as raw
+    byte-level objects, so respx's classic-httpx currency never meets an
+    httpx2 type). Vendored from ``lundberg/pytest-httpx2`` 1.0.0 — the respx
+    author's own bridge — rather than depended on, because it is these six
+    target strings plus a fixture anafpy does not use. respx registers the
+    class by ``name`` at definition time.
+    """
+
+    name = "httpcore2"
+    targets: ClassVar[list[str]] = [
+        "httpcore2._sync.connection.HTTPConnection",
+        "httpcore2._sync.connection_pool.ConnectionPool",
+        "httpcore2._sync.http_proxy.HTTPProxy",
+        "httpcore2._async.connection.AsyncHTTPConnection",
+        "httpcore2._async.connection_pool.AsyncConnectionPool",
+        "httpcore2._async.http_proxy.AsyncHTTPProxy",
+    ]
 
 
 class FakeKeyring(keyring.backend.KeyringBackend):
