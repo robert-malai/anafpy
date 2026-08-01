@@ -54,7 +54,7 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-import httpx
+import httpx2
 
 from .._transport.subprocess import run_subprocess
 from ..exceptions import AnafConfigError
@@ -379,7 +379,7 @@ class DukIntegrator:
 
 
 async def fetch_feed_versions(
-    http: httpx.AsyncClient | None = None,
+    http: httpx2.AsyncClient | None = None,
 ) -> dict[str, str]:
     """Fetch current per-form validator versions without requiring a DUK install.
 

@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime
 
 import httpx
+import httpx2
 import pytest
 import respx
 
@@ -89,7 +90,7 @@ async def test_injected_client_without_base_url_raises_config_error() -> None:
     # An injected client is never mutated: an empty base_url is a
     # misconfiguration, named loudly at construction.
     provider = SpvSessionProvider(store=MemorySessionStore(_session()))
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         with pytest.raises(AnafConfigError, match=f"{BASE}/"):
             SpvClient(provider, http=http)
 
@@ -97,7 +98,7 @@ async def test_injected_client_without_base_url_raises_config_error() -> None:
 @respx.mock
 async def test_injected_client_with_base_url_is_used_and_not_closed() -> None:
     respx.get(f"{BASE}/listaMesaje").respond(json=NO_MESSAGES_BODY)
-    http = httpx.AsyncClient(base_url=f"{BASE}/")
+    http = httpx2.AsyncClient(base_url=f"{BASE}/")
     provider = SpvSessionProvider(store=MemorySessionStore(_session()))
     client = SpvClient(provider, http=http)
     listing = await client.list_messages(5)
@@ -355,7 +356,7 @@ async def test_wait_for_report_timeout_is_actionable() -> None:
 async def test_transient_network_failures_are_retried_on_reads() -> None:
     route = respx.get(f"{BASE}/listaMesaje")
     route.side_effect = [
-        httpx.ConnectError("boom"),
+        httpx2.ConnectError("boom"),
         httpx.Response(200, json=NO_MESSAGES_BODY),
     ]
     async with _client() as client:

@@ -20,7 +20,7 @@ import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
-import httpx
+import httpx2
 from cyclopts import App, Parameter
 
 from .. import __version__
@@ -225,7 +225,7 @@ async def _do_login(
         else:
             code = captured
 
-    async with httpx.AsyncClient(timeout=30.0) as http:
+    async with httpx2.AsyncClient(timeout=30.0) as http:
         tokens = await exchange_code(
             http,
             client_id=client_id,

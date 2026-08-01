@@ -12,6 +12,7 @@ from decimal import Decimal
 from email.utils import format_datetime
 
 import httpx
+import httpx2
 import pytest
 import respx
 from xsdata.models.datatype import XmlDate
@@ -225,7 +226,7 @@ async def test_get_status_ok_exposes_download_id() -> None:
 async def test_injected_client_without_base_url_raises_config_error() -> None:
     # An injected client is never mutated: an empty base_url is a
     # misconfiguration, named loudly at construction.
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         with pytest.raises(AnafConfigError, match=f"{BASE}/"):
             EFacturaClient(_provider(), environment=Environment.TEST, http=http)
 
@@ -235,7 +236,7 @@ async def test_injected_client_with_base_url_is_used_and_not_closed() -> None:
     respx.get(f"{BASE}/stareMesaj").mock(
         return_value=httpx.Response(200, text='<header stare="ok"/>')
     )
-    http = httpx.AsyncClient(base_url=f"{BASE}/")
+    http = httpx2.AsyncClient(base_url=f"{BASE}/")
     client = EFacturaClient(_provider(), environment=Environment.TEST, http=http)
     status = await client.get_status("3828")
     await client.aclose()

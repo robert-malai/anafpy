@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 import httpx
+import httpx2
 import pytest
 import respx
 
@@ -548,7 +549,7 @@ async def test_feed_versions_network_failure_raises_transport_error(
     duk_dir: Path,
 ) -> None:
     respx.get("https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml").mock(
-        side_effect=httpx.ConnectError("boom")
+        side_effect=httpx2.ConnectError("boom")
     )
     duk = DukIntegrator(duk_dir, java="java")
     with pytest.raises(AnafTransportError) as excinfo:

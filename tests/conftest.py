@@ -17,6 +17,7 @@ import keyring
 import keyring.backend
 import pytest
 from keyring.errors import PasswordDeleteError
+from respx import mocks as respx_mocks
 from respx.mocks import HTTPCoreMocker
 
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenStore
@@ -46,6 +47,12 @@ class HTTPCore2Mocker(HTTPCoreMocker):
         "httpcore2._async.connection_pool.AsyncConnectionPool",
         "httpcore2._async.http_proxy.AsyncHTTPProxy",
     ]
+
+
+# Route every bare ``@respx.mock`` in the suite through the httpcore2 mocker.
+# respx resolves this module attribute lazily, at mock-start (``Router.using``
+# re-imports it per call), so one assignment here covers the whole suite.
+respx_mocks.DEFAULT_MOCKER = HTTPCore2Mocker.name
 
 
 class FakeKeyring(keyring.backend.KeyringBackend):

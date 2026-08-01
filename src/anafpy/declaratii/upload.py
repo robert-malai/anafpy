@@ -12,7 +12,7 @@ persisted.
 
 :class:`PortalCurlBootstrapper` drives the OS curl exactly like the SPV
 bootstrap (platform key store, 2FA fires on the renegotiation step);
-:class:`DeclarationUploadClient` then rides the cookies with plain httpx for
+:class:`DeclarationUploadClient` then rides the cookies with plain httpx2 for
 the one multipart POST.
 
 The success page was captured live on 2026-07-17 (a D406T test filing; raw
@@ -33,7 +33,7 @@ import contextlib
 import re
 from typing import Protocol, runtime_checkable
 
-import httpx
+import httpx2
 from parsel import Selector
 
 from .._transport.base import raise_for_status
@@ -175,7 +175,7 @@ class DeclarationUploadClient(HttpClientBase):
         bootstrapper: the certificate login step (a
             :class:`PortalCurlBootstrapper` in production; fakes in tests).
             Optional when an *http* client with a live cookie set is injected.
-        http: injected ``httpx.AsyncClient`` (tests). Must carry a non-empty
+        http: injected ``httpx2.AsyncClient`` (tests). Must carry a non-empty
             ``base_url`` (an empty one raises
             :class:`~anafpy.exceptions.AnafConfigError`; injected clients are
             never mutated).
@@ -187,7 +187,7 @@ class DeclarationUploadClient(HttpClientBase):
         self,
         *,
         bootstrapper: PortalSessionBootstrapper | None = None,
-        http: httpx.AsyncClient | None = None,
+        http: httpx2.AsyncClient | None = None,
         timeout: float = 120.0,
     ) -> None:
         self._bootstrapper = bootstrapper
@@ -223,7 +223,7 @@ class DeclarationUploadClient(HttpClientBase):
         and logs it in with a per-attempt bootstrapper); :meth:`login` is the
         packaged bootstrap-then-install path.
         """
-        # Scope the bearer-cookie set to the portal host: httpx's default
+        # Scope the bearer-cookie set to the portal host: httpx2's default
         # empty domain would attach MRHSession to a request to ANY host, so
         # an off-portal redirect must never carry the session with it.
         host = self._http.base_url.host
@@ -276,7 +276,7 @@ class DeclarationUploadClient(HttpClientBase):
         """
         if not self._http.cookies:
             raise AnafConfigError("no portal session — call login() first")
-        # Redirects are NOT followed on this POST: httpx would re-issue a 3xx
+        # Redirects are NOT followed on this POST: httpx2 would re-issue a 3xx
         # as a body-less GET (silently dropping the multipart file) and the
         # resulting error page would misread as a business rejection. A
         # redirect here is always an APM session event — the login wall or a
@@ -301,6 +301,6 @@ class DeclarationUploadClient(HttpClientBase):
 
     async def logout(self) -> None:
         """Tear the APM session down (``GET /exit``); best-effort."""
-        with contextlib.suppress(httpx.HTTPError):
+        with contextlib.suppress(httpx2.HTTPError):
             await self._http.get("exit")
         self._http.cookies.clear()

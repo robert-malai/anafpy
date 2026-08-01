@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 import httpx
+import httpx2
 import keyring
 import pytest
 import respx
@@ -119,7 +120,7 @@ async def test_exchange_code_uses_basic_auth_and_jwt_param() -> None:
     route = respx.post(TOKEN_URL).mock(
         return_value=httpx.Response(200, json=_token_response(time.time() + 90 * 86400))
     )
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         tokens = await exchange_code(
             http,
             client_id="CID",
@@ -142,7 +143,7 @@ async def test_refresh_rotates_refresh_token() -> None:
             200, json=_token_response(time.time() + 90 * 86400, refresh="rotated")
         )
     )
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         tokens = await refresh_tokens(
             http, client_id="CID", client_secret="SECRET", refresh_token="old"
         )
@@ -156,7 +157,7 @@ async def test_token_error_raises_auth_error() -> None:
             400, json={"error": "invalid_client", "error_description": "bad"}
         )
     )
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         with pytest.raises(AnafAuthError, match="bad"):
             await refresh_tokens(
                 http, client_id="x", client_secret="y", refresh_token="z"
@@ -177,7 +178,7 @@ async def test_provider_refreshes_expired_access_token_and_persists() -> None:
             200, json=_token_response(time.time() + 90 * 86400, refresh="r2")
         )
     )
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         provider = TokenProvider(
             client_id="CID", client_secret="SECRET", store=store, http=http
         )
@@ -432,9 +433,9 @@ def _hit_callback(url: str, *, verify: ssl.SSLContext | bool = True) -> None:
     """GET the callback URL from a thread once the listener is up (with retries)."""
     for _ in range(50):
         try:
-            httpx.get(url, verify=verify)
+            httpx2.get(url, verify=verify)
             return
-        except httpx.TransportError:  # listener not up yet
+        except httpx2.TransportError:  # listener not up yet
             time.sleep(0.05)
 
 
@@ -454,7 +455,7 @@ def test_listener_binds_before_wait() -> None:
     port = _free_port()
     uri = f"http://127.0.0.1:{port}/callback"
     with CallbackListener(uri) as listener:
-        httpx.get(f"{uri}?code=early-ok")  # redirect lands before wait()
+        httpx2.get(f"{uri}?code=early-ok")  # redirect lands before wait()
         assert listener.wait(timeout=10.0) == "early-ok"
 
 
@@ -465,11 +466,11 @@ def test_listener_rejects_forged_state_and_keeps_waiting() -> None:
     port = _free_port()
     uri = f"http://127.0.0.1:{port}/callback"
     with CallbackListener(uri, expected_state="s3cret") as listener:
-        forged = httpx.get(f"{uri}?code=attacker-code")  # no state at all
+        forged = httpx2.get(f"{uri}?code=attacker-code")  # no state at all
         assert forged.status_code == 400
-        forged = httpx.get(f"{uri}?code=attacker-code&state=wrong")
+        forged = httpx2.get(f"{uri}?code=attacker-code&state=wrong")
         assert forged.status_code == 400
-        httpx.get(f"{uri}?code=legit-code&state=s3cret")
+        httpx2.get(f"{uri}?code=legit-code&state=s3cret")
         assert listener.wait(timeout=10.0) == "legit-code"
 
 

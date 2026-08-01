@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import urllib.parse
 
-import httpx
+import httpx2
 
 from ..exceptions import AnafAuthError, AnafTransportError
 from .models import TokenSet
@@ -48,7 +48,7 @@ def build_authorize_url(
 
 
 async def _post_token(
-    http: httpx.AsyncClient,
+    http: httpx2.AsyncClient,
     client_id: str,
     client_secret: str,
     data: dict[str, str],
@@ -58,13 +58,13 @@ async def _post_token(
         resp = await http.post(
             TOKEN_URL,
             data=data,
-            auth=httpx.BasicAuth(client_id, client_secret),
+            auth=httpx2.BasicAuth(client_id, client_secret),
             headers={"Accept": "application/json"},
         )
-    except httpx.HTTPError as exc:  # connection/timeout
+    except httpx2.HTTPError as exc:  # connection/timeout
         raise AnafTransportError(f"token request failed: {exc}") from exc
 
-    if resp.status_code != httpx.codes.OK:
+    if resp.status_code != httpx2.codes.OK:
         # ANAF returns OAuth error JSON, e.g. {"error":"invalid_grant", ...}.
         detail = resp.text
         try:
@@ -80,7 +80,7 @@ async def _post_token(
 
 
 async def exchange_code(
-    http: httpx.AsyncClient,
+    http: httpx2.AsyncClient,
     *,
     client_id: str,
     client_secret: str,
@@ -101,7 +101,7 @@ async def exchange_code(
 
 
 async def refresh_tokens(
-    http: httpx.AsyncClient,
+    http: httpx2.AsyncClient,
     *,
     client_id: str,
     client_secret: str,

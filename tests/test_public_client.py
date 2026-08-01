@@ -12,6 +12,7 @@ import json
 from zoneinfo import ZoneInfo
 
 import httpx
+import httpx2
 import pytest
 import respx
 
@@ -172,9 +173,18 @@ async def test_taxpayer_lookup_accepts_documented_envelope() -> None:
 async def test_injected_client_without_base_url_raises_config_error() -> None:
     # An injected client is never mutated: an empty base_url is a
     # misconfiguration, named loudly at construction.
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         with pytest.raises(AnafConfigError, match=f"{BASE}/"):
             PublicClient(http=http, min_request_interval=0)
+
+
+async def test_injected_classic_httpx_client_raises_config_error() -> None:
+    # A classic-httpx client would duck-type at runtime, but its errors are
+    # not httpx2 exceptions — they would escape the AnafError hierarchy, so
+    # the mismatch is named loudly at construction instead.
+    async with httpx.AsyncClient(base_url=f"{BASE}/") as http:
+        with pytest.raises(AnafConfigError, match="classic httpx"):
+            PublicClient(http=http, min_request_interval=0)  # type: ignore[arg-type]
 
 
 @respx.mock
@@ -182,7 +192,7 @@ async def test_injected_client_with_base_url_is_used_and_not_closed() -> None:
     respx.post(f"{BASE}/api/PlatitorTvaRest/v9/tva").mock(
         return_value=httpx.Response(200, json={"found": [], "notFound": [123]})
     )
-    http = httpx.AsyncClient(base_url=f"{BASE}/")
+    http = httpx2.AsyncClient(base_url=f"{BASE}/")
     client = PublicClient(http=http, min_request_interval=0)
     result = await client.lookup_taxpayers([123], date="2026-07-01")
     await client.aclose()
@@ -195,7 +205,7 @@ async def test_injected_client_shared_across_anafpy_clients_is_not_mutated() -> 
     # A caller may drive several anafpy clients through one httpx client
     # (proxy/test seam). Neither construction may touch its base_url.
     seam_url = "https://proxy.example.test/anaf/"
-    async with httpx.AsyncClient(base_url=seam_url) as http:
+    async with httpx2.AsyncClient(base_url=seam_url) as http:
         public = PublicClient(http=http, min_request_interval=0)
         status = DeclarationStatusClient(http=http)
         assert str(http.base_url) == seam_url

@@ -9,7 +9,7 @@ shape applies:
 * :class:`SpvSessionProvider` mirrors ``TokenProvider`` — the
   :class:`~anafpy.spv.session.SessionStore` is the single source of truth, and
   the provider also owns the deliberate :meth:`~SpvSessionProvider.login`.
-* :class:`SpvAuth` mirrors ``AnafAuth`` — an ``httpx.Auth`` flow that attaches
+* :class:`SpvAuth` mirrors ``AnafAuth`` — an ``httpx2.Auth`` flow that attaches
   the cookies, follows the APM's mid-session ``/my.policy_nonce`` revalidation
   hops (re-yielding requests, the same mechanism ``AnafAuth`` uses for its 401
   retry), and persists rotated cookies back through the provider.
@@ -28,7 +28,7 @@ import asyncio
 from collections.abc import AsyncGenerator, Generator
 from urllib.parse import urljoin, urlparse
 
-import httpx
+import httpx2
 
 from ..exceptions import AnafAuthError, AnafConfigError, AnafResponseError
 from .bootstrap import SPV_BASE_URL, SessionBootstrapper
@@ -130,8 +130,8 @@ class SpvSessionProvider:
         return self._store.load()
 
 
-class SpvAuth(httpx.Auth):
-    """httpx auth flow: attach the APM cookies, follow revalidation hops.
+class SpvAuth(httpx2.Auth):
+    """httpx2 auth flow: attach the APM cookies, follow revalidation hops.
 
     Every request gets the stored cookie set; a redirect to
     ``/my.policy_nonce`` is followed transparently (folding in rotated
@@ -140,23 +140,23 @@ class SpvAuth(httpx.Auth):
     refused. Rotated cookies are saved back through the provider.
 
     The client must send with ``follow_redirects=False`` so this flow sees the
-    raw 302s instead of httpx silently following them onto the login wall.
+    raw 302s instead of httpx2 silently following them onto the login wall.
     """
 
     def __init__(self, provider: SpvSessionProvider) -> None:
         self._provider = provider
 
     def sync_auth_flow(
-        self, request: httpx.Request
-    ) -> Generator[httpx.Request, httpx.Response]:
-        raise AnafConfigError("anafpy SPV is async-only; use an httpx.AsyncClient")
-        yield request  # unreachable; makes this a generator to satisfy httpx.Auth
+        self, request: httpx2.Request
+    ) -> Generator[httpx2.Request, httpx2.Response]:
+        raise AnafConfigError("anafpy SPV is async-only; use an httpx2.AsyncClient")
+        yield request  # unreachable; makes this a generator to satisfy httpx2.Auth
 
     async def async_auth_flow(
-        self, request: httpx.Request
-    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        self, request: httpx2.Request
+    ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
         initial = await self._provider.cookies()
-        jar = httpx.Cookies()
+        jar = httpx2.Cookies()
         for name, value in initial.items():
             jar.set(name, value, domain=_SPV_HOST, path="/")
         # The store is authoritative: drop whatever Cookie header the owning
@@ -188,10 +188,10 @@ class SpvAuth(httpx.Auth):
             # safe. The Cookie header must go first: set_cookie_header (via
             # http.cookiejar) only adds one when none is present, and the hop
             # must carry the freshly rotated set, not the original.
-            hop_headers = httpx.Headers(
+            hop_headers = httpx2.Headers(
                 [(k, v) for k, v in request.headers.items() if k.lower() != "cookie"]
             )
-            next_request = httpx.Request("GET", location, headers=hop_headers)
+            next_request = httpx2.Request("GET", location, headers=hop_headers)
             jar.set_cookie_header(next_request)
             response = yield next_request
         else:
@@ -204,7 +204,7 @@ class SpvAuth(httpx.Auth):
             await self._provider.rotated(snapshot, seen=initial)
 
 
-def _snapshot(jar: httpx.Cookies) -> dict[str, str]:
+def _snapshot(jar: httpx2.Cookies) -> dict[str, str]:
     """The SPV-host cookies as a persistable ``name -> value`` map."""
     return {
         cookie.name: cookie.value

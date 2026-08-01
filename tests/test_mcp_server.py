@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
+import httpx2
 import jsonschema
 import pytest
 import respx
@@ -640,7 +641,7 @@ async def test_submit_upload_failure_reports_unknown_outcome(tmp_path: Path) -> 
     # the outcome is unknown and the token is spent — replaying must not be able
     # to double-file; the agent is told to check before preparing again.
     respx.post(f"{ETRANSPORT}/upload/ETRANSP/123/2").mock(
-        side_effect=httpx.ConnectTimeout("connection timed out")
+        side_effect=httpx2.ConnectTimeout("connection timed out")
     )
     server = create_server(_config(tmp_path))
     prepared = await _call(server, "etransport_prepare", document=_transport_doc())

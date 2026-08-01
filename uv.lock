@@ -19,7 +19,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "cyclopts" },
-    { name = "httpx" },
+    { name = "httpx2" },
     { name = "keyring" },
     { name = "parsel" },
     { name = "pydantic" },
@@ -88,7 +88,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=42" },
     { name = "cyclopts", specifier = ">=3.14" },
     { name = "fpdf2", marker = "extra == 'cards'", specifier = ">=2.7" },
-    { name = "httpx", specifier = ">=0.27" },
+    { name = "httpx2", specifier = ">=2.9" },
     { name = "keyring", specifier = ">=25" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2,<3" },
     { name = "parsel", specifier = ">=1.9" },

@@ -36,7 +36,7 @@ from __future__ import annotations
 import datetime
 import re
 
-import httpx
+import httpx2
 from parsel import Selector
 
 from .._transport.base import as_text, normalize_cui, raise_for_status
@@ -176,7 +176,7 @@ class DeclarationStatusClient(HttpClientBase):
     """Checks filed declarations on ANAF's public StareD112 service.
 
     No credentials are needed (the service is public and unauthenticated); the
-    client owns an ``httpx.AsyncClient`` unless one is injected. An injected
+    client owns an ``httpx2.AsyncClient`` unless one is injected. An injected
     client must carry a non-empty ``base_url`` (an empty one raises
     :class:`~anafpy.exceptions.AnafConfigError`; injected clients are never
     mutated). Use it as an async context manager so owned clients close
@@ -187,7 +187,7 @@ class DeclarationStatusClient(HttpClientBase):
     def __init__(
         self,
         *,
-        http: httpx.AsyncClient | None = None,
+        http: httpx2.AsyncClient | None = None,
         timeout: float = 60.0,
     ) -> None:
         super().__init__(http=http, base_url=_STARE_HOST, timeout=timeout)

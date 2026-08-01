@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import httpx
+import httpx2
 import pytest
 import respx
 
@@ -164,7 +165,7 @@ async def test_bootstrap_no_session_cookie_raises() -> None:
 
 
 def _client(**kwargs: object) -> DeclarationUploadClient:
-    http = httpx.AsyncClient(base_url=PORTAL_BASE_URL, follow_redirects=True)
+    http = httpx2.AsyncClient(base_url=PORTAL_BASE_URL, follow_redirects=True)
     http.cookies.set("MRHSession", "abc123")
     http.cookies.set("JSESSIONID", "def456")
     return DeclarationUploadClient(http=http, **kwargs)  # type: ignore[arg-type]
@@ -196,7 +197,7 @@ async def test_upload_success_page_yields_index() -> None:
 async def test_injected_client_without_base_url_raises_config_error() -> None:
     # An injected client is never mutated: an empty base_url is a
     # misconfiguration, named loudly at construction.
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         http.cookies.set("MRHSession", "abc123")
         with pytest.raises(AnafConfigError, match=PORTAL_BASE_URL):
             DeclarationUploadClient(http=http)
