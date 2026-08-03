@@ -78,9 +78,12 @@ fall back to route B. Then the user finishes it: open the **Downloads**
 folder, double-click `anafpy.mcpb` (or drag it onto Claude Desktop's
 **Settings → Extensions** page) and click **Install**.
 
-**When the step-1 curl probe tripped**, the extension has no `env` block to
-carry the fix — set it as a user-level environment variable instead (then
-fully restart Claude Desktop so it inherits it):
+**When the step-1 curl probe tripped**, the fix rides the extension's own
+settings: have the user paste the curl path into the extension's **curl
+program (Windows fix)** field —
+`C:\Program Files\Git\mingw64\bin\curl.exe`. An older installed extension may
+not have that field yet; there, set a user-level environment variable instead
+(then fully restart Claude Desktop so it inherits it):
 
 ```bash
 setx ANAFPY_CURL "C:\Program Files\Git\mingw64\bin\curl.exe"

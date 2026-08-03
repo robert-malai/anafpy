@@ -233,11 +233,13 @@ calculator, așa că acest pas se face în Claude Desktop:
 3. În Claude Desktop, deschide **Settings → Extensions**, trage fișierul
    `anafpy.mcpb` descărcat peste acea pagină (merge și dublu-click pe fișier)
    și apasă **Install**.
-4. În setările extensiei, completează cele trei câmpuri cu valorile tale de la
-   pasul 1: **ANAF Client ID**, **ANAF Client Secret** și **CUI-ul firmei**
+4. În setările extensiei, completează primele trei câmpuri cu valorile tale de
+   la pasul 1: **ANAF Client ID**, **ANAF Client Secret** și **CUI-ul firmei**
    (doar cifre — codul fiscal implicit folosit când nu spui altceva în
    conversație). Secretul este păstrat în magazinul securizat de credențiale
-   al calculatorului.
+   al calculatorului. Câmpurile rămase acoperă cazuri rare (un callback URL
+   înregistrat diferit; remedierea curl pentru Windows din
+   [tabelul de depanare](#depanare)) — lasă-le goale.
 
 Uneltele anafpy apar la connectors/tools ale aplicației, iar sesiunile Cowork
 de pe acest calculator le pot folosi. Extensia vine cu propria copie a
@@ -406,7 +408,7 @@ dispozitivul tău obții PDF-ul semnat.
 - **Producție vs. test**: serverul vorbește implicit cu ANAF **producție**. Ca să
   exersezi în schimb pe mediul de **TEST** al ANAF, adaugă `"ANAFPY_ENV": "test"`
   lângă celelalte intrări din `env` — asta cere configurarea manuală de la pasul
-  5; extensia expune doar cele trei câmpuri (depunerile de test emit UIT-uri care
+  5; extensia nu expune `ANAFPY_ENV` (depunerile de test emit UIT-uri care
   arată real dar nu au valoare juridică).
 - **Credențialele tale rămân pe acest calculator**: Client Secret-ul stă în fișierul
   de configurare de mai sus, iar token-urile în magazinul de credențiale al
@@ -447,5 +449,5 @@ dispozitivul tău obții PDF-ul semnat.
 | Claude Desktop arată serverul ca eșuat / `anafpy-mcp` nu este găsit | Aplicațiile desktop nu văd întotdeauna PATH-ul terminalului. În configurare, `"command"` trebuie să fie calea completă — macOS: `/Users/<tu>/.local/bin/anafpy-mcp`; Windows: `C:\\Users\\<tu>\\.local\\bin\\anafpy-mcp.exe` (rulează `which anafpy-mcp` / `where.exe anafpy-mcp` ca să confirmi). |
 | Uneltele răspund „rulează `anafpy auth login`" | Pasul 4 nu a fost finalizat pe acest calculator, sau token-ul a expirat (~1 an). Rulează din nou pasul 4. |
 | Depunere respinsă de ANAF | Acesta este verdictul ANAF asupra conținutului documentului, nu o problemă de instalare — textul erorii revine în rezultatul uneltei; corectează datele și pregătește din nou. |
-| `anafpy spv login` eșuează instant cu `SEC_E_UNKNOWN_CREDENTIALS` pe un calculator Windows-on-ARM (de ex. Parallels pe un Mac) | Software-ul furnizorului de certificat este doar pentru Intel (certSIGN vToken este), deci curl-ul încorporat în Windows nu poate folosi certificatul. Instalează [Git for Windows](https://git-scm.com/download/win) (versiunea pe **64 de biți**, nu ARM64) și adaugă `"ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` lângă celelalte intrări din `env` (cu extensia: `setx ANAFPY_CURL "C:\Program Files\Git\mingw64\bin\curl.exe"` într-un terminal, apoi repornește Claude Desktop); setează aceeași variabilă în PowerShell înainte de `anafpy spv login`. |
-| `anafpy spv login` eșuează cu `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` pe Windows | Curl-ul încorporat în Windows (`C:\Windows\System32\curl.exe`) versiunile **8.13–8.15** au o [eroare Schannel](https://github.com/curl/curl/issues/18029) care strică renegocierea TLS a ANAF cu un certificat din magazinul de certificate. Verifică cu `curl --version`; dacă este în acest interval, instalează [Git for Windows](https://git-scm.com/download/win) (curl-ul lui inclus este mai nou) și direcționează `ANAFPY_CURL` către `C:\\Program Files\\Git\\mingw64\\bin\\curl.exe` — în blocul `env` (cu extensia: prin `setx`, apoi repornește Claude Desktop) și în PowerShell înainte de `anafpy spv login` (rulează `cygpath -w "$(command -v curl)"` în Git Bash ca să afli calea exactă). anafpy fixează backend-ul Schannel pentru tine. |
+| `anafpy spv login` eșuează instant cu `SEC_E_UNKNOWN_CREDENTIALS` pe un calculator Windows-on-ARM (de ex. Parallels pe un Mac) | Software-ul furnizorului de certificat este doar pentru Intel (certSIGN vToken este), deci curl-ul încorporat în Windows nu poate folosi certificatul. Instalează [Git for Windows](https://git-scm.com/download/win) (versiunea pe **64 de biți**, nu ARM64) și adaugă `"ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` lângă celelalte intrări din `env` (cu extensia: lipește acea cale în câmpul ei de setări **curl program (Windows fix)**); setează aceeași variabilă în PowerShell înainte de `anafpy spv login`. |
+| `anafpy spv login` eșuează cu `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` pe Windows | Curl-ul încorporat în Windows (`C:\Windows\System32\curl.exe`) versiunile **8.13–8.15** au o [eroare Schannel](https://github.com/curl/curl/issues/18029) care strică renegocierea TLS a ANAF cu un certificat din magazinul de certificate. Verifică cu `curl --version`; dacă este în acest interval, instalează [Git for Windows](https://git-scm.com/download/win) (curl-ul lui inclus este mai nou) și direcționează `ANAFPY_CURL` către `C:\\Program Files\\Git\\mingw64\\bin\\curl.exe` — în blocul `env` (cu extensia: câmpul ei de setări **curl program (Windows fix)**) și în PowerShell înainte de `anafpy spv login` (rulează `cygpath -w "$(command -v curl)"` în Git Bash ca să afli calea exactă). anafpy fixează backend-ul Schannel pentru tine. |

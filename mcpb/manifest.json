@@ -29,7 +29,9 @@
       "env": {
         "ANAFPY_CLIENT_ID": "${user_config.client_id}",
         "ANAFPY_CLIENT_SECRET": "${user_config.client_secret}",
-        "ANAFPY_CIF": "${user_config.cif}"
+        "ANAFPY_CIF": "${user_config.cif}",
+        "ANAFPY_REDIRECT_URI": "${user_config.redirect_uri}",
+        "ANAFPY_CURL": "${user_config.curl_path}"
       }
     }
   },
@@ -51,6 +53,18 @@
       "type": "string",
       "title": "Firm CUI (fiscal code)",
       "description": "Digits only, e.g. 12345678. Used as the default fiscal code when a conversation doesn't say otherwise.",
+      "required": false
+    },
+    "redirect_uri": {
+      "type": "string",
+      "title": "OAuth callback URL",
+      "description": "Leave empty for the default, https://localhost:9002/callback — the URL the setup guide has you register. Fill in only if your ANAF application registered a different Callback URL; it must match that registration exactly.",
+      "required": false
+    },
+    "curl_path": {
+      "type": "string",
+      "title": "curl program (Windows fix)",
+      "description": "Full path to an alternative curl.exe, used by the SPV and declaration-portal certificate logins. Needed only on Windows with a broken built-in curl (versions 8.13\u20138.15) or on Windows-on-ARM \u2014 typically C:\\Program Files\\Git\\mingw64\\bin\\curl.exe from Git for Windows; the setup guide's troubleshooting table has the details. Leave empty everywhere else.",
       "required": false
     }
   },
