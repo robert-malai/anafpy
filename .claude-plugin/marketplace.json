@@ -20,7 +20,7 @@
       "name": "anafpy-workflows",
       "source": "./plugins/anafpy-workflows",
       "displayName": "anafpy workflows",
-      "description": "ANAF workflow skills for Cowork: file e-Transport declarations, author/sign tax declarations, and summarize personal income. Drives the anafpy MCP tools (configure the connector via the anafpy-setup plugin).",
+      "description": "ANAF workflow skills for Cowork: file e-Transport declarations, author/sign tax declarations, and summarize personal income. Drives the anafpy MCP tools — install the anafpy Claude Desktop extension (anafpy.mcpb, attached to each release), or set up with the anafpy-setup plugin.",
       "category": "workflow",
       "tags": ["anaf", "e-factura", "e-transport", "spv", "declaratii", "romania", "cowork"]
     },

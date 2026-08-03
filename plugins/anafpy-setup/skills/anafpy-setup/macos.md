@@ -85,7 +85,19 @@ Auth-status probe (you run this to verify):
 ~/.local/bin/anafpy auth status
 ```
 
-## Step 6 — Claude Desktop config
+## Step 6A — the extension (route A)
+
+```bash
+curl -fL -o ~/Downloads/anafpy.mcpb \
+  https://github.com/robert-malai/anafpy/releases/latest/download/anafpy.mcpb
+open -a Claude ~/Downloads/anafpy.mcpb || open ~/Downloads/anafpy.mcpb
+```
+
+A **404** on the download means the latest release predates the extension —
+fall back to route B. If `open` produces no install dialog in Claude Desktop,
+the user drags `anafpy.mcpb` from **Downloads** onto **Settings → Extensions**.
+
+## Step 6 — Claude Desktop config (route B)
 
 The file is `~/Library/Application Support/Claude/claude_desktop_config.json`.
 The entry to merge into `mcpServers`:

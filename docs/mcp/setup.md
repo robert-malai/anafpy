@@ -116,8 +116,9 @@ uv tool install "anafpy[mcp]"
 This downloads anafpy from [PyPI](https://pypi.org/project/anafpy/) and installs
 two commands: `anafpy` (used in the next step) and `anafpy-mcp` (the server
 Claude starts). They land in `~/.local/bin` on macOS and
-`%USERPROFILE%\.local\bin` on Windows — you'll paste the full path of
-`anafpy-mcp` in step 5. To update anafpy later: `uv tool upgrade anafpy`.
+`%USERPROFILE%\.local\bin` on Windows — step 5's manual-configuration
+alternative uses the full path of `anafpy-mcp`. To update anafpy later:
+`uv tool upgrade anafpy`.
 
 (Developers who want to run from a source checkout instead: see the
 [README](https://github.com/robert-malai/anafpy#install).)
@@ -202,37 +203,57 @@ and talks to. It never sends your credentials anywhere except to ANAF.
 ### Claude Desktop / Cowork
 
 Cowork reaches local servers through the Claude Desktop app installed on the same
-computer, so the configuration lives in Claude Desktop:
+computer, so this step happens in Claude Desktop:
 
 1. Install and sign in to [Claude Desktop](https://claude.ai/download).
-2. Open its config file (create it if missing):
-   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-     (in Claude Desktop: *Settings → Developer → Edit Config*)
-   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-3. Add this (replace the three `...` values, and put the full path of the
-   `anafpy-mcp` command from step 3 in `"command"`; on Windows write it with
-   doubled backslashes, e.g. `C:\\Users\\ana\\.local\\bin\\anafpy-mcp.exe`):
+2. Download **`anafpy.mcpb`** — the anafpy extension — from the
+   [latest release](https://github.com/robert-malai/anafpy/releases/latest)
+   (under *Assets*).
+3. In Claude Desktop, open **Settings → Extensions**, drag the downloaded
+   `anafpy.mcpb` onto that page (double-clicking the file works too), and
+   click **Install**.
+4. In the extension's settings, fill in the three fields with your values from
+   step 1: **ANAF Client ID**, **ANAF Client Secret**, and the firm's **CUI**
+   (digits only — the default fiscal code used when you don't say otherwise in
+   conversation). The secret is kept in the computer's secure credential
+   store.
 
-```json
-{
-  "mcpServers": {
-    "anafpy": {
-      "command": "/Users/ana/.local/bin/anafpy-mcp",
-      "env": {
-        "ANAFPY_CLIENT_ID": "...",
-        "ANAFPY_CLIENT_SECRET": "...",
-        "ANAFPY_CIF": "12345678"
-      }
-    }
-  }
-}
-```
+The anafpy tools appear under the app's connectors/tools, and Cowork sessions
+on this computer can use them. The extension brings its own copy of the server
+— but the `anafpy` command from step 3 is still what runs the login in step 4,
+so don't skip that step.
 
-`ANAFPY_CIF` is the firm's CUI (digits only) — the default fiscal code used when
-you don't say otherwise in conversation.
+??? note "Manual configuration (alternative — and for the TEST environment)"
 
-4. Quit Claude Desktop fully and reopen it. The anafpy tools appear under the
-   app's connectors/tools, and Cowork sessions on this computer can use them.
+    The extension is just a convenience over Claude Desktop's config file; you
+    can wire the server by hand instead (this is also currently the only way
+    to set extra options like `ANAFPY_ENV`):
+
+    1. Open the config file (create it if missing):
+        - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+          (in Claude Desktop: *Settings → Developer → Edit Config*)
+        - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+    2. Add this (replace the three `...` values, and put the full path of the
+       `anafpy-mcp` command from step 3 in `"command"`; on Windows write it with
+       doubled backslashes, e.g. `C:\\Users\\ana\\.local\\bin\\anafpy-mcp.exe`):
+
+        ```json
+        {
+          "mcpServers": {
+            "anafpy": {
+              "command": "/Users/ana/.local/bin/anafpy-mcp",
+              "env": {
+                "ANAFPY_CLIENT_ID": "...",
+                "ANAFPY_CLIENT_SECRET": "...",
+                "ANAFPY_CIF": "12345678"
+              }
+            }
+          }
+        }
+        ```
+
+    3. Quit Claude Desktop fully and reopen it — it reads this file only at
+       startup.
 
 ### Claude Code (alternative)
 
@@ -349,8 +370,9 @@ approving it on your device produces the signed PDF.
 
 - **Production vs. test**: the server talks to **production** ANAF by default. To
   practice against ANAF's TEST environment instead, add `"ANAFPY_ENV": "test"`
-  next to the other `env` entries (test filings issue real-looking UITs that are
-  legally meaningless).
+  next to the other `env` entries — this needs step 5's manual configuration;
+  the extension exposes only the three fields (test filings issue real-looking
+  UITs that are legally meaningless).
 - **Your credentials stay on this computer**: the Client Secret sits in the config
   file above and the tokens in the system's credential store (macOS Keychain /
   Windows Credential Manager) — protect the computer account like you protect
@@ -387,5 +409,5 @@ approving it on your device produces the signed PDF.
 | Claude Desktop shows the server as failed / `anafpy-mcp` not found | Desktop apps don't always see the terminal's PATH. In the config, `"command"` must be the full path — macOS: `/Users/<you>/.local/bin/anafpy-mcp`; Windows: `C:\\Users\\<you>\\.local\\bin\\anafpy-mcp.exe` (run `which anafpy-mcp` / `where.exe anafpy-mcp` to confirm). |
 | Tools answer "run `anafpy auth login`" | Step 4 wasn't completed on this computer, or the token expired (~1 year). Run step 4 again. |
 | Filing rejected by ANAF | That's ANAF's verdict on the document's content, not an installation problem — the error text comes back in the tool result; fix the data and prepare again. |
-| `anafpy spv login` fails instantly with `SEC_E_UNKNOWN_CREDENTIALS` on a Windows-on-ARM computer (e.g. Parallels on a Mac) | The certificate vendor's software is Intel-only (certSIGN vToken is), so Windows' built-in curl can't use the certificate. Install [Git for Windows](https://git-scm.com/download/win) (the **64-bit** version, not ARM64) and add `"ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` next to the other `env` entries; set the same variable in PowerShell before `anafpy spv login`. |
-| `anafpy spv login` fails with `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` on Windows | Windows' built-in curl (`C:\Windows\System32\curl.exe`) versions **8.13–8.15** have a [Schannel bug](https://github.com/curl/curl/issues/18029) that breaks ANAF's TLS renegotiation with a certificate-store cert. Check with `curl --version`; if it's in that range, install [Git for Windows](https://git-scm.com/download/win) (its bundled curl is newer) and point `ANAFPY_CURL` at `C:\\Program Files\\Git\\mingw64\\bin\\curl.exe` — in the `env` block and in PowerShell before `anafpy spv login` (run `cygpath -w "$(command -v curl)"` in Git Bash to get the exact path). anafpy pins the Schannel backend for you. |
+| `anafpy spv login` fails instantly with `SEC_E_UNKNOWN_CREDENTIALS` on a Windows-on-ARM computer (e.g. Parallels on a Mac) | The certificate vendor's software is Intel-only (certSIGN vToken is), so Windows' built-in curl can't use the certificate. Install [Git for Windows](https://git-scm.com/download/win) (the **64-bit** version, not ARM64) and add `"ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` next to the other `env` entries (with the extension: `setx ANAFPY_CURL "C:\Program Files\Git\mingw64\bin\curl.exe"` in a terminal, then restart Claude Desktop); set the same variable in PowerShell before `anafpy spv login`. |
+| `anafpy spv login` fails with `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` on Windows | Windows' built-in curl (`C:\Windows\System32\curl.exe`) versions **8.13–8.15** have a [Schannel bug](https://github.com/curl/curl/issues/18029) that breaks ANAF's TLS renegotiation with a certificate-store cert. Check with `curl --version`; if it's in that range, install [Git for Windows](https://git-scm.com/download/win) (its bundled curl is newer) and point `ANAFPY_CURL` at `C:\\Program Files\\Git\\mingw64\\bin\\curl.exe` — in the `env` block (with the extension: via `setx`, then restart Claude Desktop) and in PowerShell before `anafpy spv login` (run `cygpath -w "$(command -v curl)"` in Git Bash to get the exact path). anafpy pins the Schannel backend for you. |

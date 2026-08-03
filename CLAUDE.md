@@ -203,9 +203,11 @@ src/anafpy/
     __main__.py          # `python -m anafpy.mcp` (stdio)
 .claude-plugin/          # marketplace.json — publishes the two plugins below
 plugins/anafpy-setup/    # skill that installs + configures anafpy on an end
-                         # user's machine (writes claude_desktop_config.json;
-                         # local sessions only). SKILL.md = platform-neutral
-                         # spine; command blocks live in macos.md / windows.md
+                         # user's machine (extension-first: installs the mcpb/
+                         # release asset; writes claude_desktop_config.json as
+                         # the repair/fallback route; local sessions only).
+                         # SKILL.md = platform-neutral spine; command blocks
+                         # live in macos.md / windows.md
 mcpb/                    # Claude Desktop extension source: uv-type MCPB
                          # manifest + entry point depending on the released
                          # anafpy[mcp]; packed to the anafpy.mcpb release asset

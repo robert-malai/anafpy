@@ -85,6 +85,12 @@ config entry to the `anafpy-mcp` binary (step 6), and leave the old folder alone
 (it may hold the user's mkcert files). The login tokens live in the system
 credential store, not in that folder, so nothing is lost.
 
+One thing the probe **cannot** see: the anafpy **Claude Desktop extension**
+(route A of step 6) does not appear in `claude_desktop_config.json`. A config
+file with no `anafpy` entry therefore does not prove "not connected" — before
+putting **no** on the checklist, ask the user to look in Claude Desktop under
+**Settings → Extensions** for *anafpy*.
+
 Then give the user a short checklist of what is done and what is missing — six
 lines, not a wall of text. Something like:
 
@@ -158,9 +164,44 @@ removes it — don't lead with that; the default needs no extra install.
 Then verify it yourself with the platform file's **auth-status probe**. Tokens
 refresh automatically for about a year, so this step recurs roughly annually.
 
-## Step 6 — Connect the server to Claude (this is the valuable part)
+## Step 6 — Connect the server to Claude
 
-This is the step that actually needs you: merging JSON, resolving absolute
+Two routes connect Claude Desktop to the server; pick by what step 1 found:
+
+- **A working `anafpy` entry already in the config file** → keep it. Repair
+  what is actually broken and leave working wiring alone — don't migrate a
+  healthy config-file install to the extension.
+- **Nothing connected yet, or a broken entry** → prefer **route A**, the
+  one-click extension. Use **route B** when the extension isn't available
+  (the download 404s because the release predates it) or the user prefers the
+  config file.
+
+### Route A — the Claude Desktop extension (preferred)
+
+Every anafpy release attaches **`anafpy.mcpb`**, a one-click Claude Desktop
+extension. Download and open it with the platform file's **step-6A block**,
+then the user finishes inside Claude Desktop — you cannot drive its UI, so
+tell them exactly what to do:
+
+1. In the dialog Claude Desktop shows for the file, click **Install**. If no
+   dialog appeared, they drag `anafpy.mcpb` from Downloads onto Claude
+   Desktop's **Settings → Extensions** page.
+2. In the extension's settings, fill **ANAF Client ID**, **ANAF Client
+   Secret**, and the firm's **CUI** (digits only). Read the ID and CUI back to
+   them from step 2; for the secret, remind them where they saved it. The
+   extension keeps the secret in the system credential store — better custody
+   than the config file, and one reason this route is preferred.
+
+Two facts to keep straight: the extension carries **its own copy of the
+server** (Claude Desktop installs it with its managed Python — the step-4 CLI
+install stays needed for the login and the optional steps), and it does
+**not** appear in `claude_desktop_config.json` — don't "repair" its absence
+there. Verification is step 7. On Windows, the platform file's step-6A section
+has one extra move when the step-1 curl probe tripped.
+
+### Route B — merge the config file (repair path / fallback)
+
+This is the route that actually needs you: merging JSON, resolving absolute
 paths, and getting Windows backslashes right is exactly what an accountant should
 never have to do by hand. The config file location and the exact JSON shape are
 in the platform file's **step-6 section**.
@@ -199,9 +240,11 @@ open Cowork and try, in order:
 3. *"List my e-Factura messages from the last 7 days."* — proves the whole chain.
 
 If Cowork can't see the tools at all, the likeliest causes are: Claude Desktop
-wasn't fully quit; `"command"` isn't an absolute path; or their Cowork session is
-running remotely rather than on this computer — a cloud Cowork session cannot reach
-a local server.
+wasn't fully quit; `"command"` isn't an absolute path (route B); or their Cowork
+session is running remotely rather than on this computer — a cloud Cowork session
+cannot reach a local server. If the first test works but the second says the
+credentials are not configured, on route A the extension's settings fields were
+left empty — back to step 6, point 2.
 
 Close by telling them what they now have: *"Setup is done. From now on you work in
 the **Cowork** tab — just ask for what you need in plain language. You only come

@@ -66,7 +66,27 @@ Auth-status probe (you run this to verify):
 "$USERPROFILE/.local/bin/anafpy.exe" auth status
 ```
 
-## Step 6 — Claude Desktop config
+## Step 6A — the extension (route A)
+
+```bash
+curl -fL -o "$USERPROFILE/Downloads/anafpy.mcpb" \
+  https://github.com/robert-malai/anafpy/releases/latest/download/anafpy.mcpb
+```
+
+A **404** on the download means the latest release predates the extension —
+fall back to route B. Then the user finishes it: open the **Downloads**
+folder, double-click `anafpy.mcpb` (or drag it onto Claude Desktop's
+**Settings → Extensions** page) and click **Install**.
+
+**When the step-1 curl probe tripped**, the extension has no `env` block to
+carry the fix — set it as a user-level environment variable instead (then
+fully restart Claude Desktop so it inherits it):
+
+```bash
+setx ANAFPY_CURL "C:\Program Files\Git\mingw64\bin\curl.exe"
+```
+
+## Step 6 — Claude Desktop config (route B)
 
 The file is `%APPDATA%\Claude\claude_desktop_config.json`. Write paths with
 **doubled backslashes** in JSON. The entry to merge into `mcpServers`:
