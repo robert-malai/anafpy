@@ -3,7 +3,9 @@ public lookups) as Cowork skills.
 
 A local stdio connector built on the phase-1 async clients (``DESIGN.md`` §8).
 Requires the ``anafpy[mcp]`` extra; run with ``python -m anafpy.mcp`` (host-side,
-where the token store written by ``anafpy auth login`` lives).
+where the browser and the token store live — the confirm-gated ``auth_login``
+tool runs the OAuth browser login in-session, with ``anafpy auth login`` as the
+CLI equivalent over the same store).
 
 Read-only skills (status, list, download, lookup, validate) are freely callable.
 Filing — **both OAuth services** — is two-step: a ``prepare`` tool renders a preview

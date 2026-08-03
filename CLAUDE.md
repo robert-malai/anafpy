@@ -189,7 +189,9 @@ src/anafpy/
     app.py               # composition root: create_server, main, auth_status
     config.py            # ServerConfig — BaseSettings over ANAFPY_*
     context.py           # AppContext: providers + lazy clients + token ledger
-                         # + SPV same-day request log
+                         # + SPV same-day request log; token_store selection
+    login.py             # auth_login — the OAuth browser login run by the
+                         # server (confirm-gated, listener-only, no paste mode)
     gate.py              # the two-step filing gate: HMAC confirmation tokens +
                          # TokenLedger, XmlInput ({xml|path} -> bytes),
                          # PreparedSubmission/SubmitResult, run_submit
@@ -333,8 +335,11 @@ tests/                   # respx-mocked suite + opt-in live files (filing
 `create_server(config)` returns an `MCPServer` (MCP SDK v2; the class v1 called
 `FastMCP`); `AppContext` owns one
 `TokenProvider` plus lazily-built clients, closed in the server lifespan. The
-server reads the existing token store and refreshes headlessly — the OAuth
-browser login stays CLI-side. The tool inventory with per-tool descriptions is
+server reads the existing token store and refreshes headlessly; the OAuth
+browser login is served by the confirm-gated `auth_login` tool as well as the
+CLI — same host, same store, no restart needed either way (DESIGN.md §3 for the
+tool's constraints: no credential params, no paste mode). The tool inventory
+with per-tool descriptions is
 [docs/mcp/tools.md](docs/mcp/tools.md); the rules:
 
 - **Read-first, two-step gated filing.** Read-only tools carry `readOnlyHint`
@@ -364,9 +369,9 @@ browser login stays CLI-side. The tool inventory with per-tool descriptions is
   path. Never return base64 blobs from tools. PDFs are additionally the
   resource templates `anafmsg://{message_id}/pdf` and `spvmsg://{mesaj_id}/pdf`
   (deliberately no ZIP resource).
-- **Consequential interactive tools** (`spv_login`, `declaratie_sign`,
-  `declaratie_portal_login`) are gated on `confirm=true` — the model must relay
-  the user's explicit ask — one attempt per call, and report failure as
+- **Consequential interactive tools** (`auth_login`, `spv_login`,
+  `declaratie_sign`, `declaratie_portal_login`) are gated on `confirm=true` —
+  the model must relay the user's explicit ask — one attempt per call, and report failure as
   `logged_in`/`signed` = `false` plus guidance, **not** exceptions. **No MCP
   tool ever accepts a PIN**: the raw signature/login is delegated to the OS
   token middleware, and the out-of-band PIN/2FA prompt is the human gate.

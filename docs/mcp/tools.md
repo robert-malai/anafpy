@@ -23,13 +23,27 @@ certificate login (and with no OAuth credentials configured at all):
 | `anaf_financial_statement` | A company's filed financial statements (bilanț) for a year |
 | `efactura_validate` | ANAF's authoritative server-side invoice validation (CIUS-RO / BR-RO) — validates only, files nothing |
 
+## The ANAF session
+
+| Tool | What it does |
+|---|---|
+| `auth_status` | Reports whether the stored ANAF login is valid, and when the tokens expire |
+| `auth_login` | Runs the one-time OAuth login: opens your browser on ANAF's certificate page, catches the redirect on a local listener, and stores the tokens — needs your explicit go-ahead (`confirm=true`), one attempt per call |
+
+`auth_login` is needed at first setup and again roughly yearly, when the
+refresh token expires. Claude never sees your PIN or the certificate — that
+step happens entirely in your browser, exactly as in `anafpy auth login`,
+which remains the terminal equivalent (and additionally offers paste mode and
+a TLS certificate of your own). Expect the browser's one-time *"connection is
+not private"* warning at `localhost` — the [setup walkthrough](setup.md)
+explains why it is harmless.
+
 ## e-Factura — inbox, plus two-step gated filing
 
 Read tools, freely callable:
 
 | Tool | What it does |
 |---|---|
-| `auth_status` | Reports whether the stored ANAF login is valid |
 | `efactura_list_messages` | List received/sent messages for a date window |
 | `efactura_download` | Download a message as an easy-to-read flat view; optionally save the signed ZIP (`save_zip_as`) and/or ANAF's official PDF rendering (`save_pdf_as`) to paths you name |
 | `efactura_get_status` | An upload's processing state (`ok`/`nok`), with the download id when accepted |
@@ -168,6 +182,7 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_ENV` | `prod` (default) or `test` — ANAF's TEST environment for practicing |
 | `ANAFPY_TOKEN_STORE_BACKEND` | `keyring` (default, OS credential store) or `file` for headless/Docker hosts |
 | `ANAFPY_TOKEN_STORE` | Token file path for the `file` backend (default `~/.anafpy/tokens.json`) |
+| `ANAFPY_REDIRECT_URI` | OAuth callback URL the `auth_login` browser flow listens on — must exactly match a Callback URL registered on your ANAF application (default `https://localhost:9002/callback`, the URL the setup guide registers) |
 | `ANAFPY_DOCS_DIR` | ANAF reference served as resources (defaults to the repo's `docs/anaf-reference/` when present, else the copy packaged in the wheel) |
 | `ANAFPY_SKILLS_DIR` | Workflow skills served as prompts (defaults to the repo's `plugins/anafpy-workflows/skills/` when present, else the copy packaged in the wheel) |
 | `ANAFPY_SPV_SESSION` | SPV cookie-session store written by `anafpy spv login` (default `~/.anafpy/spv-session.json`) |
@@ -177,9 +192,10 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_SIGN_IDENTITY` | Certificate to sign declarations with — the Keychain identity name on macOS, the SHA-1 thumbprint on Windows (optional; falls back to the persisted SPV certificate selection) |
 | `ANAFPY_DECLARATII_UPLOAD` | Set to `off` to opt out of automated declaration filing — the portal tools (`declaratie_portal_*`, `declaratie_prepare`, `declaratie_submit`) are then not served and Claude guides manual filing instead (default: on) |
 
-The OAuth certificate/browser login stays host-side (`anafpy auth login` —
-it structurally needs a browser; the server only reads and headlessly
-refreshes the token store it wrote). The certificate logins are the
-interactive steps exposed as tools: they need no host UI — the human gate is
-your out-of-band PIN/2FA approval — and both `spv_login` and
-`declaratie_portal_login` demand your explicit go-ahead per attempt.
+All three interactive logins are exposed as tools with the same contract —
+your explicit go-ahead per attempt, one attempt per call, failure reported as
+guidance rather than an error, and the sensitive step out-of-band: `auth_login`
+drives the OAuth browser login (the certificate happens in your browser), while
+`spv_login` and `declaratie_portal_login` drive the certificate logins whose
+human gate is your PIN/2FA approval. Beyond the login, the server only reads
+and headlessly refreshes the token store the login wrote.

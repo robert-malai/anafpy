@@ -129,7 +129,19 @@ mai târziu: `uv tool upgrade anafpy`.
 
 ## Pasul 4 — Autentifică-te la ANAF (o singură dată, cu certificatul)
 
-Acesta este singurul pas care folosește certificatul. Conectează token-ul USB și
+Acesta este singurul pas care folosește certificatul.
+
+!!! tip "Fără terminal, dacă folosești extensia"
+
+    Dacă legi Claude prin **extensie** (pasul 5) și îi completezi setările,
+    poți sări complet peste comanda de mai jos: conectează token-ul USB și
+    cere-i lui Claude — *„autentifică-mă la ANAF"*. Cu acordul tău, deschide
+    exact același flux din browser descris aici (selectarea certificatului,
+    apoi avertismentul așteptat *„conexiunea nu este privată"* → **Advanced →
+    Proceed to localhost**). Comanda de mai jos face același lucru din
+    terminal și rămâne calea de referință.
+
+Conectează token-ul USB și
 rulează (o singură linie, cu valorile tale de la pasul 1):
 
 ```bash
@@ -229,8 +241,10 @@ calculator, așa că acest pas se face în Claude Desktop:
 
 Uneltele anafpy apar la connectors/tools ale aplicației, iar sesiunile Cowork
 de pe acest calculator le pot folosi. Extensia vine cu propria copie a
-serverului — dar comanda `anafpy` de la pasul 3 rămâne cea care face
-autentificarea de la pasul 4, așa că nu sări peste acel pas.
+serverului — iar odată completate setările ei, autentificarea de la pasul 4 se
+poate face pur și simplu cerându-i lui Claude (*„autentifică-mă la ANAF"*),
+fără terminal. Comanda `anafpy` de la pasul 3 face aceeași autentificare din
+terminal și rămâne cea folosită de pașii opționali SPV și declarații.
 
 ??? note "Configurare manuală (alternativă — și pentru mediul de TEST)"
 

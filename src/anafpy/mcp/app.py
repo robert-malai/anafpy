@@ -1,8 +1,10 @@
 """Composition root: build the configured :class:`MCPServer` server.
 
 Owns the model-facing server instructions, the lifespan (one :class:`AppContext`,
-closed on shutdown) and the ``auth_status`` tool, and delegates everything else to
-the service packages' and feature modules' ``register`` functions.
+closed on shutdown) and the ``auth_status`` tool, and delegates everything else —
+including ``auth_status``'s consequential sibling ``auth_login``
+(:mod:`.login`) — to the service packages' and feature modules' ``register``
+functions.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from inspect import cleandoc
 
 from mcp.server import MCPServer
 
-from . import declaratii, efactura, etransport, prompts, public, reference, spv
+from . import declaratii, efactura, etransport, login, prompts, public, reference, spv
 from .artifacts import READ_ONLY
 from .config import ServerConfig
 from .context import AppContext, AuthStatus
@@ -72,8 +74,11 @@ message to send alongside it and the way a driver copies the code when a phone's
 PDF viewer will not select text; `etransport_uit_details` is the A4 detail
 document for the partner. Render either, or both. Informative, not issued by ANAF.
 
-If a tool reports "not authenticated", the user must run `anafpy auth login`
-host-side.
+If a tool reports "not authenticated", offer to log in: with the user's explicit
+approval, call `auth_login` with confirm=true — it opens THEIR browser on ANAF's
+certificate login page, so never call it uninvited — or they run
+`anafpy auth login` in a terminal. Both routes store the same tokens; no restart
+is needed either way.
 
 The `spv_*` tools read the taxpayer's SPV (Spațiul Privat Virtual) mailbox —
 receipts, decisions, notifications — and request official reports (VECTOR FISCAL,
@@ -148,8 +153,9 @@ def create_server(config: ServerConfig | None = None) -> MCPServer:
         annotations=READ_ONLY,
         description=cleandoc("""
             Report whether a usable ANAF session is present, and when the tokens
-            expire. Call this first; if not authenticated, ask the user to run
-            `anafpy auth login` host-side.
+            expire. Call this first; if it reports needs_login, offer the
+            auth_login tool (opens the user's browser — needs their explicit
+            approval), or the user runs `anafpy auth login` in a terminal.
 
             If credentials_configured is false, the authenticated tools are
             unavailable (set ANAFPY_CLIENT_ID / ANAFPY_CLIENT_SECRET) but the
@@ -159,6 +165,7 @@ def create_server(config: ServerConfig | None = None) -> MCPServer:
     def auth_status() -> AuthStatus:
         return ctx.auth_status()
 
+    login.register(mcp, ctx, cfg)
     efactura.register(mcp, ctx, cfg)
     etransport.register(mcp, ctx, cfg)
     public.register(mcp, ctx)

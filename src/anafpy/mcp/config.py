@@ -2,8 +2,10 @@
 
 The MCP server is a **local stdio connector** (see ``DESIGN.md`` §8). It reads
 the same credentials and token store that ``anafpy auth login`` writes, so a running
-server picks up an existing session and refreshes it headlessly. Nothing here drives
-the interactive certificate flow — that stays host-side in the CLI.
+server picks up an existing session and refreshes it headlessly. The one
+interactive OAuth step, the browser login, is also served in-session by the
+confirm-gated ``auth_login`` tool (:mod:`~anafpy.mcp.login`) — the server runs on
+the same host as the browser and the store, so both routes are host-side.
 """
 
 from __future__ import annotations
@@ -28,6 +30,8 @@ from ..exceptions import AnafConfigError
 __all__ = ["ServerConfig", "bundled_dir"]
 
 _DEFAULT_STORE = "~/.anafpy/tokens.json"
+#: The callback URL the setup guide has users register on their ANAF application.
+_DEFAULT_REDIRECT = "https://localhost:9002/callback"
 
 
 def bundled_dir(configured: Path | None, *candidates: Path) -> Path | None:
@@ -60,6 +64,10 @@ class ServerConfig(BaseSettings):
             lookups; the authenticated e-Factura / e-Transport tools report how to
             enable themselves instead of working.
         client_secret: ANAF OAuth client secret (``ANAFPY_CLIENT_SECRET``).
+        redirect_uri: the OAuth callback URL the ``auth_login`` tool's browser
+            flow listens on (``ANAFPY_REDIRECT_URI``); must exactly match a
+            Callback URL registered on the user's ANAF application. Defaults to
+            the URL the setup guide has users register.
         store_path: token-store JSON file (``ANAFPY_TOKEN_STORE``); used only by
             the ``file`` backend.
         store_backend: ``keyring`` (the OS credential store, the default) or
@@ -109,6 +117,9 @@ class ServerConfig(BaseSettings):
     client_id: str | None = Field(default=None, validation_alias="ANAFPY_CLIENT_ID")
     client_secret: str | None = Field(
         default=None, validation_alias="ANAFPY_CLIENT_SECRET"
+    )
+    redirect_uri: str = Field(
+        default=_DEFAULT_REDIRECT, validation_alias="ANAFPY_REDIRECT_URI"
     )
     store_path: Path = Field(
         default=Path(_DEFAULT_STORE), validation_alias="ANAFPY_TOKEN_STORE"
@@ -202,6 +213,11 @@ class ServerConfig(BaseSettings):
     @classmethod
     def _blank_backend_is_default(cls, value: object) -> object:
         return value or "keyring"
+
+    @field_validator("redirect_uri", mode="before")
+    @classmethod
+    def _blank_redirect_is_default(cls, value: object) -> object:
+        return value or _DEFAULT_REDIRECT
 
     @field_validator("declaratii_upload", mode="before")
     @classmethod

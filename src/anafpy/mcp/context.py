@@ -31,13 +31,34 @@ from ..spv import FileSessionStore, SpvClient, SpvSessionProvider
 from .config import ServerConfig
 from .gate import TokenLedger
 
-__all__ = ["AppContext", "AuthStatus"]
+__all__ = ["AppContext", "AuthStatus", "token_store"]
 
 _NO_CREDENTIALS = (
     "no OAuth credentials configured — set ANAFPY_CLIENT_ID and "
-    "ANAFPY_CLIENT_SECRET (then run `anafpy auth login` once) to enable the "
-    "e-Factura / e-Transport tools; the public anaf_* lookups work without them"
+    "ANAFPY_CLIENT_SECRET (then log in once: the auth_login tool, or "
+    "`anafpy auth login`) to enable the e-Factura / e-Transport tools; the "
+    "public anaf_* lookups work without them"
 )
+
+_LOGIN_HINT = (
+    "log in via auth_login (with the user's explicit approval) or "
+    "`anafpy auth login` in a terminal"
+)
+
+
+def token_store(config: ServerConfig) -> TokenStore:
+    """The token store the config selects — the same custody the login writes.
+
+    One construction for every consumer (the provider in
+    :class:`AppContext`, the ``auth_login`` tool): both backends point at
+    shared state (the OS credential store; the JSON file at ``store_path``),
+    so a save through one instance is visible to the next load through
+    another.
+    """
+    if config.store_backend == "keyring":
+        return KeyringTokenStore()
+    return FileTokenStore(config.store_path)
+
 
 _NO_DUK = (
     "declaration tools need DUKIntegrator — call declaratie_duk_install (or "
@@ -88,15 +109,10 @@ class AppContext:
         if config.client_id is not None and config.client_secret is not None:
             # A keyring backend without a usable OS credential store fails loudly
             # here, at server start, rather than on the first authenticated call.
-            store: TokenStore = (
-                KeyringTokenStore()
-                if config.store_backend == "keyring"
-                else FileTokenStore(config.store_path)
-            )
             self._provider = TokenProvider(
                 client_id=config.client_id,
                 client_secret=config.client_secret,
-                store=store,
+                store=token_store(config),
             )
         #: Redeemed confirmation tokens (single-use gate for the submit tools).
         self.token_ledger = TokenLedger()
@@ -190,14 +206,14 @@ class AppContext:
                 authenticated=False,
                 environment=env,
                 needs_login=True,
-                message="not authenticated — run `anafpy auth login`",
+                message=f"not authenticated — {_LOGIN_HINT}",
             )
         now = time.time()
         access_days = (tokens.access_expires_at - now) / 86400.0
         refresh_days = (tokens.refresh_expires_at - now) / 86400.0
         refresh_dead = tokens.refresh_expired()
         if refresh_dead:
-            message = "refresh token expired — run `anafpy auth login`"
+            message = f"refresh token expired — {_LOGIN_HINT}"
         elif tokens.access_expired():
             message = "access token expired; it will refresh headlessly on next call"
         else:

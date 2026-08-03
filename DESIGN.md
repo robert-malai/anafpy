@@ -178,8 +178,22 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
   stays the opt-out for Docker/headless hosts; selected via
   `ANAFPY_TOKEN_STORE_BACKEND` / `--store-backend`. The test suite installs an
   in-memory fake keyring autouse so tests never touch a real credential store.
-- **`anafpy auth login`** runs host-side (browser + cert). The MCP server consumes
-  the token store and auto-refreshes; it never drives the interactive step.
+- **The browser login runs host-side** (browser + cert): `anafpy auth login`,
+  and — since 2026-08-03 — the MCP server's confirm-gated **`auth_login` tool**,
+  reversing the earlier CLI-only rule. The reversal is sound because the server
+  is *equally* host-side: a local stdio process on the machine that has the
+  browser and the token store, so it runs the same bootstrap (listener with
+  ephemeral TLS + per-attempt `state`, browser open, code exchange, store save —
+  the provider re-reads the store, so no restart). What motivated it: the
+  Claude Desktop extension ships its own server copy, leaving `auth login` as
+  the **only** terminal step on the accountant path (§11) — the tool removes
+  it. Tool-specific constraints: no credential parameters (id/secret come only
+  from `ServerConfig`), **no paste mode** (an authorization code must never
+  transit model context, and the ~60s code expiry cannot span a model turn —
+  paste and user-supplied TLS certs stay CLI-only), one attempt per call,
+  failures returned as `logged_in: false` values with guidance (the
+  `spv_login` contract). Otherwise the MCP server consumes the token store and
+  auto-refreshes headlessly.
 - **`anafpy auth logout` is purely local** (added 2026-07-05): it clears the token
   store and makes **no network call** — without the refresh token no new access
   tokens can be minted. A best-effort RFC 7009 call to `/revoke` was built and
@@ -736,10 +750,13 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   playbooks reach every MCP consumer. The SKILL.md files stay the single source
   of truth (read at server start via `python-frontmatter`, failing loudly when
   `name`/`description` are missing).
-- **Auth handling**: the server reads the token store + transparent refresh;
-  interactive login stays the host-side CLI (an in-session `begin_login` tool is
-  deferred by design). A read-only `auth_status` reports validity; authenticated
-  tools fail with a clear "run `anafpy auth login`" remediation.
+- **Auth handling**: the server reads the token store + transparent refresh. A
+  read-only `auth_status` reports validity. The in-session browser login —
+  deferred at first as `begin_login` — shipped 2026-08-03 as the confirm-gated
+  `auth_login` tool (rationale and constraints in §3): the last terminal step
+  on the Claude Desktop extension path (§11). Authenticated tools without a
+  session keep a clear remediation naming both routes (`auth_login` /
+  `anafpy auth login`).
 - **MCP SDK v2** (2026-08-01). The SDK's 2.0.0 (2026-07-28) removed
   `mcp.server.fastmcp` — `FastMCP` became `mcp.server.MCPServer` — so the
   open-ended `mcp>=1.10` pin left every fresh `anafpy[mcp]` install crashing at
@@ -794,13 +811,12 @@ public lookups (§6), skills-as-prompts (§8), live shape confirmation (§7), th
 CLI surface (grew organically into the `auth` / `spv` / `declaratii` / `duk`
 command groups), and Cowork local-stdio availability (settled: the connector is
 registered in `claude_desktop_config.json`, which the Cowork tab reads — the
-`anafpy-setup` skill writes it). Still open:
+`anafpy-setup` skill writes it), and the in-session OAuth browser login
+(deferred as `begin_login`, shipped 2026-08-03 as the `auth_login` tool — §3,
+§8). Still open:
 
 1. Within the public family: the **async job variant** of the taxpayer lookup
    stays deliberately unwrapped (§6).
-2. **In-session `begin_login`** MCP tool for the OAuth browser flow — deferred
-   by design (§8); that login stays CLI-side (the certificate-only logins,
-   `spv_login` / `declaratie_portal_login`, later became tools — §12).
 
 ## 11. Distribution
 

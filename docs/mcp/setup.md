@@ -125,8 +125,19 @@ alternative uses the full path of `anafpy-mcp`. To update anafpy later:
 
 ## Step 4 — Log in to ANAF (one-time, with your certificate)
 
-This is the only step that uses the certificate. Plug in the USB token and run
-(one line, with your values from step 1):
+This is the only step that uses the certificate.
+
+!!! tip "No terminal needed with the extension"
+
+    If you connect Claude via the **extension** (step 5) and fill in its
+    settings, you can skip the command below entirely: plug in the USB token
+    and ask Claude — *"log me in to ANAF"*. With your OK it opens the very same
+    browser flow described here (certificate prompt, then the expected
+    *"connection is not private"* warning → **Advanced → Proceed to
+    localhost**). The command below does the same thing from the terminal, and
+    remains the reference path.
+
+Plug in the USB token and run (one line, with your values from step 1):
 
 ```bash
 anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
@@ -220,8 +231,10 @@ computer, so this step happens in Claude Desktop:
 
 The anafpy tools appear under the app's connectors/tools, and Cowork sessions
 on this computer can use them. The extension brings its own copy of the server
-— but the `anafpy` command from step 3 is still what runs the login in step 4,
-so don't skip that step.
+— and once its settings are filled in, step 4's login can be run by simply
+asking Claude (*"log me in to ANAF"*), no terminal needed. The `anafpy`
+command from step 3 does the same login from the terminal, and is what the
+optional SPV and declaration steps still use.
 
 ??? note "Manual configuration (alternative — and for the TEST environment)"
 
