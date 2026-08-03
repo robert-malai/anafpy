@@ -1,0 +1,63 @@
+{
+  "manifest_version": "0.4",
+  "name": "anafpy",
+  "display_name": "anafpy — ANAF tools",
+  "version": "0.9.0",
+  "description": "Talk to Romania's ANAF tax authority: e-Factura inbox and filing, e-Transport declarations, SPV mailbox, tax declarations, and public registry lookups.",
+  "long_description": "Local MCP server for ANAF's services — e-Factura (electronic invoicing), e-Transport (goods transport declarations), the SPV mailbox, tax declarations via ANAF's own DUKIntegrator validator, and the public no-auth lookups (taxpayer registry, VAT status, financial statements).\n\nThe public lookup tools work immediately after install, with no configuration. The authenticated e-Factura and e-Transport tools additionally need your own ANAF OAuth application (Client ID + Secret) and a one-time certificate login from a terminal: `uvx anafpy auth login`. Every ANAF filing is two-step — the server prepares a preview and nothing is submitted until you explicitly approve it.\n\nFull setup guide: https://anafpy.readthedocs.io/en/latest/mcp/setup/",
+  "author": {
+    "name": "Robert Malai",
+    "url": "https://github.com/robert-malai"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robert-malai/anafpy"
+  },
+  "homepage": "https://anafpy.readthedocs.io",
+  "documentation": "https://anafpy.readthedocs.io/en/latest/mcp/setup/",
+  "support": "https://github.com/robert-malai/anafpy/issues",
+  "license": "Apache-2.0",
+  "privacy_policies": ["https://anafpy.readthedocs.io/en/latest/privacy/"],
+  "icon": "icon.png",
+  "keywords": ["anaf", "e-factura", "e-transport", "spv", "romania", "tax", "invoicing"],
+  "server": {
+    "type": "uv",
+    "entry_point": "src/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "src/server.py"],
+      "env": {
+        "ANAFPY_CLIENT_ID": "${user_config.client_id}",
+        "ANAFPY_CLIENT_SECRET": "${user_config.client_secret}",
+        "ANAFPY_CIF": "${user_config.cif}"
+      }
+    }
+  },
+  "user_config": {
+    "client_id": {
+      "type": "string",
+      "title": "ANAF Client ID",
+      "description": "The Client ID of your own OAuth application on ANAF's portal. Leave empty to use only the public lookup tools — the setup guide explains how to register the application.",
+      "required": false
+    },
+    "client_secret": {
+      "type": "string",
+      "title": "ANAF Client Secret",
+      "description": "The Client Secret shown next to the Client ID when the application was registered. Stored in the system's secure credential store.",
+      "sensitive": true,
+      "required": false
+    },
+    "cif": {
+      "type": "string",
+      "title": "Firm CUI (fiscal code)",
+      "description": "Digits only, e.g. 12345678. Used as the default fiscal code when a conversation doesn't say otherwise.",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "python": ">=3.12"
+    }
+  }
+}

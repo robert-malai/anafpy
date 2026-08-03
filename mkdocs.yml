@@ -65,11 +65,13 @@ plugins:
 nav:
   - Home: index.md
   - Using with Claude (MCP):
+      - What you can do: mcp/index.md
       - Setup walkthrough: mcp/setup.md
       - Configurare (Română): mcp/setup.ro.md
       - Tools: mcp/tools.md
       - Workflow skills: mcp/skills.md
   - Python library:
+      - The clients at a glance: library/index.md
       - Quickstart: library/quickstart.md
       - Authentication: library/auth.md
       - e-Factura: library/efactura.md
@@ -99,3 +101,4 @@ nav:
       - Declarations (DUKIntegrator): anaf-reference/declaratii/duk.md
       - Declarations (StareD112 status): anaf-reference/declaratii/stared112.md
       - Declarations (portal upload recon): anaf-reference/declaratii/portal-upload.md
+  - Privacy policy: privacy.md

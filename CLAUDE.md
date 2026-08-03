@@ -206,6 +206,10 @@ plugins/anafpy-setup/    # skill that installs + configures anafpy on an end
                          # user's machine (writes claude_desktop_config.json;
                          # local sessions only). SKILL.md = platform-neutral
                          # spine; command blocks live in macos.md / windows.md
+mcpb/                    # Claude Desktop extension source: uv-type MCPB
+                         # manifest + entry point depending on the released
+                         # anafpy[mcp]; packed to the anafpy.mcpb release asset
+                         # by release.yml (versions gated by test_version.py)
 plugins/anafpy-workflows/skills/  # the workflow playbooks' SINGLE home
                          # (etransport-declare, declaratie-prepare,
                          # personal-income-summary) — Cowork Agent Skills AND
@@ -482,10 +486,14 @@ silently returning empty results.
   [DESIGN.md](DESIGN.md) owns decisions, dates, and reversals; module
   docstrings own per-file contracts; `docs/anaf-reference/` owns ANAF wire
   facts (keep its provenance frontmatter intact); [README.md](README.md) and
-  the docs site (`docs/mcp/setup.md` — end-user walkthrough, accountant
-  audience; `docs/mcp/tools.md` + `skills.md` — the MCP surface;
-  `docs/library/*` — the library guides) own the user-facing story. A new page
-  goes into `mkdocs.yml`'s `nav`. Update the affected homes in the same change.
+  the docs site (`docs/mcp/index.md` — the use-case tour; `docs/mcp/setup.md`
+  — end-user walkthrough, accountant audience; `docs/mcp/tools.md` +
+  `skills.md` — the MCP surface; `docs/library/*` — the library guides, led by
+  the `index.md` client inventory; `docs/privacy.md` — the privacy policy the
+  README section and `mcpb/manifest.json` link to) own the user-facing story;
+  [CONTRIBUTING.md](CONTRIBUTING.md) owns the contributor quickstart. README
+  stays a short landing page — link into these homes instead of growing it. A
+  new page goes into `mkdocs.yml`'s `nav`. Update the affected homes in the same change.
 - **Repo boundary**: this repo is the whole publishable project (clients + MCP
   server + skills + docs). Never add hosted-service code — token custody,
   multi-tenancy, and an OAuth-provider surface toward Claude are out of scope
@@ -501,10 +509,15 @@ silently returning empty results.
   `release.yml` re-runs the gates on a `v*` tag, checks the tag against
   `pyproject.toml`'s version, publishes to PyPI via trusted publishing (OIDC,
   no stored token), and only then creates the GitHub release for the same tag
-  with the sdist + wheel attached. The version lives in `pyproject.toml` **and**
-  `anafpy.__version__`; `tests/test_version.py` keeps them agreeing.
+  with the sdist + wheel + the packed Claude Desktop extension (`anafpy.mcpb`,
+  from `mcpb/` — constant asset name, so
+  `releases/latest/download/anafpy.mcpb` stays a stable install URL) attached.
+  The version lives in `pyproject.toml`, `anafpy.__version__`, **and** the MCP
+  Bundle (`mcpb/manifest.json` + `mcpb/pyproject.toml`'s version and
+  `anafpy[mcp]==X.Y.Z` pin); `tests/test_version.py` keeps them all agreeing.
 - **Cutting a release** — the release commit carries all three, then the tag:
-  1. Bump the version in `pyproject.toml` **and** `anafpy.__version__`.
+  1. Bump the version in `pyproject.toml`, `anafpy.__version__`, and the two
+     `mcpb/` files (manifest `version`; bundle `version` + dependency pin).
   2. **Write `release-notes/<tag>.md`** (e.g. `release-notes/v0.7.0.md`) — every
      tag has one; `release-notes/` holds all of them, backfilled to v0.1.0.
   3. Commit as `Release X.Y.Z`, then push the `v*` tag.

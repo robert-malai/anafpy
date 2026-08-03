@@ -3,7 +3,8 @@
 # must name this repo, this filename (release.yml), and the `pypi` environment.
 # The full CI gates re-run here so a tag can never ship an artifact that a
 # broken branch produced. Once PyPI has the distribution, the same tag gets a
-# GitHub release carrying the sdist + wheel; its prose comes from
+# GitHub release carrying the sdist + wheel + the Claude Desktop extension
+# (anafpy.mcpb); its prose comes from
 # `release-notes/<tag>.md` when the tag ships one, and from GitHub's generated
 # notes when it does not.
 name: Release
@@ -56,10 +57,22 @@ jobs:
           fi
       - name: Build sdist + wheel
         run: uv build
+      # The Claude Desktop extension rides the same release. The constant asset
+      # name keeps /releases/latest/download/anafpy.mcpb a stable install URL,
+      # and `pack` re-validates the manifest. It travels as its own artifact —
+      # the PyPI publish step must see only Python distributions in dist/.
+      # Version agreement between mcpb/ and pyproject.toml is a pytest gate
+      # (tests/test_version.py), re-run by the gates job above.
+      - name: Pack the MCP Bundle (.mcpb)
+        run: npx -y @anthropic-ai/mcpb@2.1.2 pack mcpb mcpb-dist/anafpy.mcpb
       - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcpb
+          path: mcpb-dist/
 
   publish:
     needs: build
@@ -92,6 +105,10 @@ jobs:
         with:
           name: dist
           path: dist/
+      - uses: actions/download-artifact@v8
+        with:
+          name: mcpb
+          path: mcpb-dist/
       - name: Assemble the release notes
         id: notes
         env:
@@ -136,9 +153,9 @@ jobs:
             gh release edit "${tag}" \
               --title "${{ steps.notes.outputs.title }}" \
               --notes-file "${{ steps.notes.outputs.notes }}"
-            gh release upload "${tag}" dist/* --clobber
+            gh release upload "${tag}" dist/* mcpb-dist/* --clobber
           else
-            gh release create "${tag}" dist/* \
+            gh release create "${tag}" dist/* mcpb-dist/* \
               --title "${{ steps.notes.outputs.title }}" \
               --notes-file "${{ steps.notes.outputs.notes }}"
           fi

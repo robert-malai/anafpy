@@ -12,6 +12,7 @@ dist/
 venv/
 .uv/
 uv.lock.bak
+mcpb/uv.lock
 
 # Caches
 .mypy_cache/

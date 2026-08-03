@@ -2,9 +2,12 @@
 ![anafpy](assets/anafpy-logo-dark.svg#only-dark){ .hero-logo }
 
 Typed Python clients for Romania's **ANAF** tax-authority web services —
-**e-Factura** (electronic invoicing), **e-Transport** (goods transport), and the
-**public no-auth registries** (VAT/taxpayer lookups, financial statements) — plus a
-local MCP server that exposes them as [Claude Cowork](https://claude.com) skills.
+**e-Factura** (electronic invoicing), **e-Transport** (goods transport), the
+**SPV mailbox** (certificate-authenticated, read-only), **tax declarations**
+(declarații — local authoring, validation, qualified signing, filing), and the
+**public no-auth registries** (VAT/taxpayer lookups, financial statements) —
+plus a local MCP server that exposes them as [Claude Cowork](https://claude.com)
+skills.
 
 anafpy is a **thin transport client** — no persistence, no accounting logic. For
 **e-Factura** there are two ways out: bring the invoice XML your own invoicing
@@ -28,19 +31,23 @@ The documentation is organized for two very different readers — pick your trac
 
 **You want ANAF operations inside Claude** (Claude Desktop, Claude Code, Cowork) —
 an accountant's track, no programming involved. anafpy ships a local MCP server:
-Claude can look up business partners, work your e-Factura inbox (list, download,
-save PDFs), and file e-Transport declarations with a human confirmation step.
+Claude can look up business partners, work your e-Factura inbox, file
+e-Transport declarations and tax declarations with a human confirmation step,
+and read your SPV mailbox.
 
-- Start at the [setup walkthrough](mcp/setup.md) — ANAF app registration, the
+- Start with [what you can do](mcp/index.md) — the full tour, use case by use
+  case.
+- Then the [setup walkthrough](mcp/setup.md) — ANAF app registration, the
   one-time certificate login, and the Claude configuration, written for a
   non-developer.
-- Then see [what the tools can do](mcp/tools.md) and the
-  [workflow skills](mcp/skills.md).
+- The [tools overview](mcp/tools.md) and [workflow skills](mcp/skills.md)
+  document the full surface.
 
 **You want the Python library** — typed async clients over ANAF's APIs, for your
 own software.
 
-- Start at the [quickstart](library/quickstart.md), then the per-service guides:
+- Start with [the clients at a glance](library/index.md), then the
+  [quickstart](library/quickstart.md) and the per-service guides:
   [authentication](library/auth.md), [e-Factura](library/efactura.md),
   [e-Transport](library/etransport.md), [public services](library/public.md), and
   the [error model](library/errors.md) (worth reading before shipping anything).

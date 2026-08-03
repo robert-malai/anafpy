@@ -71,3 +71,8 @@ jobs:
       - name: Docs build (strict)
         if: runner.os == 'Linux'
         run: uv run mkdocs build --strict
+      # A broken manifest should surface here, not on the release tag — the
+      # release workflow's `pack` step is the shipping run of the same check.
+      - name: MCP Bundle manifest (validate)
+        if: runner.os == 'Linux'
+        run: npx -y @anthropic-ai/mcpb@2.1.2 validate mcpb/manifest.json
