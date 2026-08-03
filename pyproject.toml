@@ -98,6 +98,7 @@ test = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5",
+    "pytest-httpx2>=1",
     "respx>=0.21",
     "types-jsonschema>=4.21",
 ]

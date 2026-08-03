@@ -455,8 +455,9 @@ silently returning empty results.
 
 - Keep the four gates green; add/extend respx tests for client behavior changes
   (upload→poll→download, `nok` path, 401-refresh, 429 surfacing). respx knows
-  only classic httpx: the suite reaches httpx2 through the vendored httpcore2
-  mocker in [tests/conftest.py](tests/conftest.py) (DESIGN.md §14). The rule in
+  only classic httpx: the suite reaches httpx2 through `pytest-httpx2`'s
+  httpcore2 mocker, made the default in [tests/conftest.py](tests/conftest.py)
+  (DESIGN.md §14; the plugin's fixture stays unused). The rule in
   test code: respx-facing objects (mock `httpx.Response` fabrication, `calls`
   introspection) stay classic `httpx`; anything that reaches anafpy code —
   injected clients, exception `side_effect`s — is `httpx2`. The respx

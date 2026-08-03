@@ -11,48 +11,27 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
-from typing import ClassVar
 
 import keyring
 import keyring.backend
 import pytest
 from keyring.errors import PasswordDeleteError
 from respx import mocks as respx_mocks
-from respx.mocks import HTTPCoreMocker
 
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenStore
 
 _ENV_FILE = Path(__file__).parent.parent / ".env"
 
 
-class HTTPCore2Mocker(HTTPCoreMocker):
-    """respx mocker patching httpcore2 — the transport under ``httpx2``.
-
-    respx only knows classic httpx/httpcore; anafpy's clients run on httpx2.
-    Interception at the httpcore2 layer keeps the whole respx router API
-    working unchanged (requests and responses cross that boundary as raw
-    byte-level objects, so respx's classic-httpx currency never meets an
-    httpx2 type). Vendored from ``lundberg/pytest-httpx2`` 1.0.0 — the respx
-    author's own bridge — rather than depended on, because it is these six
-    target strings plus a fixture anafpy does not use. respx registers the
-    class by ``name`` at definition time.
-    """
-
-    name = "httpcore2"
-    targets: ClassVar[list[str]] = [
-        "httpcore2._sync.connection.HTTPConnection",
-        "httpcore2._sync.connection_pool.ConnectionPool",
-        "httpcore2._sync.http_proxy.HTTPProxy",
-        "httpcore2._async.connection.AsyncHTTPConnection",
-        "httpcore2._async.connection_pool.AsyncConnectionPool",
-        "httpcore2._async.http_proxy.AsyncHTTPProxy",
-    ]
-
-
-# Route every bare ``@respx.mock`` in the suite through the httpcore2 mocker.
-# respx resolves this module attribute lazily, at mock-start (``Router.using``
-# re-imports it per call), so one assignment here covers the whole suite.
-respx_mocks.DEFAULT_MOCKER = HTTPCore2Mocker.name
+# Route every bare ``@respx.mock`` in the suite through the ``httpcore2``
+# mocker: respx only knows classic httpx/httpcore, and anafpy's clients run on
+# httpx2. The mocker itself comes from the ``pytest-httpx2`` plugin (the respx
+# author's bridge; pytest's entry-point loading registers it before this file
+# runs) — interception at the httpcore2 layer keeps the whole respx router API
+# working unchanged. Its ``httpx2_mock`` fixture stays unused: the suite's
+# decorators resolve this module attribute lazily, at mock-start, so one
+# assignment covers them all.
+respx_mocks.DEFAULT_MOCKER = "httpcore2"
 
 
 class FakeKeyring(keyring.backend.KeyringBackend):

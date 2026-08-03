@@ -1195,12 +1195,18 @@ rework. Classic httpx remains in the tree only as respx's dev dependency.
 - **respx has no httpx2 support and no port exists.** The bridge is the respx
   author's own `pytest-httpx2`: a mocker subclass targeting httpcore2's
   connection classes, so interception happens at the raw byte layer and the
-  whole respx router API keeps working. It is **vendored** into
-  `tests/conftest.py` (six target strings) rather than depended on — the
-  package is young and its pytest fixture is unused here. respx resolves
-  `DEFAULT_MOCKER` lazily at mock-start, so one conftest assignment routes all
-  bare `@respx.mock` decorators; the suite's rule is *respx-facing objects
-  stay classic `httpx`, anything reaching anafpy code is `httpx2`*.
+  whole respx router API keeps working. First **vendored** into
+  `tests/conftest.py` (six target strings; the package was young and its
+  pytest fixture unused here), **reversed 2026-08-03 to a dev dependency**:
+  the mocker's shape is the maintainer's to evolve — if he redesigns the
+  bridge or versions it alongside respx/httpx2, tracking the package moves us
+  with it, while a vendored copy would keep working against a design he had
+  abandoned. The two are mutually exclusive (respx's mocker registry raises on
+  a duplicate name), so the vendored class is gone; conftest keeps only the
+  `DEFAULT_MOCKER = "httpcore2"` assignment — respx resolves it lazily at
+  mock-start, so that one line routes all bare `@respx.mock` decorators. The
+  suite's rule is *respx-facing objects stay classic `httpx`, anything
+  reaching anafpy code is `httpx2`*.
 - **`alias_httpx()` rejected**: httpx2 ships a process-wide import alias so
   `import httpx` resolves to httpx2, but its own docstring forbids libraries
   calling it, and anafpy is a library.
