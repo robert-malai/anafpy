@@ -21,7 +21,7 @@ import hashlib
 import io
 from pathlib import Path
 
-import httpx
+import httpx2
 from asn1crypto import cms, pem, x509
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers
@@ -127,11 +127,11 @@ async def _fetch_issuer(leaf: x509.Certificate) -> bytes | None:
         with contextlib.suppress(OSError):
             cache.unlink()
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx2.AsyncClient(timeout=15.0) as client:
             response = await client.get(url)
             response.raise_for_status()
             issuer_der = _certificate_der(response.content)
-    except httpx.HTTPError:
+    except httpx2.HTTPError:
         return None
     if issuer_der is None or not _is_leaf_issuer(issuer_der, leaf):
         return None

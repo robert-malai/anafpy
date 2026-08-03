@@ -69,7 +69,7 @@ Live facts:
   plus **`JSESSIONID`** (the WebSphere app; `X-Powered-By: Servlet/3.0`,
   IBM sample-code markup in the pages). A **plain, certificate-less client
   replaying the cookies is fully authenticated** — same bearer-cookie model as
-  SPV, so the SPV pattern (curl bootstrap once, httpx rides the cookies) fits.
+  SPV, so the SPV pattern (curl bootstrap once, httpx2 rides the cookies) fits.
 - Stated **10-minute inactivity timeout** (logon page) — much shorter than
   SPV's; treat sessions as disposable (login → upload → done).
 - Certificate-less access to step 4 dead-ends at `/vdesk/hangup.php3`.

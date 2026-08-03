@@ -42,7 +42,7 @@ import warnings
 from collections.abc import Sequence
 from typing import Any
 
-import httpx
+import httpx2
 from pydantic import ValidationError
 
 from .._transport.base import (
@@ -245,7 +245,7 @@ class _RequestPacer:
 class PublicClient(HttpClientBase):
     """Talks to ANAF's unauthenticated public services (``webservicesp.anaf.ro``).
 
-    No credentials are needed; the client owns an ``httpx.AsyncClient`` unless
+    No credentials are needed; the client owns an ``httpx2.AsyncClient`` unless
     one is injected. An injected client must carry a non-empty ``base_url``
     (an empty one raises :class:`~anafpy.exceptions.AnafConfigError`; injected
     clients are never mutated). Use it as an async
@@ -257,7 +257,7 @@ class PublicClient(HttpClientBase):
     def __init__(
         self,
         *,
-        http: httpx.AsyncClient | None = None,
+        http: httpx2.AsyncClient | None = None,
         timeout: float = 60.0,
         min_request_interval: float = 1.0,
     ) -> None:
@@ -268,7 +268,7 @@ class PublicClient(HttpClientBase):
             http=http,
             base_url=PUBLIC_HOST,
             timeout=timeout,
-            limits=httpx.Limits(max_keepalive_connections=0),
+            limits=httpx2.Limits(max_keepalive_connections=0),
         )
         self._pacer = _RequestPacer(min_request_interval)
 
@@ -284,7 +284,7 @@ class PublicClient(HttpClientBase):
         content: bytes | None = None,
         headers: dict[str, str] | None = None,
         tolerate: tuple[int, ...] = (),
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         await self._pacer.wait()
         return await self._request_checked(
             method,
@@ -338,7 +338,7 @@ class PublicClient(HttpClientBase):
         response = await self._request(
             "POST", _EFACTURA_REGISTER_PATH, json_body=payload, tolerate=(404,)
         )
-        if response.status_code == httpx.codes.NOT_FOUND:
+        if response.status_code == httpx2.codes.NOT_FOUND:
             data = _json_or_none(response.content)
             if not (isinstance(data, dict) and ("found" in data or "notFound" in data)):
                 # A genuine 404 (bad path, gateway), not the register's "no data".
@@ -468,7 +468,7 @@ class PublicClient(HttpClientBase):
             )
         return (await self._post_document(path, xml)).content
 
-    async def _post_document(self, path: str, xml: str | bytes) -> httpx.Response:
+    async def _post_document(self, path: str, xml: str | bytes) -> httpx2.Response:
         body = xml.encode("utf-8") if isinstance(xml, str) else xml
         return await self._request(
             "POST",

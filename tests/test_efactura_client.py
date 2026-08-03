@@ -12,6 +12,7 @@ from decimal import Decimal
 from email.utils import format_datetime
 
 import httpx
+import httpx2
 import pytest
 import respx
 from xsdata.models.datatype import XmlDate
@@ -225,7 +226,7 @@ async def test_get_status_ok_exposes_download_id() -> None:
 async def test_injected_client_without_base_url_raises_config_error() -> None:
     # An injected client is never mutated: an empty base_url is a
     # misconfiguration, named loudly at construction.
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         with pytest.raises(AnafConfigError, match=f"{BASE}/"):
             EFacturaClient(_provider(), environment=Environment.TEST, http=http)
 
@@ -235,7 +236,7 @@ async def test_injected_client_with_base_url_is_used_and_not_closed() -> None:
     respx.get(f"{BASE}/stareMesaj").mock(
         return_value=httpx.Response(200, text='<header stare="ok"/>')
     )
-    http = httpx.AsyncClient(base_url=f"{BASE}/")
+    http = httpx2.AsyncClient(base_url=f"{BASE}/")
     client = EFacturaClient(_provider(), environment=Environment.TEST, http=http)
     status = await client.get_status("3828")
     await client.aclose()
@@ -603,8 +604,12 @@ async def test_list_messages_corrects_the_window_from_anaf_clock() -> None:
 @respx.mock
 async def test_list_messages_corrects_an_explicit_range_by_clamping_end_only() -> None:
     # The caller named absolute instants: the correction pulls `end` back inside
-    # ANAF's now and leaves `start` exactly where they put it.
-    end = datetime.now(tz=UTC) - timedelta(seconds=1)
+    # ANAF's now and leaves `start` exactly where they put it. The instants are
+    # anchored to the fixture's quoted clock, not the machine's — like the
+    # field-observed fault, `end` runs one second past ANAF's moment. (A
+    # wall-clock `now` here made the test expire once real time left the
+    # fixture's date more than the window's 3 days behind.)
+    end = datetime(2026, 7, 30, 15, 15, 28, tzinfo=ROMANIA_TZ)
     start = end - timedelta(days=3)
     route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
         side_effect=[

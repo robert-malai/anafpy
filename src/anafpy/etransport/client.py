@@ -18,7 +18,7 @@ import json
 import urllib.parse
 from collections.abc import AsyncIterator
 
-import httpx
+import httpx2
 from pydantic import ValidationError
 
 from .._transport.base import (
@@ -88,7 +88,7 @@ class ETransportClient(HttpClientBase):
     """Talks to ANAF e-Transport over OAuth2.
 
     Construct with an authenticated :class:`~anafpy.auth.provider.TokenProvider`; the
-    client owns an ``httpx.AsyncClient`` (unless one is injected — it must then
+    client owns an ``httpx2.AsyncClient`` (unless one is injected — it must then
     carry :class:`~anafpy.auth.oauth.AnafAuth` and a non-empty ``base_url``;
     an empty one raises :class:`~anafpy.exceptions.AnafConfigError`, since
     injected clients are never mutated) and should
@@ -100,7 +100,7 @@ class ETransportClient(HttpClientBase):
         provider: TokenProvider,
         *,
         environment: Environment = Environment.PROD,
-        http: httpx.AsyncClient | None = None,
+        http: httpx2.AsyncClient | None = None,
         timeout: float = 60.0,
     ) -> None:
         super().__init__(

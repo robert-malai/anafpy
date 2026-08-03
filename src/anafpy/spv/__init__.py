@@ -2,7 +2,7 @@
 
 The certificate-authenticated session bootstrap is platform-specific
 (:class:`CurlBootstrapper` over the OS-shipped curl); everything else is plain
-httpx riding the APM cookies. See ``docs/anaf-reference/spv/api.md`` for the
+httpx2 riding the APM cookies. See ``docs/anaf-reference/spv/api.md`` for the
 compiled service reference.
 """
 

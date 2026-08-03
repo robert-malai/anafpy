@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator
 
-import httpx
+import httpx2
 import pytest
 
 from anafpy._transport.base import Environment
@@ -63,7 +63,7 @@ def cif() -> str:
 async def test_token_accepted_by_api_host(provider: TokenProvider) -> None:
     """The stored/refreshed token authenticates against api.anaf.ro (hello echo)."""
     token = await provider.access_token()
-    async with httpx.AsyncClient(timeout=30.0) as http:
+    async with httpx2.AsyncClient(timeout=30.0) as http:
         response = await http.get(
             _HELLO_URL,
             params={"name": "anafpy-live"},

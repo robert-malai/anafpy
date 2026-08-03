@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import httpx2
 import pytest
 import respx
 
@@ -814,11 +815,11 @@ def test_login_default_serves_ephemeral_tls(
         def hit() -> None:
             for _ in range(50):
                 try:
-                    httpx.get(
+                    httpx2.get(
                         f"{redirect_uri}?code=cli-code&state={state}", verify=False
                     )
                     return
-                except httpx.TransportError:  # listener not up yet
+                except httpx2.TransportError:  # listener not up yet
                     time.sleep(0.05)
 
         threading.Thread(target=hit, daemon=True).start()

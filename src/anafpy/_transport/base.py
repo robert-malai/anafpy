@@ -28,7 +28,7 @@ from enum import StrEnum
 from typing import Self
 from zoneinfo import ZoneInfo
 
-import httpx
+import httpx2
 
 from ..exceptions import (
     AnafConfigError,
@@ -138,7 +138,7 @@ def as_text(body: bytes) -> str:
     return body.decode("utf-8", errors="replace")
 
 
-def raise_for_status(response: httpx.Response) -> None:
+def raise_for_status(response: httpx2.Response) -> None:
     """Raise the anafpy error for a non-success response; a no-op on success.
 
     HTTP 429 raises :class:`~anafpy.exceptions.AnafRateLimitError` carrying
@@ -149,7 +149,7 @@ def raise_for_status(response: httpx.Response) -> None:
     if response.is_success:
         return
     body = as_text(response.content)
-    if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
+    if response.status_code == httpx2.codes.TOO_MANY_REQUESTS:
         raise AnafRateLimitError(
             retry_after=retry_after_seconds(response.headers.get("Retry-After")),
             body=body,
@@ -169,7 +169,7 @@ _WAF_SUPPORT_ID = re.compile(rb"support ID is:\s*([\w-]+)", re.IGNORECASE)
 _WAF_SCAN_BYTES = 4096
 
 
-def raise_for_waf_rejection(response: httpx.Response) -> None:
+def raise_for_waf_rejection(response: httpx2.Response) -> None:
     """Raise when ANAF's firewall answered its block page instead of a payload.
 
     The page arrives as ``text/html`` **with HTTP 200** (live-confirmed

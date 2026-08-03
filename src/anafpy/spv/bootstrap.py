@@ -17,7 +17,7 @@ not a request transport.
   ``CurrentUser\\MY\\<thumbprint>`` cert-store syntax.
 
 Python-level alternatives were evaluated and rejected: CPython's ``ssl`` only
-loads private keys from files, so no httpx/requests-based stack can sign with a
+loads private keys from files, so no httpx2/requests-based stack can sign with a
 non-exportable platform-store key.
 
 The bootstrap is **interactive** (the 2FA prompt fires every time — the

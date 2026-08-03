@@ -55,7 +55,7 @@ invoicing system.
   transport retry.
 
 Python **3.12+** (floor set by PEP 695 syntax in the flat models and lookups; dev
-pin is 3.13), **httpx**, **Pydantic v2**.
+pin is 3.13), **httpx2**, **Pydantic v2**.
 
 Since shipped, expanding the original scope: **SPV** (read-only mailbox over a
 certificate-bootstrapped cookie session — landed 2026-07-12) and
@@ -101,7 +101,7 @@ inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; a sync facade
   tree lives in CLAUDE.md.
 
 The six network clients share only a small `_transport.HttpClientBase`
-chassis: owned-versus-injected `httpx.AsyncClient` lifecycle, trailing-slash
+chassis: owned-versus-injected `httpx2.AsyncClient` lifecycle, trailing-slash
 base-URL convention, and network-error translation. An owned client is
 constructed with the resolved service URL; an injected client is **never
 mutated** — one with a non-empty `base_url` is accepted as-is (the test/proxy
@@ -547,7 +547,7 @@ Mirrors e-Factura, with differences (see `docs/anaf-reference/etransport/api.md`
 - **A third client, not a mode of the OAuth ones.** Different host, no test/prod
   split, no `TokenProvider`/`environment` — it sits outside `service_base_url`
   (`PUBLIC_HOST` in `_transport/base.py`). Same shape otherwise: async, owns its
-  `httpx.AsyncClient`, context-manager, hybrid error model.
+  `httpx2.AsyncClient`, context-manager, hybrid error model.
 - **Client-side pacing (deliberate exception to "no auto-backoff").** ANAF states
   the public host's 1 req/s limit as a usage *rule* ("va fi pedepsită"), not via
   429s, so the client spaces its own requests (`min_request_interval`, default
@@ -972,7 +972,7 @@ access to the CUI's filings from the last 3 months (max 200), with per-document
 processing state and the signed recipisa PDF (downloadable ~60 days from
 filing; an unknown/expired index answers HTTP 200 with an *empty* PDF body).
 So `DeclarationStatusClient` (`declaratii/status.py`) landed ahead of the upload
-client: a small no-auth httpx client with strict HTML parsing — "no declaration
+client: a small no-auth httpx2 client with strict HTML parsing — "no declaration
 identified" is a returned business outcome (`found=False`), an unrecognised
 page raises, per the error model. Scraping is offloaded to **parsel** (Scrapy's
 selector layer: CSS/XPath over lxml, `py.typed`; a core dependency since
@@ -1165,3 +1165,48 @@ tool now surfaces too.
 exercised against constructed declarations, and the layout decisions were made
 against two real reference documents rather than a live `info` response. The
 `uit_expiry` field has not been round-tripped from a real `data_exp_uit`.
+
+## 14. httpx2 migration (2026-08-01)
+
+Every client moved from httpx 0.28 to **httpx2** (Pydantic's stewardship
+continuation of httpx — same author lineage, explicitly honouring the original
+design). Decided when the MCP SDK's v2 line adopted httpx2, which meant every
+`anafpy[mcp]` install was already carrying two parallel HTTP stacks. The
+API-level diff of the installed packages showed the entire surface anafpy
+depends on — `AsyncClient` kwargs, the `Auth` generator protocol (both
+`AnafAuth` and `SpvAuth` port unchanged), the exception tree, `Cookies`,
+streaming — is signature-identical, so the migration is a rename, not a
+rework. Classic httpx remains in the tree only as respx's dev dependency.
+
+- **Parallel types make this a breaking release (0.9.0)** for callers injecting
+  their own client: `httpx2.Response is not httpx.Response`, and a classic
+  client's errors are not `httpx2` exceptions. A classic-httpx client would
+  duck-type at runtime and fail only later, its errors escaping the `AnafError`
+  hierarchy — so `HttpClientBase` names the mismatch at construction
+  (`AnafConfigError`), the same fail-loudly stance as the empty-`base_url`
+  check.
+- **TLS verification now uses the OS trust store** (httpx2 replaced certifi
+  with a mandatory `truststore`). ANAF's hosts carry public-CA certificates,
+  and corporate-proxy MITM roots live in OS stores, so this helps more than it
+  risks; no anafpy code passes `verify=`.
+- **Wire-visible deltas** are the User-Agent (`python-httpx2/x.y`) and the
+  logger name (`httpx2`). ANAF's WAF has form (§6), so the live smokes are the
+  arbiter — see the 0.9.0 release notes for what was re-confirmed.
+- **respx has no httpx2 support and no port exists.** The bridge is the respx
+  author's own `pytest-httpx2`: a mocker subclass targeting httpcore2's
+  connection classes, so interception happens at the raw byte layer and the
+  whole respx router API keeps working. First **vendored** into
+  `tests/conftest.py` (six target strings; the package was young and its
+  pytest fixture unused here), **reversed 2026-08-03 to a dev dependency**:
+  the mocker's shape is the maintainer's to evolve — if he redesigns the
+  bridge or versions it alongside respx/httpx2, tracking the package moves us
+  with it, while a vendored copy would keep working against a design he had
+  abandoned. The two are mutually exclusive (respx's mocker registry raises on
+  a duplicate name), so the vendored class is gone; conftest keeps only the
+  `DEFAULT_MOCKER = "httpcore2"` assignment — respx resolves it lazily at
+  mock-start, so that one line routes all bare `@respx.mock` decorators. The
+  suite's rule is *respx-facing objects stay classic `httpx`, anything
+  reaching anafpy code is `httpx2`*.
+- **`alias_httpx()` rejected**: httpx2 ships a process-wide import alias so
+  `import httpx` resolves to httpx2, but its own docstring forbids libraries
+  calling it, and anafpy is a library.

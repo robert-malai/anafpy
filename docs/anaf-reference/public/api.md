@@ -219,6 +219,6 @@ make a throwaway probe wasteful); shape shares §1's caveats.
 - **Connection hygiene (live-observed 2026-07-02):** the host resets pooled
   keep-alive connections left idle between paced requests (RegAgric RST-on-reuse),
   and RegAgric/RegCult intermittently reset even fresh connections during bad
-  spells. The client therefore disables keep-alive on the `httpx` client it owns
+  spells. The client therefore disables keep-alive on the `httpx2` client it owns
   (harmless at ≤1 req/s); it still does **no** transport retry — a
   reset surfaces as `AnafTransportError` for the caller to retry.

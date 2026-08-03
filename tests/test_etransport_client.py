@@ -7,6 +7,7 @@ import json
 import time
 
 import httpx
+import httpx2
 import pytest
 import respx
 
@@ -222,7 +223,7 @@ async def test_get_status_ok_is_terminal() -> None:
 async def test_injected_client_without_base_url_raises_config_error() -> None:
     # An injected client is never mutated: an empty base_url is a
     # misconfiguration, named loudly at construction.
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         with pytest.raises(AnafConfigError, match=f"{BASE}/"):
             ETransportClient(_provider(), environment=Environment.TEST, http=http)
 
@@ -232,7 +233,7 @@ async def test_injected_client_with_base_url_is_used_and_not_closed() -> None:
     respx.get(f"{BASE}/stareMesaj/5001").mock(
         return_value=httpx.Response(200, json=_STATUS_OK)
     )
-    http = httpx.AsyncClient(base_url=f"{BASE}/")
+    http = httpx2.AsyncClient(base_url=f"{BASE}/")
     client = ETransportClient(_provider(), environment=Environment.TEST, http=http)
     status = await client.get_status("5001")
     await client.aclose()

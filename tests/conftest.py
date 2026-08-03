@@ -1,5 +1,6 @@
 """Shared test setup: load a repo-root ``.env`` (if present) for the live suites,
-and provide an in-memory keyring backend so store tests never touch the OS vault.
+provide an in-memory keyring backend so store tests never touch the OS vault,
+and teach respx to intercept httpx2 traffic.
 
 The respx suite is credential-free; only the ``live``-marked tests read these
 variables. Values already present in the environment win over the file.
@@ -15,10 +16,22 @@ import keyring
 import keyring.backend
 import pytest
 from keyring.errors import PasswordDeleteError
+from respx import mocks as respx_mocks
 
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenStore
 
 _ENV_FILE = Path(__file__).parent.parent / ".env"
+
+
+# Route every bare ``@respx.mock`` in the suite through the ``httpcore2``
+# mocker: respx only knows classic httpx/httpcore, and anafpy's clients run on
+# httpx2. The mocker itself comes from the ``pytest-httpx2`` plugin (the respx
+# author's bridge; pytest's entry-point loading registers it before this file
+# runs) — interception at the httpcore2 layer keeps the whole respx router API
+# working unchanged. Its ``httpx2_mock`` fixture stays unused: the suite's
+# decorators resolve this module attribute lazily, at mock-start, so one
+# assignment covers them all.
+respx_mocks.DEFAULT_MOCKER = "httpcore2"
 
 
 class FakeKeyring(keyring.backend.KeyringBackend):

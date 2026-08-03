@@ -25,7 +25,7 @@ The first two require ANAF's OAuth2 flow, wrapped by the
 [auth layer](auth.md): a one-time interactive `anafpy auth login` with your
 qualified certificate, then headless token refresh for about a year.
 
-All clients are async context managers and own their `httpx.AsyncClient` unless
+All clients are async context managers and own their `httpx2.AsyncClient` unless
 you inject one.
 
 ## First calls

@@ -37,7 +37,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
-import httpx
+import httpx2
 from parsel import Selector
 from pydantic import BaseModel
 
@@ -247,7 +247,7 @@ def parse_feed(text: str) -> DukFeed:
     )
 
 
-async def fetch_feed(http: httpx.AsyncClient | None = None) -> DukFeed:
+async def fetch_feed(http: httpx2.AsyncClient | None = None) -> DukFeed:
     """Fetch and parse ANAF's DUK update feed.
 
     Raises:
@@ -255,7 +255,7 @@ async def fetch_feed(http: httpx.AsyncClient | None = None) -> DukFeed:
         AnafResponseError: the feed answered a non-success HTTP status.
     """
     owns_http = http is None
-    client = http or httpx.AsyncClient(timeout=30.0)
+    client = http or httpx2.AsyncClient(timeout=30.0)
     try:
         return parse_feed((await _fetch(client, FEED_URL)).decode("utf-8", "replace"))
     finally:
@@ -270,7 +270,7 @@ class DukInstaller:
         dist_dir: the target dist directory; defaults to the managed
             :data:`MANAGED_DUK_DIR`. An existing dist (managed or
             hand-assembled) is converged in place, never wiped.
-        http: an injected ``httpx.AsyncClient`` (owned one otherwise).
+        http: an injected ``httpx2.AsyncClient`` (owned one otherwise).
         progress: called with one human-readable line per downloaded file —
             the CLI passes ``print``; ``None`` stays silent.
         timeout: per-request budget for feed/jar downloads (the SAF-T zip
@@ -281,7 +281,7 @@ class DukInstaller:
         self,
         dist_dir: Path | None = None,
         *,
-        http: httpx.AsyncClient | None = None,
+        http: httpx2.AsyncClient | None = None,
         progress: Callable[[str], None] | None = None,
         timeout: float = 60.0,
     ) -> None:
@@ -308,7 +308,7 @@ class DukInstaller:
         """
         requested = [name.strip().upper() for name in forms if name.strip()]
         owns_http = self._http is None
-        client = self._http or httpx.AsyncClient(timeout=self.timeout)
+        client = self._http or httpx2.AsyncClient(timeout=self.timeout)
         try:
             feed = parse_feed(
                 (await _fetch(client, FEED_URL)).decode("utf-8", "replace")
@@ -356,7 +356,7 @@ class DukInstaller:
 
     async def _install_form(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         manifest: DukManifest,
         feed: DukFeed,
         form: str,
@@ -401,7 +401,7 @@ class DukInstaller:
 
     async def _install_saft(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         manifest: DukManifest,
         report: DukInstallReport,
     ) -> None:
@@ -452,7 +452,7 @@ class DukInstaller:
 
     async def _fetch_into(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         manifest: DukManifest,
         url: str,
         rel: str,
@@ -535,17 +535,17 @@ def _size(count: int) -> str:
     return f"{max(count // 1024, 1)} KB"
 
 
-async def _fetch(client: httpx.AsyncClient, url: str) -> bytes:
+async def _fetch(client: httpx2.AsyncClient, url: str) -> bytes:
     target = _download_url(url)
     try:
         response = await client.get(target)
-    except httpx.HTTPError as exc:
+    except httpx2.HTTPError as exc:
         raise AnafTransportError(f"cannot download {target}: {exc}") from exc
     raise_for_status(response)
     return response.content
 
 
-async def _stream_to_file(client: httpx.AsyncClient, url: str, dest: Path) -> None:
+async def _stream_to_file(client: httpx2.AsyncClient, url: str, dest: Path) -> None:
     target = _download_url(url)
     try:
         async with client.stream("GET", target, timeout=_SAFT_TIMEOUT) as response:
@@ -555,5 +555,5 @@ async def _stream_to_file(client: httpx.AsyncClient, url: str, dest: Path) -> No
             with dest.open("wb") as sink:
                 async for chunk in response.aiter_bytes():
                     sink.write(chunk)
-    except httpx.HTTPError as exc:
+    except httpx2.HTTPError as exc:
         raise AnafTransportError(f"cannot download {target}: {exc}") from exc

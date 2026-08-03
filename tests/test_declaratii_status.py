@@ -13,6 +13,7 @@ import datetime
 from pathlib import Path
 
 import httpx
+import httpx2
 import pytest
 import respx
 
@@ -147,7 +148,7 @@ async def test_check_status_posts_form_and_parses() -> None:
     assert result.found is True
     sent = route.calls.last.request
     assert sent.headers["Content-Type"] == "application/x-www-form-urlencoded"
-    assert dict(httpx.QueryParams(sent.content.decode())) == {
+    assert dict(httpx2.QueryParams(sent.content.decode())) == {
         "ghiseu": "N",
         "id": "1100000001",
         "cui": "99999909",
@@ -164,7 +165,7 @@ async def test_check_status_counter_filing_sets_ghiseu() -> None:
             "REG-555/2026", "99999909", filed_at_counter=True
         )
     assert result.found is False
-    sent = dict(httpx.QueryParams(route.calls.last.request.content.decode()))
+    sent = dict(httpx2.QueryParams(route.calls.last.request.content.decode()))
     assert sent["ghiseu"] == "Y"
     assert sent["id"] == "REG-555/2026"
 
@@ -172,7 +173,7 @@ async def test_check_status_counter_filing_sets_ghiseu() -> None:
 async def test_injected_client_without_base_url_raises_config_error() -> None:
     # An injected client is never mutated: an empty base_url is a
     # misconfiguration, named loudly at construction.
-    async with httpx.AsyncClient() as http:
+    async with httpx2.AsyncClient() as http:
         with pytest.raises(AnafConfigError, match=r"www\.anaf\.ro"):
             DeclarationStatusClient(http=http)
 
@@ -182,7 +183,7 @@ async def test_injected_client_with_base_url_is_used_and_not_closed() -> None:
     respx.post(STATUS_URL).mock(
         return_value=httpx.Response(200, text=_fixture("result-notfound.html"))
     )
-    http = httpx.AsyncClient(base_url="https://www.anaf.ro/")
+    http = httpx2.AsyncClient(base_url="https://www.anaf.ro/")
     async with DeclarationStatusClient(http=http) as client:
         result = await client.check_status("1100000001", "99999909")
     assert not http.is_closed
@@ -200,7 +201,7 @@ async def test_check_status_rejects_non_numeric_input() -> None:
 
 @respx.mock
 async def test_check_status_network_error_raises_transport() -> None:
-    respx.post(STATUS_URL).mock(side_effect=httpx.ConnectError("boom"))
+    respx.post(STATUS_URL).mock(side_effect=httpx2.ConnectError("boom"))
     async with DeclarationStatusClient() as client:
         with pytest.raises(AnafTransportError):
             await client.check_status("1100000001", "99999909")
@@ -230,7 +231,7 @@ async def test_download_receipt_returns_pdf() -> None:
         pdf = await client.download_receipt(1100000001)
     assert pdf == b"%PDF-1.4 fake"
     assert (
-        httpx.QueryParams(route.calls.last.request.url.query)["numefisier"]
+        httpx2.QueryParams(route.calls.last.request.url.query)["numefisier"]
         == "1100000001.pdf"
     )
 

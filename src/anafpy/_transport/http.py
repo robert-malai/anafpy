@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Any, Self
 
-import httpx
+import httpx2
 
 from ..exceptions import AnafConfigError, AnafTransportError
 from .base import raise_for_status, raise_for_waf_rejection
@@ -14,7 +14,7 @@ __all__ = ["HttpClientBase"]
 
 
 class HttpClientBase:
-    """Own or accept one ``httpx.AsyncClient`` for an ANAF service.
+    """Own or accept one ``httpx2.AsyncClient`` for an ANAF service.
 
     Service base URLs always end in ``/`` and callers use relative request
     paths. An owned client is constructed with the resolved service URL. An
@@ -22,18 +22,21 @@ class HttpClientBase:
     accepted as-is (the intentional test/proxy seam), while one with an
     empty ``base_url`` raises :class:`~anafpy.exceptions.AnafConfigError`
     at construction — silently stamping a service URL onto a caller-owned
-    object would mis-route a second client sharing it.
+    object would mis-route a second client sharing it. A classic-httpx
+    client is rejected the same way: it would duck-type at runtime, but its
+    errors are not ``httpx2`` exceptions, so every failure would escape the
+    ``AnafError`` hierarchy.
     """
 
     def __init__(
         self,
         *,
-        http: httpx.AsyncClient | None,
+        http: httpx2.AsyncClient | None,
         base_url: str,
         timeout: float,
-        auth: httpx.Auth | None = None,
+        auth: httpx2.Auth | None = None,
         follow_redirects: bool = False,
-        limits: httpx.Limits | None = None,
+        limits: httpx2.Limits | None = None,
     ) -> None:
         resolved_base_url = f"{base_url.rstrip('/')}/"
         self._owns_http = http is None
@@ -47,11 +50,18 @@ class HttpClientBase:
                 kwargs["auth"] = auth
             if limits is not None:
                 kwargs["limits"] = limits
-            self._http = httpx.AsyncClient(**kwargs)
+            self._http = httpx2.AsyncClient(**kwargs)
         else:
+            if type(http).__module__.partition(".")[0] == "httpx":
+                raise AnafConfigError(
+                    "the injected client is a classic httpx AsyncClient — "
+                    "anafpy is built on httpx2, and classic-httpx errors "
+                    "would escape the AnafError hierarchy; construct an "
+                    "httpx2.AsyncClient instead"
+                )
             if not str(http.base_url):
                 raise AnafConfigError(
-                    "the injected httpx client must be constructed with a "
+                    "the injected httpx2 client must be constructed with a "
                     f"base_url compatible with {resolved_base_url} — anafpy "
                     "sends relative paths and will not adopt or modify an "
                     "injected client's base_url"
@@ -76,11 +86,11 @@ class HttpClientBase:
 
     async def _request_http(
         self, method: str, url: str, **kwargs: Any
-    ) -> httpx.Response:
-        """Issue one request and translate httpx network failures."""
+    ) -> httpx2.Response:
+        """Issue one request and translate httpx2 network failures."""
         try:
             return await self._http.request(method, url, **kwargs)
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
 
     async def _request_checked(
@@ -90,7 +100,7 @@ class HttpClientBase:
         *,
         tolerate: tuple[int, ...] = (),
         **kwargs: Any,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         """:meth:`_request_http` plus the shared non-success raise.
 
         The default for every ANAF call: one request, network errors translated,

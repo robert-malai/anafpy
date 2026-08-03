@@ -7,7 +7,7 @@ ANAF uses OAuth2 (Authorization Code) gated by a **qualified digital certificate
   on the machine where the certificate lives. This is the only step that touches
   the certificate.
 - Everything after — code exchange, token refresh — is **headless**. Clients
-  receive a `TokenProvider` and drive httpx through the `AnafAuth` (`httpx.Auth`)
+  receive a `TokenProvider` and drive httpx2 through the `AnafAuth` (`httpx2.Auth`)
   integration, which refreshes tokens transparently. Tokens last ~90 days (access)
   / ~365 days (refresh), so the certificate is needed roughly **once a year**.
 

@@ -12,7 +12,7 @@ docs site (Read the Docs, `https://anafpy.readthedocs.io`).
 services, plus a local stdio **MCP server** (`anafpy.mcp`, extra `anafpy[mcp]`)
 exposing the same operations as Claude tools and skills. It is a **thin,
 stateless transport client** — no persistence, no accounting logic; client
-methods map 1:1 onto MCP tools. Python **3.12+** (dev pin 3.13), **httpx**,
+methods map 1:1 onto MCP tools. Python **3.12+** (dev pin 3.13), **httpx2**,
 **Pydantic v2**.
 
 The service strands:
@@ -111,7 +111,7 @@ src/anafpy/
                          # the OAuth token store and the SPV session store
   _transport/base.py     # Environment/Service, shared enums, CUI normalization,
                          # error raising (Environment re-exported from `anafpy`)
-  _transport/http.py     # HttpClientBase: owned/injected httpx lifecycle +
+  _transport/http.py     # HttpClientBase: owned/injected httpx2 lifecycle +
                          # network-error translation + _request_checked (the
                          # shared non-success raise); injected is never mutated,
                          # empty base_url raises AnafConfigError
@@ -252,7 +252,7 @@ tests/                   # respx-mocked suite + opt-in live files (filing
   them) is used only by the interactive login bootstrap, which drives the
   OS-shipped curl against the platform key store (macOS SecureTransport by
   Keychain name; Windows Schannel by thumbprint; NSURLSession hangs on the APM
-  renegotiation — don't go back there). All other calls are plain httpx on the
+  renegotiation — don't go back there). All other calls are plain httpx2 on the
   persisted cookie session; `/my.policy_nonce` hops are followed, a bare login
   wall raises `AnafAuthError` — the client never re-runs the 2FA-firing
   bootstrap on its own. Deviation from the no-retry rule: the idempotent-GET
@@ -261,7 +261,7 @@ tests/                   # respx-mocked suite + opt-in live files (filing
   loops is the MCP layer's job). Wire facts:
   [docs/anaf-reference/spv/api.md](docs/anaf-reference/spv/api.md) §1.1.
 - **Auth is a separate layer.** Clients receive a `TokenProvider` and drive
-  httpx via `AnafAuth`, which handles transparent refresh (incl. on 401). The
+  httpx2 via `AnafAuth`, which handles transparent refresh (incl. on 401). The
   certificate happens only in the interactive `anafpy auth login` browser flow
   — **don't add cert/mTLS handling to clients**. Because ANAF registers only
   `https://` callbacks (and no public CA issues for localhost), the default
@@ -278,7 +278,7 @@ tests/                   # respx-mocked suite + opt-in live files (filing
   `ANAFPY_TOKEN_STORE_BACKEND` / `--store-backend`. The test suite installs an
   autouse in-memory fake keyring and an autouse isolated managed-DUK dir so no
   test touches real user state.
-- **Clients are async**, own their `httpx.AsyncClient` (unless one is
+- **Clients are async**, own their `httpx2.AsyncClient` (unless one is
   injected), and are async context managers.
 - **Discrete methods do NO transport retry** — one call, one result-or-raise —
   so the non-idempotent `upload` POST is never silently repeated. Consumers
@@ -454,7 +454,13 @@ silently returning empty results.
 ## Conventions for changes
 
 - Keep the four gates green; add/extend respx tests for client behavior changes
-  (upload→poll→download, `nok` path, 401-refresh, 429 surfacing). The respx
+  (upload→poll→download, `nok` path, 401-refresh, 429 surfacing). respx knows
+  only classic httpx: the suite reaches httpx2 through `pytest-httpx2`'s
+  httpcore2 mocker, made the default in [tests/conftest.py](tests/conftest.py)
+  (DESIGN.md §14; the plugin's fixture stays unused). The rule in
+  test code: respx-facing objects (mock `httpx.Response` fabrication, `calls`
+  introspection) stay classic `httpx`; anything that reaches anafpy code —
+  injected clients, exception `side_effect`s — is `httpx2`. The respx
   suite is the gate; the `live`-marked smokes only re-confirm wire shapes on
   demand (`ANAFPY_LIVE=1`; credentials from the gitignored `.env`; the conftest
   `live_token_store` may use the real OS keyring — the one sanctioned exception

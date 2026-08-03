@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import httpx
+import httpx2
 import pytest
 import respx
 
@@ -115,19 +116,19 @@ async def test_login_saves_the_bootstrapped_session() -> None:
 # --- SpvAuth --------------------------------------------------------------------------
 
 
-def _client(session: SpvSession | None = None) -> httpx.AsyncClient:
+def _client(session: SpvSession | None = None) -> httpx2.AsyncClient:
     provider = SpvSessionProvider(
         store=MemorySessionStore(session if session is not None else _session())
     )
-    return httpx.AsyncClient(auth=SpvAuth(provider))
+    return httpx2.AsyncClient(auth=SpvAuth(provider))
 
 
 def test_sync_usage_is_a_config_error() -> None:
     auth = SpvAuth(SpvSessionProvider(store=MemorySessionStore()))
-    request = httpx.Request("GET", f"{BASE}/listaMesaje")
+    request = httpx2.Request("GET", f"{BASE}/listaMesaje")
     with (
         pytest.raises(AnafConfigError, match="async-only"),
-        httpx.Client(auth=auth) as client,
+        httpx2.Client(auth=auth) as client,
     ):
         client.send(request)
 
@@ -173,7 +174,7 @@ async def test_store_session_wins_over_the_client_cookie_jar() -> None:
         ),
         httpx.Response(200, json={"titlu": "ok"}),
     ]
-    async with httpx.AsyncClient(auth=SpvAuth(provider)) as client:
+    async with httpx2.AsyncClient(auth=SpvAuth(provider)) as client:
         await client.get(f"{BASE}/listaMesaje", follow_redirects=False)
         store.save(_session({"MRHSession": "fresh-login"}))  # re-login elsewhere
         await client.get(f"{BASE}/listaMesaje", follow_redirects=False)

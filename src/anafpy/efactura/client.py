@@ -29,7 +29,7 @@ import zipfile
 from collections.abc import AsyncIterator
 from datetime import datetime
 
-import httpx
+import httpx2
 from pydantic import BaseModel, ConfigDict
 
 from .._transport.base import (
@@ -267,7 +267,7 @@ class EFacturaClient(HttpClientBase):
     """Talks to ANAF e-Factura over OAuth2.
 
     Construct with an authenticated :class:`~anafpy.auth.provider.TokenProvider`; the
-    client owns an ``httpx.AsyncClient`` (unless one is injected — it must then
+    client owns an ``httpx2.AsyncClient`` (unless one is injected — it must then
     carry :class:`~anafpy.auth.oauth.AnafAuth` and a non-empty ``base_url``;
     an empty one raises :class:`~anafpy.exceptions.AnafConfigError`, since
     injected clients are never mutated) and should
@@ -279,7 +279,7 @@ class EFacturaClient(HttpClientBase):
         provider: TokenProvider,
         *,
         environment: Environment = Environment.PROD,
-        http: httpx.AsyncClient | None = None,
+        http: httpx2.AsyncClient | None = None,
         timeout: float = 60.0,
     ) -> None:
         super().__init__(
@@ -585,7 +585,7 @@ class EFacturaClient(HttpClientBase):
             ),
         }
         # Absolute deliberately: this endpoint lives outside the client's
-        # base_url prefix (no FCTEL/rest, no env segment); httpx passes
+        # base_url prefix (no FCTEL/rest, no env segment); httpx2 passes
         # absolute URLs through unmerged.
         url = f"{OAUTH_HOST}/api/validate/signature"
         response = await self._request_checked("POST", url, files=files)

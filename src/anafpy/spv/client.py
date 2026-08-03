@@ -7,7 +7,7 @@ asynchronous delivery. Declaration submission is out of scope.
 Transport model (see ``docs/anaf-reference/spv/api.md`` §1.1): the certificate
 is involved **only** in the interactive session bootstrap
 (:class:`~anafpy.spv.bootstrap.CurlBootstrapper` — drive it via
-:meth:`SpvClient.login`); every request here is plain httpx riding the APM
+:meth:`SpvClient.login`); every request here is plain httpx2 riding the APM
 cookies. The cookie credential lives in :mod:`anafpy.spv.auth` — construct the
 client with a :class:`~anafpy.spv.auth.SpvSessionProvider`, mirroring how the
 OAuth clients take a ``TokenProvider``. The :class:`~anafpy.spv.auth.SpvAuth`
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import json
 
-import httpx
+import httpx2
 from pydantic import ValidationError
 from tenacity import (
     AsyncRetrying,
@@ -76,7 +76,7 @@ class SpvClient(HttpClientBase):
 
     Construct with a :class:`~anafpy.spv.auth.SpvSessionProvider` over the
     session store an earlier :meth:`login` filled. The client owns an
-    ``httpx.AsyncClient`` (unless one is injected — it must then carry
+    ``httpx2.AsyncClient`` (unless one is injected — it must then carry
     :class:`~anafpy.spv.auth.SpvAuth` itself and a non-empty ``base_url``;
     an empty one raises :class:`~anafpy.exceptions.AnafConfigError`, since
     injected clients are never mutated) and should be used as
@@ -87,7 +87,7 @@ class SpvClient(HttpClientBase):
         self,
         provider: SpvSessionProvider,
         *,
-        http: httpx.AsyncClient | None = None,
+        http: httpx2.AsyncClient | None = None,
         timeout: float = 60.0,
     ) -> None:
         self._provider = provider
@@ -118,7 +118,7 @@ class SpvClient(HttpClientBase):
 
     async def _get(
         self, path: str, params: dict[str, str] | None = None
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         """One GET; cookie attach and revalidation hops live in ``SpvAuth``.
 
         ``follow_redirects=False`` is essential: the auth flow must see the raw
@@ -132,7 +132,7 @@ class SpvClient(HttpClientBase):
 
     async def _get_retrying(
         self, path: str, params: dict[str, str] | None = None
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         """A :meth:`_get` with backoff on transient network failures (reads only).
 
         Only the plain network layer is retried: :class:`AnafResponseError` and

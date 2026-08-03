@@ -1,7 +1,7 @@
 """Token lifecycle: hand out a valid access token, refreshing transparently.
 
 ``TokenProvider`` is the batteries-included implementation over a ``TokenStore``.
-``AnafAuth`` plugs it into httpx so every request carries a Bearer token and a 401
+``AnafAuth`` plugs it into httpx2 so every request carries a Bearer token and a 401
 triggers a single refresh-and-retry.
 """
 
@@ -11,7 +11,7 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Generator
 from contextlib import asynccontextmanager
 
-import httpx
+import httpx2
 
 from ..exceptions import AnafAuthError, AnafConfigError
 from .models import TokenSet
@@ -36,7 +36,7 @@ class TokenProvider:
         client_id: str,
         client_secret: str,
         store: TokenStore,
-        http: httpx.AsyncClient | None = None,
+        http: httpx2.AsyncClient | None = None,
     ) -> None:
         self._client_id = client_id
         self._client_secret = client_secret
@@ -46,11 +46,11 @@ class TokenProvider:
         self._lock = asyncio.Lock()
 
     @property
-    def _client(self) -> httpx.AsyncClient:
+    def _client(self) -> httpx2.AsyncClient:
         # Lazily built so a provider that never refreshes never opens a client;
         # ``aclose`` resets it, so a later use transparently gets a fresh one.
         if self._http is None:
-            self._http = httpx.AsyncClient(timeout=30.0)
+            self._http = httpx2.AsyncClient(timeout=30.0)
         return self._http
 
     @asynccontextmanager
@@ -108,25 +108,25 @@ class TokenProvider:
             self._http = None
 
 
-class AnafAuth(httpx.Auth):
-    """httpx auth flow: attach Bearer, and refresh-once on a 401."""
+class AnafAuth(httpx2.Auth):
+    """httpx2 auth flow: attach Bearer, and refresh-once on a 401."""
 
     def __init__(self, provider: TokenProvider) -> None:
         self._provider = provider
 
     def sync_auth_flow(
-        self, request: httpx.Request
-    ) -> Generator[httpx.Request, httpx.Response]:
-        raise AnafConfigError("anafpy auth is async-only; use an httpx.AsyncClient")
-        yield request  # unreachable; makes this a generator to satisfy httpx.Auth
+        self, request: httpx2.Request
+    ) -> Generator[httpx2.Request, httpx2.Response]:
+        raise AnafConfigError("anafpy auth is async-only; use an httpx2.AsyncClient")
+        yield request  # unreachable; makes this a generator to satisfy httpx2.Auth
 
     async def async_auth_flow(
-        self, request: httpx.Request
-    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        self, request: httpx2.Request
+    ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
         token = await self._provider.access_token()
         request.headers["Authorization"] = f"Bearer {token}"
         response = yield request
-        if response.status_code == httpx.codes.UNAUTHORIZED:
+        if response.status_code == httpx2.codes.UNAUTHORIZED:
             token = await self._provider.force_refresh(stale=token)
             request.headers["Authorization"] = f"Bearer {token}"
             yield request
