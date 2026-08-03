@@ -39,7 +39,7 @@ plain business fields by the built-in CIUS-RO authoring models. Either way,
 ANAF's SPV is **not** invoice storage (it purges filed messages after ~60
 days) — the durable record stays on your side.
 
-> Status: **early / alpha** (`0.x`), on PyPI as
+> Status: **beta** (`0.x`), on PyPI as
 > [`anafpy`](https://pypi.org/project/anafpy/); the design rationale lives in
 > [`DESIGN.md`](DESIGN.md). Requires **Python 3.12+**; built on **httpx2**
 > and **Pydantic v2**.
