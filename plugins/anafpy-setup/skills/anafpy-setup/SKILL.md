@@ -142,9 +142,19 @@ the absolute path of `anafpy-mcp` — step 6 needs it. To update anafpy later:
 ## Step 5 — Log in to ANAF (the user runs this)
 
 This step needs their browser, their certificate, and possibly their PIN.
-**You cannot drive it.** Compose the exact command from the platform file's
-**step-5 template** with their values filled in, then ask them to open the
-integrated terminal (**Views → Terminal**, or `` Ctrl+` ``) and run it there.
+**You cannot drive it.** There are two ways to run it, and step 6's route
+decides which one to offer:
+
+- **Route A (the extension) is or will be connected** → no terminal needed:
+  once the extension's settings are filled in, the user asks Claude in
+  **Cowork** — *"log me in to ANAF"* — approves, and the same browser flow
+  described below runs. It is fine to defer this step until after step 6 and
+  the restart. (The in-session login has no paste fallback — if it fails
+  there, fall back to the terminal command.)
+- **Route B, or the extension isn't set up yet** → compose the exact command
+  from the platform file's **step-5 template** with their values filled in,
+  then ask them to open the integrated terminal (**Views → Terminal**, or
+  `` Ctrl+` ``) and run it there.
 
 Tell them what to expect, in order: the browser opens on ANAF's login page and
 asks for the certificate; then it shows a **"connection is not private" warning
@@ -161,8 +171,10 @@ click bothers them, the guide's
 [mkcert tip](https://anafpy.readthedocs.io/en/latest/mcp/setup/#step-4-log-in-to-anaf-one-time-with-your-certificate)
 removes it — don't lead with that; the default needs no extra install.
 
-Then verify it yourself with the platform file's **auth-status probe**. Tokens
-refresh automatically for about a year, so this step recurs roughly annually.
+Then verify it yourself with the platform file's **auth-status probe** — both
+ways store the tokens in the same credential store, so the probe works
+regardless of which one ran. Tokens refresh automatically for about a year, so
+this step recurs roughly annually.
 
 ## Step 6 — Connect the server to Claude
 
@@ -193,8 +205,9 @@ tell them exactly what to do:
    than the config file, and one reason this route is preferred.
 
 Two facts to keep straight: the extension carries **its own copy of the
-server** (Claude Desktop installs it with its managed Python — the step-4 CLI
-install stays needed for the login and the optional steps), and it does
+server** (Claude Desktop installs it with its managed Python — with the
+settings filled in, the ANAF login works from Cowork too, so the step-4 CLI
+install stays needed only for the optional steps), and it does
 **not** appear in `claude_desktop_config.json` — don't "repair" its absence
 there. Verification is step 7. On Windows, the platform file's step-6A section
 has one extra move when the step-1 curl probe tripped.
@@ -237,6 +250,8 @@ open Cowork and try, in order:
 1. *"Look up CUI 14399840 in the ANAF taxpayer registry."* — proves the server runs
    (this one needs no login at all).
 2. *"What's my ANAF authentication status?"* — proves the login from step 5.
+   On route A, if that step was deferred, this is the moment: *"log me in to
+   ANAF"* completes it right there.
 3. *"List my e-Factura messages from the last 7 days."* — proves the whole chain.
 
 If Cowork can't see the tools at all, the likeliest causes are: Claude Desktop
