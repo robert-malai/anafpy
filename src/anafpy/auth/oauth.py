@@ -17,6 +17,7 @@ from .models import TokenSet
 
 __all__ = [
     "AUTHORIZE_URL",
+    "DEFAULT_REDIRECT_URI",
     "REVOKE_URL",
     "TOKEN_URL",
     "build_authorize_url",
@@ -25,6 +26,10 @@ __all__ = [
 ]
 
 AUTHORIZE_URL = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize"
+#: The callback URL the setup guide has users register on their ANAF application —
+#: the default both login front-ends share (`anafpy auth login` and the MCP
+#: server's ``ANAFPY_REDIRECT_URI``).
+DEFAULT_REDIRECT_URI = "https://localhost:9002/callback"
 TOKEN_URL = "https://logincert.anaf.ro/anaf-oauth2/v1/token"
 #: Documented by ANAF's PDF but NOT reachable headlessly (live-probed 2026-07-05:
 #: a client-secret-authenticated POST gets the F5 APM login-wall redirect, identical

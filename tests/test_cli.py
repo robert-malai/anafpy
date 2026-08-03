@@ -17,7 +17,7 @@ import pytest
 import respx
 
 from anafpy.auth import FileTokenStore, KeyringTokenStore, TokenSet
-from anafpy.auth.oauth import TOKEN_URL
+from anafpy.auth.oauth import DEFAULT_REDIRECT_URI, TOKEN_URL
 from anafpy.cli.main import main
 from conftest import FakeKeyring
 
@@ -844,3 +844,86 @@ def test_login_default_serves_ephemeral_tls(
     tokens = FileTokenStore(tmp_path / "tokens.json").load()
     assert tokens is not None
     assert tokens.access_token == "acc"
+
+
+def test_login_timeout_falls_back_to_paste(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Nothing hits the callback, so the listener flow times out — and the SAME
+    # attempt completes by paste: the pasted redirect echoes that attempt's state.
+    port = _free_port()
+    redirect_uri = f"https://127.0.0.1:{port}/callback"
+    opened: list[str] = []
+
+    def fake_browser(url: str) -> bool:
+        opened.append(url)
+        return True
+
+    def paste(prompt: str = "") -> str:
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(opened[0]).query)
+        return f"{redirect_uri}?code=late-code&state={query['state'][0]}"
+
+    monkeypatch.setattr("anafpy.cli.main._CALLBACK_TIMEOUT", 0.05)
+    monkeypatch.setattr("anafpy.cli.main.webbrowser.open", fake_browser)
+    monkeypatch.setattr("builtins.input", paste)
+    with respx.mock(assert_all_called=True) as router:
+        token_route = router.post(TOKEN_URL).mock(
+            return_value=httpx.Response(
+                200, json={"access_token": "acc", "refresh_token": "ref"}
+            )
+        )
+        assert main(_login_args(tmp_path, redirect_uri)) == 0
+    assert "No callback received" in capsys.readouterr().err
+    assert "code=late-code" in token_route.calls.last.request.content.decode()
+
+
+def _paste_login_args(tmp_path: Path) -> list[str]:
+    # No --redirect-uri: the login must fall back to the registered default.
+    return [
+        "auth",
+        "login",
+        "--client-id",
+        "CID",
+        "--client-secret",
+        "SECRET",
+        "--paste",
+        *_file_args(tmp_path / "tokens.json"),
+    ]
+
+
+def test_login_defaults_the_registered_redirect_uri(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Omitting --redirect-uri uses the URL the setup guide has users register —
+    # the same default the MCP server reads — so the documented terminal
+    # fallback works as a bare `anafpy auth login`.
+    monkeypatch.setattr("anafpy.cli.main.webbrowser.open", lambda url: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "pasted-code")
+    with respx.mock(assert_all_called=True) as router:
+        token_route = router.post(TOKEN_URL).mock(
+            return_value=httpx.Response(
+                200, json={"access_token": "acc", "refresh_token": "ref"}
+            )
+        )
+        assert main(_paste_login_args(tmp_path)) == 0
+    body = urllib.parse.parse_qs(token_route.calls.last.request.content.decode())
+    assert body["redirect_uri"] == [DEFAULT_REDIRECT_URI]
+
+
+def test_login_redirect_uri_env_is_read_at_parse_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ANAFPY_REDIRECT_URI — the variable the MCP server reads — must be honoured
+    # by the CLI too, even when set after module import.
+    monkeypatch.setenv("ANAFPY_REDIRECT_URI", "https://localhost:4321/cb")
+    monkeypatch.setattr("anafpy.cli.main.webbrowser.open", lambda url: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "pasted-code")
+    with respx.mock(assert_all_called=True) as router:
+        token_route = router.post(TOKEN_URL).mock(
+            return_value=httpx.Response(
+                200, json={"access_token": "acc", "refresh_token": "ref"}
+            )
+        )
+        assert main(_paste_login_args(tmp_path)) == 0
+    body = urllib.parse.parse_qs(token_route.calls.last.request.content.decode())
+    assert body["redirect_uri"] == ["https://localhost:4321/cb"]

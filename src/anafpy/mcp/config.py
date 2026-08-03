@@ -25,13 +25,12 @@ from pydantic import (
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .._transport.base import Environment
+from ..auth import DEFAULT_REDIRECT_URI
 from ..exceptions import AnafConfigError
 
 __all__ = ["ServerConfig", "bundled_dir"]
 
 _DEFAULT_STORE = "~/.anafpy/tokens.json"
-#: The callback URL the setup guide has users register on their ANAF application.
-_DEFAULT_REDIRECT = "https://localhost:9002/callback"
 
 
 def bundled_dir(configured: Path | None, *candidates: Path) -> Path | None:
@@ -119,7 +118,7 @@ class ServerConfig(BaseSettings):
         default=None, validation_alias="ANAFPY_CLIENT_SECRET"
     )
     redirect_uri: str = Field(
-        default=_DEFAULT_REDIRECT, validation_alias="ANAFPY_REDIRECT_URI"
+        default=DEFAULT_REDIRECT_URI, validation_alias="ANAFPY_REDIRECT_URI"
     )
     store_path: Path = Field(
         default=Path(_DEFAULT_STORE), validation_alias="ANAFPY_TOKEN_STORE"
@@ -217,7 +216,7 @@ class ServerConfig(BaseSettings):
     @field_validator("redirect_uri", mode="before")
     @classmethod
     def _blank_redirect_is_default(cls, value: object) -> object:
-        return value or _DEFAULT_REDIRECT
+        return value or DEFAULT_REDIRECT_URI
 
     @field_validator("declaratii_upload", mode="before")
     @classmethod

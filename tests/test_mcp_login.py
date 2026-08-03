@@ -83,14 +83,14 @@ def _fake_login_plumbing(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeListener.error = None
     FakeListener.bind_error = None
     opened.clear()
-    monkeypatch.setattr("anafpy.mcp.login.CallbackListener", FakeListener)
+    monkeypatch.setattr("anafpy.auth.browser.CallbackListener", FakeListener)
 
     def open_browser(url: str) -> bool:
         opened.append(url)
         return True
 
     monkeypatch.setattr(
-        "anafpy.mcp.login.webbrowser", SimpleNamespace(open=open_browser)
+        "anafpy.auth.browser.webbrowser", SimpleNamespace(open=open_browser)
     )
 
 
@@ -175,7 +175,7 @@ async def test_login_without_a_browser_points_to_the_cli(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "anafpy.mcp.login.webbrowser", SimpleNamespace(open=lambda url: False)
+        "anafpy.auth.browser.webbrowser", SimpleNamespace(open=lambda url: False)
     )
     server = create_server(_config(tmp_path))
     result = await _call(server, "auth_login", confirm=True)

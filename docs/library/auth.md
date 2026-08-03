@@ -17,11 +17,14 @@ layer by design.
 ## The CLI
 
 ```bash
-anafpy auth login --client-id <ID> --client-secret <SECRET> \
-                  --redirect-uri https://localhost:9002/callback
+anafpy auth login --client-id <ID> --client-secret <SECRET>
 anafpy auth status        # show stored token validity
 anafpy auth logout        # remove the stored tokens (signs this machine out)
 ```
+
+The callback URL defaults to `https://localhost:9002/callback` — the URL the
+setup walkthrough has you register; `--redirect-uri` (or `ANAFPY_REDIRECT_URI`)
+overrides it when your ANAF application registered a different one.
 
 The Client ID / Secret come from the OAuth application you register on ANAF's
 developer portal — the [MCP setup walkthrough](../mcp/setup.md) covers that

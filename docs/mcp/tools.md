@@ -182,7 +182,7 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_ENV` | `prod` (default) or `test` — ANAF's TEST environment for practicing |
 | `ANAFPY_TOKEN_STORE_BACKEND` | `keyring` (default, OS credential store) or `file` for headless/Docker hosts |
 | `ANAFPY_TOKEN_STORE` | Token file path for the `file` backend (default `~/.anafpy/tokens.json`) |
-| `ANAFPY_REDIRECT_URI` | OAuth callback URL the `auth_login` browser flow listens on — must exactly match a Callback URL registered on your ANAF application (default `https://localhost:9002/callback`, the URL the setup guide registers) |
+| `ANAFPY_REDIRECT_URI` | OAuth callback URL the `auth_login` browser flow listens on — must exactly match a Callback URL registered on your ANAF application (default `https://localhost:9002/callback`, the URL the setup guide registers; `anafpy auth login` reads the same variable and default) |
 | `ANAFPY_DOCS_DIR` | ANAF reference served as resources (defaults to the repo's `docs/anaf-reference/` when present, else the copy packaged in the wheel) |
 | `ANAFPY_SKILLS_DIR` | Workflow skills served as prompts (defaults to the repo's `plugins/anafpy-workflows/skills/` when present, else the copy packaged in the wheel) |
 | `ANAFPY_SPV_SESSION` | SPV cookie-session store written by `anafpy spv login` (default `~/.anafpy/spv-session.json`) |

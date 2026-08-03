@@ -145,9 +145,12 @@ Conectează token-ul USB și
 rulează (o singură linie, cu valorile tale de la pasul 1):
 
 ```bash
-anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
-  --redirect-uri https://localhost:9002/callback
+anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET>
 ```
+
+Adresa de callback are ca valoare implicită
+`https://localhost:9002/callback`, exact cea înregistrată la pasul 1 —
+folosește `--redirect-uri` doar dacă ai înregistrat alta.
 
 Ce se întâmplă, în ordine:
 
@@ -193,7 +196,6 @@ mod și direct, cu `--paste`.)
 
     ```bash
     anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
-      --redirect-uri https://localhost:9002/callback \
       --tls-cert localhost+1.pem --tls-key localhost+1-key.pem
     ```
 

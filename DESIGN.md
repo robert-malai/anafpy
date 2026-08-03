@@ -193,7 +193,16 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
   paste and user-supplied TLS certs stay CLI-only), one attempt per call,
   failures returned as `logged_in: false` values with guidance (the
   `spv_login` contract). Otherwise the MCP server consumes the token store and
-  auto-refreshes headlessly.
+  auto-refreshes headlessly. Shipping the tool briefly duplicated the
+  choreography; consolidated 2026-08-03 into `auth/browser.py`'s
+  `browser_login` — the state binding, the bind-before-browser ordering, and
+  the exchange+save tail have one home, ending in a typed
+  `BrowserLoginOutcome` that each front-end maps onto its own interaction
+  model (the CLI's paste fallbacks; the tool's `logged_in: false` values). The
+  registered callback URL moved with it: `DEFAULT_REDIRECT_URI` in
+  `auth/oauth.py` is the one home of `https://localhost:9002/callback`, and
+  `anafpy auth login` now defaults to it and reads `ANAFPY_REDIRECT_URI` like
+  the server — so the "run `anafpy auth login`" remediation works bare.
 - **`anafpy auth logout` is purely local** (added 2026-07-05): it clears the token
   store and makes **no network call** — without the refresh token no new access
   tokens can be minted. A best-effort RFC 7009 call to `/revoke` was built and

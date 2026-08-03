@@ -140,9 +140,12 @@ This is the only step that uses the certificate.
 Plug in the USB token and run (one line, with your values from step 1):
 
 ```bash
-anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
-  --redirect-uri https://localhost:9002/callback
+anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET>
 ```
+
+The callback URL defaults to the `https://localhost:9002/callback` you
+registered in step 1 — pass `--redirect-uri` only if you registered a
+different one.
 
 What happens, in order:
 
@@ -185,7 +188,6 @@ about **60 seconds**. (You can also choose this mode directly with `--paste`.)
 
     ```bash
     anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET> \
-      --redirect-uri https://localhost:9002/callback \
       --tls-cert localhost+1.pem --tls-key localhost+1-key.pem
     ```
 

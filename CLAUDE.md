@@ -124,7 +124,9 @@ src/anafpy/
                          # curl resolution (ANAFPY_CURL), cert selectors, failure
                          # taxonomy; subclasses own choreography + judgment
   auth/                  # OAuth2 layer: models, store, oauth, provider,
-                         # callback, tlscert
+                         # callback, tlscert, browser (browser_login — the ONE
+                         # login choreography behind the CLI and auth_login,
+                         # ending in a typed BrowserLoginOutcome)
   cli/main.py            # cyclopts CLI: `anafpy auth|spv|declaratii|etransport|duk ...`
   efactura/
     README.md            # module map: layer diagram (flat <-> UBL <-> wire),
@@ -190,8 +192,9 @@ src/anafpy/
     config.py            # ServerConfig — BaseSettings over ANAFPY_*
     context.py           # AppContext: providers + lazy clients + token ledger
                          # + SPV same-day request log; token_store selection
-    login.py             # auth_login — the OAuth browser login run by the
-                         # server (confirm-gated, listener-only, no paste mode)
+    login.py             # auth_login — auth/browser.py's login outcomes mapped
+                         # onto the tool contract (confirm-gated, listener-only,
+                         # no paste mode)
     gate.py              # the two-step filing gate: HMAC confirmation tokens +
                          # TokenLedger, XmlInput ({xml|path} -> bytes),
                          # PreparedSubmission/SubmitResult, run_submit

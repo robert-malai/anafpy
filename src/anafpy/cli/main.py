@@ -18,20 +18,27 @@ import time
 import urllib.parse
 import webbrowser
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, assert_never
 
-import httpx2
 from cyclopts import App, Parameter
 
 from .. import __version__
 from ..auth import (
-    CallbackListener,
+    DEFAULT_REDIRECT_URI,
+    AuthorizationDenied,
+    BrowserNotOpened,
+    CallbackTimedOut,
+    ExchangeFailed,
     FileTokenStore,
     KeyringTokenStore,
+    ListenerUnavailable,
+    LoginCompleted,
+    TokenSet,
     TokenStore,
+    browser_login,
     build_authorize_url,
     ephemeral_server_context,
-    exchange_code,
+    finish_login,
     parse_redirect_url,
 )
 from ..exceptions import AnafAuthError, AnafConfigError, AnafError
@@ -168,15 +175,18 @@ def _token_store(store: str, store_backend: str) -> tuple[TokenStore, str]:
     the ``AnafConfigError`` path (``error: ...`` + exit 1) whether it came from
     the flag or from ``ANAFPY_TOKEN_STORE_BACKEND``, not exit via a parse error.
     """
-    if store_backend == "keyring":
-        backend = KeyringTokenStore()
-        return backend, f"the OS credential store (service {backend.service!r})"
-    if store_backend != "file":
-        raise AnafConfigError(
-            f"unknown token store backend {store_backend!r} — use 'file' or 'keyring'"
-        )
-    path = Path(store).expanduser()
-    return FileTokenStore(path), str(path)
+    match store_backend:
+        case "keyring":
+            backend = KeyringTokenStore()
+            return backend, f"the OS credential store (service {backend.service!r})"
+        case "file":
+            path = Path(store).expanduser()
+            return FileTokenStore(path), str(path)
+        case _:
+            raise AnafConfigError(
+                f"unknown token store backend {store_backend!r} — "
+                "use 'file' or 'keyring'"
+            )
 
 
 async def _do_login(
@@ -189,62 +199,83 @@ async def _do_login(
     paste: bool = False,
     ssl_context: ssl.SSLContext | None = None,
 ) -> int:
-    # A per-attempt OAuth `state`: the redirect must echo it back, so a forged
-    # redirect cannot inject someone else's authorization code (login CSRF).
-    state = secrets.token_urlsafe(16)
-    url = build_authorize_url(client_id, redirect_uri, state=state)
+    """One login attempt: the shared choreography, with paste as the fallback.
 
-    # Bind the listener BEFORE the browser opens: with a cached certificate/session
-    # the redirect can arrive within a second, and a not-yet-listening port would
-    # drop the code (ANAF's codes expire in ~60s).
-    listener: CallbackListener | None = None
-    if not paste:
-        try:
-            listener = CallbackListener(
-                redirect_uri, ssl_context=ssl_context, expected_state=state
-            )
-        except AnafConfigError as exc:
-            print(f"Callback listener unavailable: {exc}", file=sys.stderr)
+    The listener flow (state binding, bind-before-browser, exchange, save) is
+    ``browser_login``; this maps its outcomes onto the terminal — a bind failure
+    or a timeout falls back to pasting the redirect URL from the *same* attempt.
+    """
 
-    print("Opening your browser for ANAF authorization (select your certificate)...")
-    print(f"  If it doesn't open, visit:\n  {url}\n")
-    webbrowser.open(url)
+    def open_browser(url: str) -> bool:
+        print(
+            "Opening your browser for ANAF authorization (select your certificate)..."
+        )
+        print(f"  If it doesn't open, visit:\n  {url}\n")
+        return webbrowser.open(url)
 
-    if listener is None:
-        code = _paste_code(state)
-    else:
-        with listener:
-            print(f"Waiting for the callback on {redirect_uri} ...")
-            captured = listener.wait(_CALLBACK_TIMEOUT)
-        if captured is None:
-            print(
-                f"No callback received within {_CALLBACK_TIMEOUT:.0f}s.",
-                file=sys.stderr,
-            )
-            code = _paste_code(state)
-        else:
-            code = captured
-
-    async with httpx2.AsyncClient(timeout=30.0) as http:
-        tokens = await exchange_code(
-            http,
+    async def finish(code: str) -> TokenSet:
+        return await finish_login(
             client_id=client_id,
             client_secret=client_secret,
             code=code,
             redirect_uri=redirect_uri,
+            store=store,
         )
 
-    store.save(tokens)
-    print(f"\n✓ Authenticated. Tokens saved to {store_label}.")
-    days = (tokens.access_expires_at - time.time()) / 86400
-    print(f"  Access token valid ~{days:.0f} days; refresh is headless thereafter.")
-    return 0
+    def report(tokens: TokenSet) -> int:
+        print(f"\n✓ Authenticated. Tokens saved to {store_label}.")
+        days = (tokens.access_expires_at - time.time()) / 86400
+        print(f"  Access token valid ~{days:.0f} days; refresh is headless thereafter.")
+        return 0
+
+    if paste:
+        # No listener at all — but still a per-attempt OAuth `state`, which the
+        # pasted redirect must echo back (a bare code is exempt).
+        state = secrets.token_urlsafe(16)
+        open_browser(build_authorize_url(client_id, redirect_uri, state=state))
+        return report(await finish(_paste_code(state)))
+
+    def open_and_announce(url: str) -> bool:
+        opened = open_browser(url)
+        print(f"Waiting for the callback on {redirect_uri} ...")
+        return opened
+
+    outcome = await browser_login(
+        client_id,
+        client_secret,
+        redirect_uri,
+        store,
+        timeout=_CALLBACK_TIMEOUT,
+        ssl_context=ssl_context,
+        open_browser=open_and_announce,
+    )
+    match outcome:
+        case LoginCompleted(tokens=tokens):
+            return report(tokens)
+        case ListenerUnavailable(error=error, authorize_url=url, state=state):
+            # The browser was never opened — do it ourselves, then paste.
+            print(f"Callback listener unavailable: {error}", file=sys.stderr)
+            open_browser(url)
+            return report(await finish(_paste_code(state)))
+        case CallbackTimedOut(state=state) | BrowserNotOpened(state=state):
+            print(
+                f"No callback received within {_CALLBACK_TIMEOUT:.0f}s.",
+                file=sys.stderr,
+            )
+            return report(await finish(_paste_code(state)))
+        case AuthorizationDenied(error=error) | ExchangeFailed(error=error):
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        case _:
+            assert_never(outcome)
 
 
 @auth_app.command(name="login")
 async def auth_login(
     *,
-    redirect_uri: str,
+    redirect_uri: Annotated[
+        str, Parameter(env_var="ANAFPY_REDIRECT_URI")
+    ] = DEFAULT_REDIRECT_URI,
     client_id: Annotated[str | None, Parameter(env_var="ANAFPY_CLIENT_ID")] = None,
     client_secret: Annotated[
         str | None, Parameter(env_var="ANAFPY_CLIENT_SECRET")
@@ -265,7 +296,8 @@ async def auth_login(
 
     Args:
         redirect_uri: Must match the registered Callback URL (ANAF requires
-            ``https://``).
+            ``https://``). Defaults to the URL the setup guide has you
+            register, the same default the MCP server reads.
         client_id: OAuth application id from ANAF's portal.
         client_secret: OAuth application secret from ANAF's portal.
         paste: Run no listener; paste the redirect URL from the browser instead.
