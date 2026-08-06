@@ -68,19 +68,26 @@ Every ANAF filing is **two-step gated**: Claude shows a preview and nothing is
 submitted until you explicitly confirm. The server runs **locally** on your
 machine; artifacts land on your own disk.
 
-Start with the full tour — [what you can
-do](https://anafpy.readthedocs.io/en/latest/mcp/) — then the [setup
+**Getting started is one click**: every release attaches self-contained
+[Claude Desktop extensions](https://github.com/robert-malai/anafpy/releases/latest)
+— pick the one for your machine (`anafpy-darwin-arm64.mcpb` for Apple
+silicon, `anafpy-darwin-x64.mcpb` for Intel Macs, `anafpy-win32-x64.mcpb` for
+Windows), drag it into Claude Desktop's **Settings → Extensions**, and fill
+in three settings. The bundle carries its own Python — no terminal, nothing
+else to install. The [setup
 walkthrough](https://anafpy.readthedocs.io/en/latest/mcp/setup/) (also [in
-Romanian](https://anafpy.readthedocs.io/en/latest/mcp/setup.ro/)). Each
-release also attaches one-click [Claude Desktop
-extensions](https://github.com/robert-malai/anafpy/releases) — pick the one
-for your machine (`anafpy-darwin-arm64.mcpb` for Apple silicon,
-`anafpy-darwin-x64.mcpb` for Intel Macs, `anafpy-win32-x64.mcpb` for Windows)
-and drag it into Claude Desktop's Settings → Extensions instead of editing
-configuration files. The bundle is self-contained: it carries its own Python,
-so nothing else needs to be installed.
+Romanian](https://anafpy.readthedocs.io/en/latest/mcp/setup.ro/)) covers the
+ANAF side — registering your OAuth application, the certificate login — and
+the full tour of [what you can
+do](https://anafpy.readthedocs.io/en/latest/mcp/) shows the rest.
 
 ## Install
+
+**Using it with Claude?** The [Desktop
+extension](https://github.com/robert-malai/anafpy/releases/latest) above *is*
+the install — no Python, no pip, no venv on the machine.
+
+**As a Python library**:
 
 ```bash
 pip install anafpy               # or: uv add anafpy
@@ -88,10 +95,10 @@ pip install 'anafpy[mcp]'        # with the MCP server
 pip install 'anafpy[declaratii]' # with declaration signing (pyHanko)
 ```
 
-For the MCP server outside the desktop extension, install it as a **uv tool**
-(what the setup walkthrough does): `uv tool install "anafpy[mcp]"` — this puts
-the `anafpy` CLI and the `anafpy-mcp` server on the machine without touching
-any project environment.
+The `anafpy` CLI and a standalone `anafpy-mcp` server (for MCP clients other
+than the extension) install as a **uv tool**, outside any project
+environment: `uv tool install "anafpy[mcp]"` — the setup walkthrough's
+[terminal route](https://anafpy.readthedocs.io/en/latest/mcp/setup/#the-terminal-route).
 
 ## Use it as a Python library
 
@@ -139,7 +146,9 @@ clients. The surface is **read-first**: the public lookups and
 `efactura_validate` need no credentials at all, reads need the one-time login,
 and every filing goes through the two-step prepare→submit confirmation gate.
 The compiled ANAF reference is served as resources and the workflow playbooks
-as prompts. Register it with any MCP client — e.g. with Claude Code:
+as prompts. The Desktop extension is this same server, packaged; any other
+MCP client registers a `uv tool`-installed `anafpy-mcp` directly — e.g. with
+Claude Code:
 
 ```bash
 claude mcp add anafpy \
