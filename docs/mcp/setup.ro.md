@@ -19,31 +19,6 @@ Vei face cinci lucruri, în ordine:
 Pașii 1–4 se fac o singură dată. Rezervă-ți în jur de 30 de minute, plus cât
 durează portalul ANAF.
 
-## Lasă-l pe Claude să o facă în locul tău (opțional)
-
-Dacă ai [aplicația Claude Desktop](https://claude.ai/download), Claude poate
-parcurge împreună cu tine cea mai mare parte din acest ghid — verifică ce este
-deja instalat, instalează ce lipsește și scrie el fișierul de configurare de la
-pasul 5.
-
-În tab-ul **Code** al aplicației, pornește o sesiune și asigură-te că mediul ei
-este **Local** (o sesiune în cloud rulează pe serverele Anthropic și nu poate
-vedea tokenul tău USB). Apoi apasă butonul **+** de lângă caseta de text, alege
-**Plugins → Add plugin** și adaugă acest marketplace:
-
-```text
-robert-malai/anafpy
-```
-
-Instalează de acolo plugin-ul **anafpy setup**, apoi cere-i pur și simplu:
-*„instalează-mi anafpy pe calculatorul acesta”*.
-
-Rămân în sarcina ta cele două lucruri pe care nu le poate face nimeni altcineva:
-înregistrarea aplicației pe portalul ANAF (pasul 1) și autentificarea cu
-certificatul (pasul 4). Restul este rezolvat. Pașii de mai jos rămân referința —
-urmează-i dacă preferi să faci totul manual sau dacă instalarea asistată se
-blochează.
-
 ## Înainte să începi
 
 Ai nevoie de:
@@ -229,11 +204,15 @@ Cowork ajunge la serverele locale prin aplicația Claude Desktop instalată pe a
 calculator, așa că acest pas se face în Claude Desktop:
 
 1. Instalează și autentifică-te în [Claude Desktop](https://claude.ai/download).
-2. Descarcă **`anafpy.mcpb`** — extensia anafpy — de la
+2. Descarcă extensia anafpy potrivită calculatorului tău de la
    [ultima versiune publicată](https://github.com/robert-malai/anafpy/releases/latest)
-   (la secțiunea *Assets*).
+   (la secțiunea *Assets*): **`anafpy-darwin-arm64.mcpb`** pe un Mac cu Apple
+   silicon (M1 sau mai nou), **`anafpy-darwin-x64.mcpb`** pe un Mac cu Intel
+   (meniul Apple → *About This Mac* îți spune care), sau
+   **`anafpy-win32-x64.mcpb`** pe Windows. Extensia este de sine stătătoare —
+   vine cu propriul Python, nu mai trebuie instalat nimic altceva.
 3. În Claude Desktop, deschide **Settings → Extensions**, trage fișierul
-   `anafpy.mcpb` descărcat peste acea pagină (merge și dublu-click pe fișier)
+   `.mcpb` descărcat peste acea pagină (merge și dublu-click pe fișier)
    și apasă **Install**.
 4. În setările extensiei, completează primele trei câmpuri cu valorile tale de
    la pasul 1: **ANAF Client ID**, **ANAF Client Secret** și **CUI-ul firmei**

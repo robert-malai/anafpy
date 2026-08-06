@@ -72,9 +72,13 @@ Start with the full tour — [what you can
 do](https://anafpy.readthedocs.io/en/latest/mcp/) — then the [setup
 walkthrough](https://anafpy.readthedocs.io/en/latest/mcp/setup/) (also [in
 Romanian](https://anafpy.readthedocs.io/en/latest/mcp/setup.ro/)). Each
-release also attaches **`anafpy.mcpb`**, a one-click [Claude Desktop
-extension](https://github.com/robert-malai/anafpy/releases) — drag it into
-Claude Desktop's Settings → Extensions instead of editing configuration files.
+release also attaches one-click [Claude Desktop
+extensions](https://github.com/robert-malai/anafpy/releases) — pick the one
+for your machine (`anafpy-darwin-arm64.mcpb` for Apple silicon,
+`anafpy-darwin-x64.mcpb` for Intel Macs, `anafpy-win32-x64.mcpb` for Windows)
+and drag it into Claude Desktop's Settings → Extensions instead of editing
+configuration files. The bundle is self-contained: it carries its own Python,
+so nothing else needs to be installed.
 
 ## Install
 

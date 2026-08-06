@@ -140,6 +140,14 @@ exclude = ["**/.DS_Store"]
 "docs/anaf-reference/spv" = "anafpy/mcp/_reference/spv"
 "plugins/anafpy-workflows/skills" = "anafpy/mcp/_skills"
 
+# The exact CPython the self-contained MCP bundles carry (scripts/build_mcpb.py
+# copies it from uv's managed dir). Exact X.Y.Z on purpose: the native release
+# runners must all ship the same interpreter, so the build refuses a loose pin.
+# The pin names a CPython version, not a python-build-standalone build — a
+# rebuilt tag may pick up a newer pbs build of the same X.Y.Z.
+[tool.anafpy]
+bundle-python = "3.13.14"
+
 [tool.ruff]
 line-length = 88
 target-version = "py312"

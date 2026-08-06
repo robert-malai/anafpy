@@ -1,36 +1,36 @@
 """The version is declared in several places; keep every statement agreeing.
 
-Besides ``pyproject.toml`` and ``anafpy.__version__``, the MCP Bundle under
-``mcpb/`` re-states the version twice: the manifest's ``version`` and the
-bundle project's own version + its ``anafpy[mcp]==X.Y.Z`` dependency pin.
+The Claude Desktop extension manifest needs no check of its own:
+scripts/build_mcpb.py generates it at build time with the version read from
+``pyproject.toml``, so there is nothing to drift. The same file pins the exact
+CPython the bundles carry; the build refuses a loose pin, and so does this
+suite (earlier, where the native release runners cannot each bundle a
+different interpreter).
 """
 
 from __future__ import annotations
 
-import json
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import anafpy
 
 _ROOT = Path(__file__).parent.parent
 
 
-def _pyproject_version() -> str:
+def _pyproject() -> dict[str, Any]:
     with (_ROOT / "pyproject.toml").open("rb") as fh:
-        version: str = tomllib.load(fh)["project"]["version"]
-    return version
+        return tomllib.load(fh)
 
 
 def test_dunder_version_matches_pyproject() -> None:
-    assert anafpy.__version__ == _pyproject_version()
+    assert anafpy.__version__ == _pyproject()["project"]["version"]
 
 
-def test_mcpb_bundle_agrees_with_pyproject() -> None:
-    declared = _pyproject_version()
-    manifest = json.loads((_ROOT / "mcpb" / "manifest.json").read_text())
-    assert manifest["version"] == declared
-    with (_ROOT / "mcpb" / "pyproject.toml").open("rb") as fh:
-        bundle = tomllib.load(fh)["project"]
-    assert bundle["version"] == declared
-    assert f"anafpy[mcp]=={declared}" in bundle["dependencies"]
+def test_bundle_python_pin_is_exact() -> None:
+    pin: str = _pyproject()["tool"]["anafpy"]["bundle-python"]
+    parts = pin.split(".")
+    assert len(parts) == 3 and all(p.isdigit() for p in parts), (
+        f"bundle-python must be an exact X.Y.Z pin, got {pin!r}"
+    )

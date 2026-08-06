@@ -206,17 +206,10 @@ src/anafpy/
                          # (incl. UN/ECE Rec 20/21 unit codes) where the service
                          # needs them; resource templates anafmsg:// and spvmsg://
     __main__.py          # `python -m anafpy.mcp` (stdio)
-.claude-plugin/          # marketplace.json — publishes the two plugins below
-plugins/anafpy-setup/    # skill that installs + configures anafpy on an end
-                         # user's machine (extension-first: installs the mcpb/
-                         # release asset; writes claude_desktop_config.json as
-                         # the repair/fallback route; local sessions only).
-                         # SKILL.md = platform-neutral spine; command blocks
-                         # live in macos.md / windows.md
-mcpb/                    # Claude Desktop extension source: uv-type MCPB
-                         # manifest + entry point depending on the released
-                         # anafpy[mcp]; packed to the anafpy.mcpb release asset
-                         # by release.yml (versions gated by test_version.py)
+.claude-plugin/          # marketplace.json — publishes anafpy-workflows (the
+                         # retired anafpy-setup plugin lives on only as a
+                         # renames tombstone: the self-contained .mcpb made
+                         # guided install choreography unnecessary)
 plugins/anafpy-workflows/skills/  # the workflow playbooks' SINGLE home
                          # (etransport-declare, declaratie-prepare,
                          # personal-income-summary) — Cowork Agent Skills AND
@@ -224,7 +217,14 @@ plugins/anafpy-workflows/skills/  # the workflow playbooks' SINGLE home
 schemas/                 # vendored XSDs + Schematron sources (git-tracked, not
                          # shipped; feed the codegen)
 scripts/                 # codegen scripts + vendor_card_fonts.py (the card's
-                         # OFL font subsets; committed, like the XSDs)
+                         # OFL font subsets; committed, like the XSDs) +
+                         # build_mcpb.py (the self-contained Claude Desktop
+                         # extension bundles — own CPython per pyproject's
+                         # [tool.anafpy] bundle-python exact pin + locked
+                         # closure; the extension manifest's ONE home is its
+                         # manifest() dict; native-host-only, defaults to the
+                         # host's target; release.yml builds each target on a
+                         # native runner as anafpy-<target>.mcpb)
 imgs/                    # brand assets; README hotlinks the social preview
 docs/                    # MkDocs source tree (mkdocs.yml at repo root; RTD
                          # builds via uv); docs/assets/ = site image copies
@@ -500,7 +500,8 @@ silently returning empty results.
   — end-user walkthrough, accountant audience; `docs/mcp/tools.md` +
   `skills.md` — the MCP surface; `docs/library/*` — the library guides, led by
   the `index.md` client inventory; `docs/privacy.md` — the privacy policy the
-  README section and `mcpb/manifest.json` link to) own the user-facing story;
+  README section and the extension manifest in `scripts/build_mcpb.py` link
+  to) own the user-facing story;
   [CONTRIBUTING.md](CONTRIBUTING.md) owns the contributor quickstart. README
   stays a short landing page — link into these homes instead of growing it. A
   new page goes into `mkdocs.yml`'s `nav`. Update the affected homes in the same change.
@@ -516,18 +517,23 @@ silently returning empty results.
   under per-leg flags (details in the workflow file; two quirks are deliberate:
   the test-results upload runs `if: ${{ !cancelled() }}`, and
   `junit_family = "legacy"` stays in `pyproject.toml` for Codecov's UI).
-  `release.yml` re-runs the gates on a `v*` tag, checks the tag against
-  `pyproject.toml`'s version, publishes to PyPI via trusted publishing (OIDC,
-  no stored token), and only then creates the GitHub release for the same tag
-  with the sdist + wheel + the packed Claude Desktop extension (`anafpy.mcpb`,
-  from `mcpb/` — constant asset name, so
-  `releases/latest/download/anafpy.mcpb` stays a stable install URL) attached.
-  The version lives in `pyproject.toml`, `anafpy.__version__`, **and** the MCP
-  Bundle (`mcpb/manifest.json` + `mcpb/pyproject.toml`'s version and
-  `anafpy[mcp]==X.Y.Z` pin); `tests/test_version.py` keeps them all agreeing.
-- **Cutting a release** — the release commit carries all three, then the tag:
-  1. Bump the version in `pyproject.toml`, `anafpy.__version__`, and the two
-     `mcpb/` files (manifest `version`; bundle `version` + dependency pin).
+  `release.yml`'s guards job refuses a `v*` tag outright when it disagrees
+  with `pyproject.toml`'s version or ships no `release-notes/<tag>.md`; the
+  gates then re-run, the self-contained Claude Desktop extensions are built by
+  `scripts/build_mcpb.py` — **one native runner per target** (darwin-arm64 /
+  darwin-x64 / win32-x64; the script refuses a cross-build, and the darwin-x64
+  leg sets `OPENSSL_DIR` for the cryptography sdist), PyPI is published via
+  trusted publishing (OIDC, no stored token), and only then the GitHub release
+  for the same tag carries the sdist + wheel + the bundles
+  (`anafpy-<target>.mcpb` — constant asset names, so
+  `releases/latest/download/anafpy-<target>.mcpb` stay stable install URLs).
+  `workflow_dispatch` runs the same builds as a dry run — artifacts only,
+  nothing published. The version lives in `pyproject.toml` and
+  `anafpy.__version__` (the bundle manifest gets it at build time);
+  `tests/test_version.py` keeps them agreeing, and also holds the
+  `bundle-python` pin to an exact X.Y.Z.
+- **Cutting a release** — the release commit carries both, then the tag:
+  1. Bump the version in `pyproject.toml` and `anafpy.__version__`.
   2. **Write `release-notes/<tag>.md`** (e.g. `release-notes/v0.7.0.md`) — every
      tag has one; `release-notes/` holds all of them, backfilled to v0.1.0.
   3. Commit as `Release X.Y.Z`, then push the `v*` tag.
@@ -537,7 +543,7 @@ silently returning empty results.
   rest is the body, prose in the voice of the existing files — what changed and
   why it matters to a user, plus a "Not yet verified" section when a path
   shipped without live confirmation. Never hand-write the compare link;
-  `release.yml` derives and appends it. A tag with no such file still gets a
-  release, carrying GitHub's generated commit list — the fallback, not the
-  intent. PyPI has no notes field: `[project.urls] Changelog` links every
-  version's project page to the releases, so the prose keeps one home.
+  `release.yml` derives and appends it. A tag with no such file does **not**
+  release — the guards job fails it. PyPI has no notes field:
+  `[project.urls] Changelog` links every version's project page to the
+  releases, so the prose keeps one home.

@@ -2,16 +2,26 @@
 # API token is stored in the repo. PyPI side: the project's trusted publisher
 # must name this repo, this filename (release.yml), and the `pypi` environment.
 # The full CI gates re-run here so a tag can never ship an artifact that a
-# broken branch produced. Once PyPI has the distribution, the same tag gets a
-# GitHub release carrying the sdist + wheel + the Claude Desktop extension
-# (anafpy.mcpb); its prose comes from
-# `release-notes/<tag>.md` when the tag ships one, and from GitHub's generated
-# notes when it does not.
+# broken branch produced, and the guards job refuses outright when the tag
+# disagrees with pyproject.toml or ships no release-notes/<tag>.md — notes are
+# written, not generated. Once PyPI has the distribution, the same tag gets a
+# GitHub release carrying the sdist + wheel + the self-contained Claude
+# Desktop extensions (anafpy-<target>.mcpb, one per platform/arch).
+#
+# The bundles carry their own CPython, so each is built by
+# scripts/build_mcpb.py on a NATIVE runner — `uv python install` only ever
+# fetches the host's build, and the script refuses a cross-build rather than
+# silently bundling the wrong runtime. Constant asset names keep
+# releases/latest/download/anafpy-<target>.mcpb stable install URLs.
+#
+# workflow_dispatch is a dry run: same builds, artifacts only, nothing
+# published (the tag guards are skipped — there is no tag to check).
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 # Least privilege by default; the publish job re-declares what it actually needs
 # (a job-level block replaces this one rather than adding to it).
@@ -19,7 +29,31 @@ permissions:
   contents: read
 
 jobs:
+  # Fails fast, before any 15-minute matrix leg: the tag must name the version
+  # pyproject.toml declares, and the tag's release notes must exist — a tag
+  # without release-notes/<tag>.md does not release.
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tag matches the package version and has release notes
+        if: github.event_name == 'push'
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "pyproject version ${version} does not match tag ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          if [ ! -f "release-notes/${GITHUB_REF_NAME}.md" ]; then
+            echo "release-notes/${GITHUB_REF_NAME}.md is missing — write it and re-tag; releases ship written notes, never generated ones" >&2
+            exit 1
+          fi
+      - name: Dry run
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "workflow_dispatch dry run — tag guards skipped, nothing will be published"
+
   gates:
+    needs: guards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -42,40 +76,53 @@ jobs:
       - name: Docs build (strict)
         run: uv run mkdocs build --strict
 
-  build:
+  dist:
     needs: gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v8.3.0
-      - name: Tag matches the package version
-        run: |
-          version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
-            echo "pyproject version ${version} does not match tag ${GITHUB_REF_NAME}" >&2
-            exit 1
-          fi
       - name: Build sdist + wheel
         run: uv build
-      # The Claude Desktop extension rides the same release. The constant asset
-      # name keeps /releases/latest/download/anafpy.mcpb a stable install URL,
-      # and `pack` re-validates the manifest. It travels as its own artifact —
-      # the PyPI publish step must see only Python distributions in dist/.
-      # Version agreement between mcpb/ and pyproject.toml is a pytest gate
-      # (tests/test_version.py), re-run by the gates job above.
-      - name: Pack the MCP Bundle (.mcpb)
-        run: npx -y @anthropic-ai/mcpb@2.1.2 pack mcpb mcpb-dist/anafpy.mcpb
       - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
+
+  # One self-contained .mcpb per platform/arch, each on its native runner.
+  # The bundles travel as their own artifacts — the PyPI publish step must see
+  # only Python distributions in dist/. Version agreement between the manifest
+  # template and pyproject.toml is a pytest gate (tests/test_version.py),
+  # re-run by the gates job above.
+  bundles:
+    needs: gates
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: darwin-arm64, runner: macos-latest }
+          # cryptography publishes no Intel-macOS wheel since 49.0.0; this leg
+          # builds it from the locked sdist against Homebrew's OpenSSL (the
+          # per-target opt-in lives in scripts/build_mcpb.py).
+          - { target: darwin-x64, runner: macos-15-intel }
+          - { target: win32-x64, runner: windows-latest }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.3.0
+      - name: Point the cryptography sdist build at Homebrew's OpenSSL
+        if: matrix.target == 'darwin-x64'
+        run: echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+      - name: Build the bundle
+        run: uv run --no-project --python 3.13 scripts/build_mcpb.py --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
         with:
-          name: mcpb
+          name: mcpb-${{ matrix.target }}
           path: mcpb-dist/
 
   publish:
-    needs: build
+    needs: [dist, bundles]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -94,6 +141,7 @@ jobs:
   # — an existing release for the tag is updated in place rather than failing.
   github-release:
     needs: publish
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write  # create the release, attach the distribution to it
@@ -107,12 +155,11 @@ jobs:
           path: dist/
       - uses: actions/download-artifact@v8
         with:
-          name: mcpb
+          pattern: mcpb-*
           path: mcpb-dist/
+          merge-multiple: true
       - name: Assemble the release notes
         id: notes
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
@@ -122,24 +169,21 @@ jobs:
             previous=""  # the oldest tag has no predecessor to compare against
           fi
           file="release-notes/${tag}.md"
-          if [ -f "${file}" ]; then
-            # An H1 on the first line is the release title; the rest is the body.
-            first="$(head -n1 "${file}")"
-            case "${first}" in
-              '# '*) title="${first#\# }"; tail -n +2 "${file}" > "${notes}" ;;
-              *)     title="anafpy ${tag#v}"; cp "${file}" "${notes}" ;;
-            esac
-            if [ -n "${previous}" ]; then
-              printf '\n**Full changelog**: %s/compare/%s...%s\n' \
-                "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" "${previous}" "${tag}" >> "${notes}"
-            fi
-          else
-            echo "no ${file} — using GitHub's generated notes" >&2
-            title="anafpy ${tag#v}"
-            gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-              -f tag_name="${tag}" \
-              ${previous:+-f previous_tag_name="${previous}"} \
-              --jq .body > "${notes}"
+          # The guards job already refused a tag without notes; this is the
+          # backstop for a re-run against a rewritten tag.
+          if [ ! -f "${file}" ]; then
+            echo "${file} is missing — releases ship written notes" >&2
+            exit 1
+          fi
+          # An H1 on the first line is the release title; the rest is the body.
+          first="$(head -n1 "${file}")"
+          case "${first}" in
+            '# '*) title="${first#\# }"; tail -n +2 "${file}" > "${notes}" ;;
+            *)     title="anafpy ${tag#v}"; cp "${file}" "${notes}" ;;
+          esac
+          if [ -n "${previous}" ]; then
+            printf '\n**Full changelog**: %s/compare/%s...%s\n' \
+              "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" "${previous}" "${tag}" >> "${notes}"
           fi
           echo "title=${title}" >> "${GITHUB_OUTPUT}"
           echo "notes=${notes}" >> "${GITHUB_OUTPUT}"

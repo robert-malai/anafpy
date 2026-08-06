@@ -19,29 +19,6 @@ You will do five things, in order:
 Steps 1–4 are one-time. Plan for about 30 minutes, plus however long ANAF's portal
 takes.
 
-## Let Claude do it for you (optional)
-
-If you have the [Claude Desktop app](https://claude.ai/download), Claude can walk
-through most of this guide with you — checking what is already installed,
-installing what is missing, and writing the configuration file in step 5 for you.
-
-In the app's **Code** tab, start a session and make sure its environment is
-**Local** (a cloud session runs on Anthropic's servers and cannot see your USB
-token). Then click the **+** button next to the prompt box, choose
-**Plugins → Add plugin**, and add this marketplace:
-
-```text
-robert-malai/anafpy
-```
-
-Install the **anafpy setup** plugin from it, then simply ask: *"set up anafpy on
-this computer"*.
-
-You still do the two things nobody can do for you: registering the application on
-ANAF's portal (step 1) and the certificate login (step 4). Everything else is
-handled. The steps below remain the reference — follow them if you prefer to do it
-by hand, or if the assisted setup gets stuck.
-
 ## Before you start
 
 You need:
@@ -219,11 +196,15 @@ Cowork reaches local servers through the Claude Desktop app installed on the sam
 computer, so this step happens in Claude Desktop:
 
 1. Install and sign in to [Claude Desktop](https://claude.ai/download).
-2. Download **`anafpy.mcpb`** — the anafpy extension — from the
+2. Download the anafpy extension for your computer from the
    [latest release](https://github.com/robert-malai/anafpy/releases/latest)
-   (under *Assets*).
+   (under *Assets*): **`anafpy-darwin-arm64.mcpb`** on a Mac with Apple
+   silicon (M1 or newer), **`anafpy-darwin-x64.mcpb`** on an Intel Mac
+   (Apple menu → *About This Mac* says which), or
+   **`anafpy-win32-x64.mcpb`** on Windows. The extension is self-contained —
+   it brings its own Python, nothing else to install.
 3. In Claude Desktop, open **Settings → Extensions**, drag the downloaded
-   `anafpy.mcpb` onto that page (double-clicking the file works too), and
+   `.mcpb` file onto that page (double-clicking the file works too), and
    click **Install**.
 4. In the extension's settings, fill in the first three fields with your values
    from step 1: **ANAF Client ID**, **ANAF Client Secret**, and the firm's

@@ -73,6 +73,12 @@ jobs:
         run: uv run mkdocs build --strict
       # A broken manifest should surface here, not on the release tag — the
       # release workflow's `pack` step is the shipping run of the same check.
-      - name: MCP Bundle manifest (validate)
+      # The manifests are generated (scripts/build_mcpb.py is their one home);
+      # generation is pure, so one Linux runner validates all three targets.
+      - name: MCP Bundle manifests (validate)
         if: runner.os == 'Linux'
-        run: npx -y @anthropic-ai/mcpb@2.1.2 validate mcpb/manifest.json
+        run: |
+          uv run python scripts/build_mcpb.py --manifests-only build/manifests
+          for m in build/manifests/*/manifest.json; do
+            npx -y @anthropic-ai/mcpb@2.1.2 validate "$m"
+          done

@@ -5,6 +5,7 @@ __pycache__/
 .eggs/
 build/
 dist/
+mcpb-dist/
 *.so
 
 # Environments / tooling
@@ -12,7 +13,6 @@ dist/
 venv/
 .uv/
 uv.lock.bak
-mcpb/uv.lock
 
 # Caches
 .mypy_cache/

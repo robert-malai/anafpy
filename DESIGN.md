@@ -820,7 +820,8 @@ public lookups (§6), skills-as-prompts (§8), live shape confirmation (§7), th
 CLI surface (grew organically into the `auth` / `spv` / `declaratii` / `duk`
 command groups), and Cowork local-stdio availability (settled: the connector is
 registered in `claude_desktop_config.json`, which the Cowork tab reads — the
-`anafpy-setup` skill writes it), and the in-session OAuth browser login
+`anafpy-setup` skill wrote it until the skill's 2026-08-06 retirement, §15;
+the extension install registers itself), and the in-session OAuth browser login
 (deferred as `begin_login`, shipped 2026-08-03 as the `auth_login` tool — §3,
 §8). Still open:
 
@@ -870,8 +871,9 @@ people who already deal with ANAF professionally.
 uv tool — `uv tool install "anafpy[mcp]"`, then
 `claude mcp add anafpy -- anafpy-mcp` or the `anafpy-mcp` binary path in
 `claude_desktop_config.json` (the setup walkthrough and the `anafpy-setup`
-skill both use this; pivoted 2026-07-20 from the earlier
-run-from-checkout registration, which remains the developer path). The wheel
+skill both used this; pivoted 2026-07-20 from the earlier
+run-from-checkout registration, which remains the developer path; the skill
+itself retired 2026-08-06, §15). The wheel
 bundles the compiled ANAF reference and the workflow-skills tree (hatchling
 force-include, same date), so the PyPI install serves the `anafref://`
 resources and the MCP prompts too — the repo trees stay the single source.
@@ -883,7 +885,9 @@ again publishes a `.claude-plugin/` marketplace, now distributing the
 **skills** — `anafpy-workflows` (the playbooks; verified 2026-07-18 that
 claude.ai plugins bring bundled skills into chat + Cowork, unlike Claude Code
 marketplace plugins, which are Code-tab-only) and `anafpy-setup` (the
-installer skill). The MCP *server* still installs via `uv tool install` + plain
+installer skill — **retired 2026-08-06**, §15, once the self-contained
+bundles made install one-click; a `renames` tombstone in `marketplace.json`
+records it). The MCP *server* still installs via `uv tool install` + plain
 registration, never as a plugin.)* The workflow **skills** under
 `plugins/anafpy-workflows/skills/` reach consumers both as Cowork Agent Skills
 and as the MCP server's same-name prompts (§8) — the first
@@ -894,7 +898,9 @@ regulatory guardrails (2.5 t / 500 kg / 10,000 RON scope check, 3-days-before an
 never-self-approve rules the two-step gate assumes. After the PyPI release: an
 MCPB bundle for Claude Desktop (`server.type: "uv"` so the host manages Python;
 `user_config` with `sensitive` fields → OS keychain, mapped onto the existing
-`ANAFPY_*` env vars) — a thin wrapper over `anafpy[mcp]`.
+`ANAFPY_*` env vars) — a thin wrapper over `anafpy[mcp]`. **Superseded
+2026-08-06 (§15)**: the extension is now self-contained per platform/arch —
+its own CPython, no host-managed Python.
 
 ## 12. Declarations (authoring + signing + status tracking)
 
@@ -1235,3 +1241,70 @@ rework. Classic httpx remains in the tree only as respx's dev dependency.
 - **`alias_httpx()` rejected**: httpx2 ships a process-wide import alias so
   `import httpx` resolves to httpx2, but its own docstring forbids libraries
   calling it, and anafpy is a library.
+
+## 15. Self-contained extension bundles (2026-08-06)
+
+The Claude Desktop extension pivoted from one uv-type `.mcpb` (§11: Claude
+Desktop's managed uv resolves `anafpy[mcp]` at install time) to
+**self-contained bundles, one per platform/arch** — each carries its own
+CPython plus the locked dependency closure, so the installing machine needs no
+Python, no pip, no network resolution at install time. The uv-type route made
+the extension's health depend on the host's uv and on PyPI at install time;
+the audience (§11: accountants, not developers) is exactly who cannot debug
+either. Builder: `scripts/build_mcpb.py`, which is also the extension
+manifest's one home — a structured dict specialised per target (JSON built
+with `json.dumps`, deliberately not a text template: nothing to escape,
+nothing to keep valid by hand; the version rides in from `pyproject.toml`, so
+`mcpb/` and its per-release manifest bump are gone). Targets: `darwin-arm64`,
+`darwin-x64`,
+`win32-x64` — **no Linux** (Claude Desktop, the only `.mcpb` consumer, does
+not run there) and **no arm64 Windows** (the OS runs the x64 bundle under
+built-in emulation, and cryptography publishes no `win_arm64` wheel).
+
+The decisions, each deliberate:
+
+- **Exact interpreter pin** (`[tool.anafpy] bundle-python`, X.Y.Z enforced by
+  the build and by `tests/test_version.py`): three native runners must not
+  disagree on the interpreter. Accepted trade-off: the pin names a CPython
+  version, not a python-build-standalone build, so a rebuilt tag may carry a
+  newer pbs build of the same X.Y.Z.
+- **Native builds only.** `uv python install` only ever fetches the *host's*
+  build — a cross-build would not fail, it would silently bundle the wrong
+  runtime — so the script's `require_native` refuses foreign targets and
+  release.yml gives each target its own native runner.
+- **`--no-deps` + `--only-binary :all:` installs against the staged
+  interpreter.** The `uv export --frozen` closure is complete; letting the
+  installer re-resolve can pull versions the lock had moved off. Source builds
+  are a **per-target opt-in**, never a global fallback: cryptography has
+  published no Intel-macOS wheel since 49.0.0, so `darwin-x64` alone builds
+  its sdist (CI leg sets `OPENSSL_DIR` to Homebrew's OpenSSL). All extras are
+  exported — the user cannot pip-install one afterwards.
+- **`server.type: "binary"`, not `"python"`** — Claude Desktop derives the
+  install dialog's requirements from this field, and `"python"` demands a
+  system Python the bundle doesn't need. Launch flags are exactly `-P -s`:
+  `-E`/`-I` would discard the `PYTHONPATH` that locates `server/lib`, `-S`
+  would skip the generated `sitecustomize.py`.
+- **`sitecustomize.py` replays `.pth` files** (`site.addsitedir` on
+  `server/lib`): PYTHONPATH entries get no `.pth` processing, and pywin32 —
+  in the closure unconditionally on Windows via the MCP SDK — is importable
+  only through `pywin32.pth`. Written for every target; a
+  platform-conditional file is one more thing to get wrong.
+- **Symlinks die before packing** (`mcpb pack` materialises them into full
+  copies — three ~18 MB interpreters instead of one) and the build's audit
+  step refuses any survivor, plus a packed-vs-staged size tripwire. The same
+  audit exists because `mcpb pack` also drops `.env*` at any depth silently.
+- **Release guards moved ahead of the matrix**: a `v*` tag whose version
+  disagrees with `pyproject.toml` or that ships no `release-notes/<tag>.md`
+  now fails before anything builds — reversing the §11-era "generated notes
+  as fallback" stance. `workflow_dispatch` is a dry run (artifacts only).
+
+The bundles also **retired the `anafpy-setup` plugin** (same day): its whole
+reason to exist was choreographing uv installs, PATH quirks and
+`claude_desktop_config.json` merges on an accountant's machine — with a
+self-contained one-click extension there is no choreography left to guide.
+What the skill covered beyond the install keeps its home elsewhere: the OAuth
+app registration and certificate login live in `docs/mcp/setup.md` (the
+walkthrough), and a broken extension install is Claude Desktop's surface, not
+ours. `marketplace.json` keeps a `renames` tombstone (`"anafpy-setup": null`,
+the same mechanism that retired `anafpy-connector-test`); the manual
+config-file route survives as the developer path in the walkthrough.

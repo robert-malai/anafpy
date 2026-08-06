@@ -22,6 +22,8 @@ duplicates them.
 
 A skill is a playbook — it drives the anafpy MCP server's tools (`etransport_*`,
 `declaratie_*`, `spv_*`). Installing this plugin alone gives Cowork the playbooks but
-not the tools; the anafpy MCP server must also be configured (the **anafpy-setup**
-plugin's skill wires it into `claude_desktop_config.json`). Without the connector, a
-skill will fire but have no tools to call.
+not the tools; the anafpy MCP server must also be installed — one click via the
+self-contained Claude Desktop extension (the `anafpy-*.mcpb` for your platform,
+attached to every [release](https://github.com/robert-malai/anafpy/releases); the
+[setup guide](https://anafpy.readthedocs.io/en/latest/mcp/setup/) walks through
+it). Without the connector, a skill will fire but have no tools to call.
