@@ -5,19 +5,19 @@
 This guide takes you from a brand-new computer to talking to ANAF from
 [Claude Cowork](https://claude.com) — listing your e-Factura inbox, filing
 e-Transport declarations, looking up business partners. It is written for an
-accountant, not a programmer: every command is given in full, and every step says
-what you should see.
+accountant, not a programmer: every step says exactly what to do and what you
+should see, and none of it needs a terminal.
 
 You will do five things, in order:
 
 1. Register an application on ANAF's portal (one-time, on ANAF's website).
-2. Install one small tool: `uv`.
-3. Install anafpy.
-4. Log in to ANAF once with your qualified certificate.
-5. Connect the server to Claude, and check that it works.
+2. Install Claude Desktop and the anafpy extension (one click).
+3. Fill in the extension's settings.
+4. Log in to ANAF once with your qualified certificate — by asking Claude.
+5. Check that it works.
 
-Steps 1–4 are one-time. Plan for about 30 minutes, plus however long ANAF's portal
-takes.
+Steps 1–4 are one-time. Plan for about 15 minutes, plus however long ANAF's
+portal takes.
 
 ## Before you start
 
@@ -53,13 +53,187 @@ on the portal, with your certificate:
    Secret**.
 
 Copy both into a password manager (or write them somewhere safe). They identify
-*your* application to ANAF and you will need them in steps 4 and 5. They are not
+*your* application to ANAF and you will need them in step 3. They are not
 your SPV password and they don't replace the certificate.
 
-## Step 2 — Install uv
+## Step 2 — Install Claude Desktop and the anafpy extension
 
-Open a terminal — **Terminal** on macOS, **PowerShell** on Windows (press Start,
-type "PowerShell") — and run:
+Cowork reaches local servers through the Claude Desktop app installed on the
+same computer, so this step happens in Claude Desktop:
+
+1. Install and sign in to [Claude Desktop](https://claude.ai/download).
+2. Download the anafpy extension for your computer from the
+   [latest release](https://github.com/robert-malai/anafpy/releases/latest)
+   (under *Assets*): **`anafpy-darwin-arm64.mcpb`** on a Mac with Apple
+   silicon (M1 or newer), **`anafpy-darwin-x64.mcpb`** on an Intel Mac
+   (Apple menu → *About This Mac* says which), or
+   **`anafpy-win32-x64.mcpb`** on Windows. The extension is self-contained —
+   it brings its own Python, nothing else to install.
+3. In Claude Desktop, open **Settings → Extensions**, drag the downloaded
+   `.mcpb` file onto that page (double-clicking the file works too), and
+   click **Install**.
+
+The anafpy tools appear under the app's connectors/tools, and Cowork sessions
+on this computer can use them. Even before any configuration, the public
+lookups already work — the authenticated tools unlock in the next two steps.
+
+## Step 3 — Fill in the extension's settings
+
+In the extension's settings, fill in the first three fields with your values
+from step 1: **ANAF Client ID**, **ANAF Client Secret**, and the firm's
+**CUI** (digits only — the default fiscal code used when you don't say
+otherwise in conversation). The secret is kept in the computer's secure
+credential store. The remaining fields cover rare cases (a differently
+registered callback URL; the Windows curl fix from the
+[troubleshooting table](#troubleshooting)) — leave them empty.
+
+## Step 4 — Log in to ANAF (one-time, with your certificate)
+
+This is the only step that uses the certificate. Plug in the USB token and ask
+Claude, in a new conversation:
+
+> *"Log me in to ANAF."*
+
+Claude asks for your confirmation, then your **browser opens**. What happens,
+in order:
+
+1. ANAF's login page asks for your **certificate** — pick it and confirm
+   (enter the token PIN if prompted).
+2. The browser then shows a warning that the connection to `localhost` is **not
+   private**. **This is expected** — the login creates a one-time certificate
+   for your own computer so it can catch ANAF's answer, and browsers warn about
+   any certificate they haven't seen a public authority sign. Nothing about the
+   warning involves ANAF or your data; it is your machine talking to itself.
+3. Click **"Advanced"**, then **"Proceed to localhost"** (Chrome/Edge; Firefox:
+   "Accept the Risk and Continue"). The browser lands on a page saying you can
+   close the tab — done, Claude confirms the login.
+
+The tokens are stored in the computer's own secure credential store (macOS
+Keychain / Windows Credential Manager). From here on, everything is automatic:
+the access token refreshes by itself for about **a year**, without the
+certificate. You only repeat this step when the refresh token expires
+(~365 days) or if you revoke the application on ANAF's portal — so the USB
+token is needed roughly **once a year**.
+
+(The same login also exists as a terminal command, with a few extra options —
+see [the terminal route](#the-terminal-route) below.)
+
+## Step 5 — Check that it works
+
+Ask Claude, in a new conversation:
+
+1. *"What's my ANAF authentication status?"* — should report a valid token (this
+   reads the login from step 4).
+2. *"Look up CUI 14399840 in the ANAF taxpayer registry."* — the public lookups
+   work even before login, so this confirms the server itself runs.
+3. *"List my e-Factura messages from the last 7 days."* — confirms the
+   authenticated e-Factura connection end to end.
+
+For e-Transport, filing is deliberately two-step: Claude prepares the declaration
+and shows you a preview, and **nothing is filed until you explicitly approve it**
+— then it submits and reports the UIT. Try it by asking Claude to declare a
+transport from an invoice or CMR you have at hand.
+
+## Step 6 (optional) — Unlock the SPV mailbox tools
+
+The `spv_*` tools let Claude read your **SPV mailbox** (receipts, decisions,
+notifications) and request official reports — fiscal vector, outstanding
+obligations, filing history, declaration duplicates, income certificates. They
+are **read-only**: nothing can be submitted through them.
+
+SPV authenticates with your **qualified certificate directly** (the same one
+you used in step 4's browser login), so this is a separate, equally one-time-ish
+step — the difference is that SPV sessions are short-lived (under an hour of
+idle time), so you re-run the login when you next need SPV, not yearly.
+
+The first-time certificate selection uses the `anafpy` terminal command —
+install it first ([the terminal route](#the-terminal-route) explains how).
+
+On **Windows**, run `curl --version` first: the built-in curl versions
+**8.13–8.15** break ANAF's certificate login, and Windows-on-ARM computers need
+Git for Windows' curl regardless of version — apply the `ANAFPY_CURL` fix from
+the [troubleshooting table](#troubleshooting) *before* your first login
+attempt, so it doesn't fail after you've already entered the PIN.
+
+In a terminal:
+
+```bash
+anafpy spv certs                  # lists your certificates
+anafpy spv select <thumbprint>    # pick yours (the hex id from `certs`)
+anafpy spv login                  # answer your token's PIN / 2FA prompt
+```
+
+USB-token and cloud certificates (e.g. certSIGN vToken) appear in `certs` via
+their own middleware — it must be installed and running, exactly as for SPV in
+the browser. The login can occasionally fail on ANAF's side; just run it again
+(your PIN/2FA prompt fires on every attempt — that is normal).
+
+Then ask Claude: *"What's my SPV status?"* — it should report your certificate
+and the list of companies (CUIs) it may query. When the session expires (they
+idle out in under an hour), you can simply tell Claude *"log me in to SPV"* —
+it asks for your confirmation, then your token's PIN/2FA prompt fires as usual;
+approving it on your device completes the login. The terminal command keeps
+working too.
+
+## Step 7 (optional) — Unlock the declaration tools
+
+The `declaratie_*` tools let Claude fill in, validate, render, **sign**, and —
+with your explicit approval at every consequential step — **file** a tax
+declaration (the D300 VAT return, D100, D112, and any other form ANAF's
+validator covers). Filing goes to ANAF's real declaration portal (declarations
+have no test environment) through a two-step confirmation flow, and you can
+opt out of it entirely with `ANAFPY_DECLARATII_UPLOAD: "off"` in the `env`
+block of [the manual configuration](#the-terminal-route) — Claude then hands
+you the signed PDF to upload on the portal yourself. Signing works on macOS
+and Windows, with your certificate in the system's own certificate store.
+
+These tools run ANAF's own desktop validator, **DUKIntegrator** — and anafpy
+installs it for you:
+
+1. Make sure you have **Java** (a JRE/JDK, version 8 or newer) installed —
+   `java -version` in a terminal should print a version. (anafpy only runs
+   DUKIntegrator's *validate* and *render* steps, which work on any modern JVM;
+   the Java-8-only limitation you may read about applies to DUK's own signing,
+   which anafpy does not use. Installed but the command not found? anafpy also
+   looks at `JAVA_HOME`, which Windows Java installers usually set.)
+2. Ask Claude to *"set up the declaration validator"* — it calls
+   `declaratie_duk_install`, which downloads DUKIntegrator and the validators
+   for the common forms straight from ANAF's official update feed into
+   `~/.anafpy/duk-dist`. Every file comes from `static.anaf.ro` over HTTPS,
+   and a manifest records what was installed, from where, with checksums. The
+   same command exists in the terminal as `anafpy duk install`, and a rarer
+   form's validator is one `anafpy duk install D208` away — Claude can do that
+   mid-task too.
+
+No configuration entry is needed for this: the server finds the managed
+install by itself. (Already have your own DUKIntegrator `dist/` folder? Point
+`ANAFPY_DUK_DIR` at it in the manual configuration's `env` block — an explicit
+directory always wins over the managed one.)
+
+Restart Claude and ask *"check the declaration setup"* — Claude runs
+`declaratie_duk_status`, which confirms the install and warns if a validator is
+out of date (the command-line DUKIntegrator does not auto-update, unlike its
+desktop window — Claude fixes that with `declaratie_duk_install`, and the
+terminal equivalent is `anafpy duk update`). Signing uses the **same qualified
+certificate** as SPV (step 6):
+if you selected one there, the declaration signer reuses it; otherwise set
+`"ANAFPY_SIGN_IDENTITY"` — on macOS to the certificate's Keychain name, on
+Windows to its thumbprint (the 40-character code `anafpy spv certs` lists). When
+Claude signs, it warns you first, then your token's PIN/2FA prompt fires —
+approving it on your device produces the signed PDF.
+
+## The terminal route
+
+Everything above needs no terminal. The command-line tool exists for the
+optional steps (SPV certificate selection in step 6), for options the
+extension's settings don't expose, and for developers who prefer wiring the
+server by hand.
+
+### Install the command-line tool
+
+First install [`uv`](https://docs.astral.sh/uv/) — it manages Python for you
+(you do **not** need to install Python separately). Open a terminal —
+**Terminal** on macOS, **PowerShell** on Windows — and run:
 
 **macOS**
 
@@ -73,48 +247,23 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Close and reopen the terminal, then check it answers:
-
-```bash
-uv --version
-```
-
-`uv` manages Python for you — you do **not** need to install Python separately; the
-right version is downloaded automatically on first use.
-
-## Step 3 — Install anafpy
-
-Still in the terminal:
+Close and reopen the terminal, then:
 
 ```bash
 uv tool install "anafpy[mcp]"
 ```
 
 This downloads anafpy from [PyPI](https://pypi.org/project/anafpy/) and installs
-two commands: `anafpy` (used in the next step) and `anafpy-mcp` (the server
-Claude starts). They land in `~/.local/bin` on macOS and
-`%USERPROFILE%\.local\bin` on Windows — step 5's manual-configuration
-alternative uses the full path of `anafpy-mcp`. To update anafpy later:
-`uv tool upgrade anafpy`.
-
-(Developers who want to run from a source checkout instead: see the
+two commands: `anafpy` (the CLI) and `anafpy-mcp` (the same server the
+extension bundles, for the manual configuration below). They land in
+`~/.local/bin` on macOS and `%USERPROFILE%\.local\bin` on Windows. To update
+later: `uv tool upgrade anafpy`. (Developers who want to run from a source
+checkout instead: see the
 [README](https://github.com/robert-malai/anafpy#install).)
 
-## Step 4 — Log in to ANAF (one-time, with your certificate)
+### The login, from the terminal
 
-This is the only step that uses the certificate.
-
-!!! tip "No terminal needed with the extension"
-
-    If you connect Claude via the **extension** (step 5) and fill in its
-    settings, you can skip the command below entirely: plug in the USB token
-    and ask Claude — *"log me in to ANAF"*. With your OK it opens the very same
-    browser flow described here (certificate prompt, then the expected
-    *"connection is not private"* warning → **Advanced → Proceed to
-    localhost**). The command below does the same thing from the terminal, and
-    remains the reference path.
-
-Plug in the USB token and run (one line, with your values from step 1):
+The terminal twin of step 4's login (same browser flow, same token store):
 
 ```bash
 anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET>
@@ -122,21 +271,7 @@ anafpy auth login --client-id <CLIENT_ID> --client-secret <CLIENT_SECRET>
 
 The callback URL defaults to the `https://localhost:9002/callback` you
 registered in step 1 — pass `--redirect-uri` only if you registered a
-different one.
-
-What happens, in order:
-
-1. Your **browser opens** on ANAF's login page and asks for your **certificate** —
-   pick it and confirm (enter the token PIN if prompted).
-2. The browser then shows a warning that the connection to `localhost` is **not
-   private**. **This is expected** — the command creates a one-time certificate
-   for your own computer so it can catch ANAF's answer, and browsers warn about
-   any certificate they haven't seen a public authority sign. Nothing about the
-   warning involves ANAF or your data; it is your machine talking to itself.
-3. Click **"Advanced"**, then **"Proceed to localhost"** (Chrome/Edge; Firefox:
-   "Accept the Risk and Continue"). The browser lands on a page saying **"You can
-   close this tab and return to the terminal"** — done, the code was captured
-   automatically, nothing to copy.
+different one. Check it worked with `anafpy auth status`.
 
 If the listener can't start for any reason — or nothing arrives in time — the
 command falls back to **paste mode** by itself: the browser ends on an error page
@@ -170,90 +305,40 @@ about **60 seconds**. (You can also choose this mode directly with `--paste`.)
 
     The login then completes in the browser with no warning at all.
 
-### Either way
+### Manual configuration (instead of the extension — and for the TEST environment)
 
-The command exchanges the code for tokens and stores them in the computer's own
-secure credential store (macOS Keychain / Windows Credential Manager). Check it
-worked:
+The extension is a convenience over Claude Desktop's config file; you can wire
+the server by hand instead (this is also currently the only way to set extra
+options like `ANAFPY_ENV`, `ANAFPY_SIGN_IDENTITY`, or
+`ANAFPY_DECLARATII_UPLOAD`):
 
-```bash
-anafpy auth status
-```
+1. Open the config file (create it if missing):
+    - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+      (in Claude Desktop: *Settings → Developer → Edit Config*)
+    - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+2. Add this (replace the three `...` values, and put the full path of the
+   installed `anafpy-mcp` command in `"command"`; on Windows write it with
+   doubled backslashes, e.g. `C:\\Users\\ana\\.local\\bin\\anafpy-mcp.exe`):
 
-It should report a valid token. From here on, everything is automatic: the access
-token refreshes by itself for about **a year**, without the certificate. You only
-repeat this step when the refresh token expires (~365 days) or if you revoke the
-application on ANAF's portal — so the USB token is needed roughly **once a year**.
-
-## Step 5 — Connect the server to Claude
-
-anafpy ships a local MCP server — a small program Claude starts on your computer
-and talks to. It never sends your credentials anywhere except to ANAF.
-
-### Claude Desktop / Cowork
-
-Cowork reaches local servers through the Claude Desktop app installed on the same
-computer, so this step happens in Claude Desktop:
-
-1. Install and sign in to [Claude Desktop](https://claude.ai/download).
-2. Download the anafpy extension for your computer from the
-   [latest release](https://github.com/robert-malai/anafpy/releases/latest)
-   (under *Assets*): **`anafpy-darwin-arm64.mcpb`** on a Mac with Apple
-   silicon (M1 or newer), **`anafpy-darwin-x64.mcpb`** on an Intel Mac
-   (Apple menu → *About This Mac* says which), or
-   **`anafpy-win32-x64.mcpb`** on Windows. The extension is self-contained —
-   it brings its own Python, nothing else to install.
-3. In Claude Desktop, open **Settings → Extensions**, drag the downloaded
-   `.mcpb` file onto that page (double-clicking the file works too), and
-   click **Install**.
-4. In the extension's settings, fill in the first three fields with your values
-   from step 1: **ANAF Client ID**, **ANAF Client Secret**, and the firm's
-   **CUI** (digits only — the default fiscal code used when you don't say
-   otherwise in conversation). The secret is kept in the computer's secure
-   credential store. The remaining fields cover rare cases (a differently
-   registered callback URL; the Windows curl fix from the
-   [troubleshooting table](#troubleshooting)) — leave them empty.
-
-The anafpy tools appear under the app's connectors/tools, and Cowork sessions
-on this computer can use them. The extension brings its own copy of the server
-— and once its settings are filled in, step 4's login can be run by simply
-asking Claude (*"log me in to ANAF"*), no terminal needed. The `anafpy`
-command from step 3 does the same login from the terminal, and is what the
-optional SPV and declaration steps still use.
-
-??? note "Manual configuration (alternative — and for the TEST environment)"
-
-    The extension is just a convenience over Claude Desktop's config file; you
-    can wire the server by hand instead (this is also currently the only way
-    to set extra options like `ANAFPY_ENV`):
-
-    1. Open the config file (create it if missing):
-        - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-          (in Claude Desktop: *Settings → Developer → Edit Config*)
-        - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-    2. Add this (replace the three `...` values, and put the full path of the
-       `anafpy-mcp` command from step 3 in `"command"`; on Windows write it with
-       doubled backslashes, e.g. `C:\\Users\\ana\\.local\\bin\\anafpy-mcp.exe`):
-
-        ```json
-        {
-          "mcpServers": {
-            "anafpy": {
-              "command": "/Users/ana/.local/bin/anafpy-mcp",
-              "env": {
-                "ANAFPY_CLIENT_ID": "...",
-                "ANAFPY_CLIENT_SECRET": "...",
-                "ANAFPY_CIF": "12345678"
-              }
-            }
+    ```json
+    {
+      "mcpServers": {
+        "anafpy": {
+          "command": "/Users/ana/.local/bin/anafpy-mcp",
+          "env": {
+            "ANAFPY_CLIENT_ID": "...",
+            "ANAFPY_CLIENT_SECRET": "...",
+            "ANAFPY_CIF": "12345678"
           }
         }
-        ```
+      }
+    }
+    ```
 
-    3. Quit Claude Desktop fully and reopen it — it reads this file only at
-       startup.
+3. Quit Claude Desktop fully and reopen it — it reads this file only at
+   startup.
 
-### Claude Code (alternative)
+### Claude Code
 
 If you use Claude Code in a terminal instead:
 
@@ -263,131 +348,34 @@ claude mcp add anafpy \
   -- anafpy-mcp
 ```
 
-## Step 6 — Check that it works
-
-Ask Claude, in a new conversation:
-
-1. *"What's my ANAF authentication status?"* — should report a valid token (this
-   reads the login from step 4).
-2. *"Look up CUI 14399840 in the ANAF taxpayer registry."* — the public lookups
-   work even before login, so this confirms the server itself runs.
-3. *"List my e-Factura messages from the last 7 days."* — confirms the
-   authenticated e-Factura connection end to end.
-
-For e-Transport, filing is deliberately two-step: Claude prepares the declaration
-and shows you a preview, and **nothing is filed until you explicitly approve it**
-— then it submits and reports the UIT. Try it by asking Claude to declare a
-transport from an invoice or CMR you have at hand.
-
-## Step 7 (optional) — Unlock the SPV mailbox tools
-
-The `spv_*` tools let Claude read your **SPV mailbox** (receipts, decisions,
-notifications) and request official reports — fiscal vector, outstanding
-obligations, filing history, declaration duplicates, income certificates. They
-are **read-only**: nothing can be submitted through them.
-
-SPV authenticates with your **qualified certificate directly** (the same one
-you used in step 4's browser login), so this is a separate, equally one-time-ish
-step — the difference is that SPV sessions are short-lived (under an hour of
-idle time), so you re-run the login when you next need SPV, not yearly.
-
-On **Windows**, run `curl --version` first: the built-in curl versions
-**8.13–8.15** break ANAF's certificate login, and Windows-on-ARM computers need
-Git for Windows' curl regardless of version — apply the `ANAFPY_CURL` fix from
-the [troubleshooting table](#troubleshooting) *before* your first login
-attempt, so it doesn't fail after you've already entered the PIN.
-
-In a terminal:
-
-```bash
-anafpy spv certs                  # lists your certificates
-anafpy spv select <thumbprint>    # pick yours (the hex id from `certs`)
-anafpy spv login                  # answer your token's PIN / 2FA prompt
-```
-
-USB-token and cloud certificates (e.g. certSIGN vToken) appear in `certs` via
-their own middleware — it must be installed and running, exactly as for SPV in
-the browser. The login can occasionally fail on ANAF's side; just run it again
-(your PIN/2FA prompt fires on every attempt — that is normal).
-
-Then ask Claude: *"What's my SPV status?"* — it should report your certificate
-and the list of companies (CUIs) it may query. When the session expires (they
-idle out in under an hour), you can simply tell Claude *"log me in to SPV"* —
-it asks for your confirmation, then your token's PIN/2FA prompt fires as usual;
-approving it on your device completes the login. The terminal command keeps
-working too.
-
-## Step 8 (optional) — Unlock the declaration tools
-
-The `declaratie_*` tools let Claude fill in, validate, render, **sign**, and —
-with your explicit approval at every consequential step — **file** a tax
-declaration (the D300 VAT return, D100, D112, and any other form ANAF's
-validator covers). Filing goes to ANAF's real declaration portal (declarations
-have no test environment) through a two-step confirmation flow, and you can
-opt out of it entirely with `ANAFPY_DECLARATII_UPLOAD: "off"` in the `env`
-block — Claude then hands you the signed PDF to upload on the portal yourself.
-Signing works on macOS and Windows, with your certificate in the system's own
-certificate store.
-
-These tools run ANAF's own desktop validator, **DUKIntegrator** — and anafpy
-installs it for you:
-
-1. Make sure you have **Java** (a JRE/JDK, version 8 or newer) installed —
-   `java -version` in a terminal should print a version. (anafpy only runs
-   DUKIntegrator's *validate* and *render* steps, which work on any modern JVM;
-   the Java-8-only limitation you may read about applies to DUK's own signing,
-   which anafpy does not use. Installed but the command not found? anafpy also
-   looks at `JAVA_HOME`, which Windows Java installers usually set.)
-2. Ask Claude to *"set up the declaration validator"* — it calls
-   `declaratie_duk_install`, which downloads DUKIntegrator and the validators
-   for the common forms straight from ANAF's official update feed into
-   `~/.anafpy/duk-dist`. Every file comes from `static.anaf.ro` over HTTPS,
-   and a manifest records what was installed, from where, with checksums. The
-   same command exists in the terminal as `anafpy duk install`, and a rarer
-   form's validator is one `anafpy duk install D208` away — Claude can do that
-   mid-task too.
-
-No `env` entry is needed for this: the server finds the managed install by
-itself. (Already have your own DUKIntegrator `dist/` folder? Point
-`ANAFPY_DUK_DIR` at it in the `env` block from step 5 — an explicit directory
-always wins over the managed one.)
-
-Restart Claude and ask *"check the declaration setup"* — Claude runs
-`declaratie_duk_status`, which confirms the install and warns if a validator is
-out of date (the command-line DUKIntegrator does not auto-update, unlike its
-desktop window — Claude fixes that with `declaratie_duk_install`, and the
-terminal equivalent is `anafpy duk update`). Signing uses the **same qualified
-certificate** as SPV (step 7):
-if you selected one there, the declaration signer reuses it; otherwise set
-`"ANAFPY_SIGN_IDENTITY"` — on macOS to the certificate's Keychain name, on
-Windows to its thumbprint (the 40-character code `anafpy spv certs` lists). When
-Claude signs, it warns you first, then your token's PIN/2FA prompt fires —
-approving it on your device produces the signed PDF.
-
 ## Good to know
 
 - **Production vs. test**: the server talks to **production** ANAF by default. To
   practice against ANAF's TEST environment instead, add `"ANAFPY_ENV": "test"`
-  next to the other `env` entries — this needs step 5's manual configuration;
-  the extension does not expose `ANAFPY_ENV` (test filings issue real-looking
-  UITs that are legally meaningless).
-- **Your credentials stay on this computer**: the Client Secret sits in the config
-  file above and the tokens in the system's credential store (macOS Keychain /
-  Windows Credential Manager) — protect the computer account like you protect
-  SPV access.
+  next to the other `env` entries — this needs the
+  [manual configuration](#the-terminal-route); the extension does not expose
+  `ANAFPY_ENV` (test filings issue real-looking UITs that are legally
+  meaningless).
+- **Your credentials stay on this computer**: with the extension, the Client
+  Secret and the tokens live in the system's credential store (macOS Keychain /
+  Windows Credential Manager); with the manual configuration, the secret sits
+  in the config file — protect the computer account like you protect SPV
+  access.
 - **Tokens in a file instead of the keychain**: only needed on hosts without a
-  credential store (e.g. a Linux server or Docker). Run the step-4 login with
+  credential store (e.g. a Linux server or Docker). Run the terminal login with
   `--store-backend file` added and put `"ANAFPY_TOKEN_STORE_BACKEND": "file"`
   next to the other `env` entries in the Claude config; the tokens then live in
   `~/.anafpy/tokens.json` — protect that folder.
 - **SPV sessions are short**: unlike the OAuth tokens (yearly), the SPV cookie
   session idles out in well under an hour. That is ANAF's setting, not yours;
-  `anafpy spv login` any time the `spv_*` tools ask for it.
-- **Yearly renewal**: when tools start failing with a "run `anafpy auth login`"
+  tell Claude *"log me in to SPV"* (or `anafpy spv login`) any time the
+  `spv_*` tools ask for it.
+- **Yearly renewal**: when tools start failing with a "log in to ANAF"
   message after ~a year, repeat step 4. Nothing else needs to change.
 - **Signing out** (leaving a shared computer, handing it back to IT): run
-  `anafpy auth logout` in a terminal. It deletes the tokens
-  from this computer — afterwards the tools answer "run `anafpy auth login`"
+  `anafpy auth logout` in a terminal (this needs
+  [the command-line tool](#the-terminal-route)). It deletes the tokens
+  from this computer — afterwards the tools answer "log in to ANAF"
   until someone signs in again with the certificate. (ANAF offers no way for a
   program to revoke the tokens on its side; they expire on their own. To cut
   everything off at ANAF's side too, use *Renunțare Oauth* in the ANAF portal,
@@ -398,14 +386,15 @@ approving it on your device produces the signed PDF.
 | Symptom | Fix |
 |---|---|
 | *"Connection is not private"* warning at `localhost` during login | Expected with the default login — the one-time certificate is your machine's own. Click **Advanced → Proceed to localhost** and the login completes. (With mkcert certificates it means `mkcert -install` didn't complete — it needs the password/UAC confirmation; run it again, then retry.) |
+| The extension install dialog doesn't appear | Drag the `.mcpb` file onto Claude Desktop's **Settings → Extensions** page instead of double-clicking it. |
 | `mkcert: command not found` right after installing it | Close and reopen the terminal so the new tool is picked up, then retry. |
 | Login says it can't read `localhost+1.pem` (mkcert) | Run the login command from the folder where `mkcert` wrote the certificate files — or pass their full path. |
-| Browser error page after the certificate step | Normal in `--paste` mode (or after the listener fell back to it) — copy the URL from the address bar into the terminal (step 4). |
+| Browser error page after the certificate step (terminal login) | Normal in `--paste` mode (or after the listener fell back to it) — copy the URL from the address bar into the terminal. |
 | "expired" / invalid code when pasting | You waited past ~60 s. Run the login command again and paste promptly. |
 | No certificate prompt in the browser | The token's driver/software isn't installed or the browser doesn't see the certificate. Test by logging in to SPV first; fix that, then retry. |
 | `anafpy: command not found` in the terminal | Close and reopen the terminal so the newly installed commands are picked up; if it persists, run `uv tool update-shell`, then reopen again. |
-| Claude Desktop shows the server as failed / `anafpy-mcp` not found | Desktop apps don't always see the terminal's PATH. In the config, `"command"` must be the full path — macOS: `/Users/<you>/.local/bin/anafpy-mcp`; Windows: `C:\\Users\\<you>\\.local\\bin\\anafpy-mcp.exe` (run `which anafpy-mcp` / `where.exe anafpy-mcp` to confirm). |
-| Tools answer "run `anafpy auth login`" | Step 4 wasn't completed on this computer, or the token expired (~1 year). Run step 4 again. |
+| Claude Desktop shows the server as failed / `anafpy-mcp` not found (manual configuration) | Desktop apps don't always see the terminal's PATH. In the config, `"command"` must be the full path — macOS: `/Users/<you>/.local/bin/anafpy-mcp`; Windows: `C:\\Users\\<you>\\.local\\bin\\anafpy-mcp.exe` (run `which anafpy-mcp` / `where.exe anafpy-mcp` to confirm). |
+| Tools answer "log in to ANAF" | Step 4 wasn't completed on this computer, or the token expired (~1 year). Run step 4 again. |
 | Filing rejected by ANAF | That's ANAF's verdict on the document's content, not an installation problem — the error text comes back in the tool result; fix the data and prepare again. |
-| `anafpy spv login` fails instantly with `SEC_E_UNKNOWN_CREDENTIALS` on a Windows-on-ARM computer (e.g. Parallels on a Mac) | The certificate vendor's software is Intel-only (certSIGN vToken is), so Windows' built-in curl can't use the certificate. Install [Git for Windows](https://git-scm.com/download/win) (the **64-bit** version, not ARM64) and add `"ANAFPY_CURL": "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"` next to the other `env` entries (with the extension: paste that path into its **curl program (Windows fix)** settings field); set the same variable in PowerShell before `anafpy spv login`. |
-| `anafpy spv login` fails with `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` on Windows | Windows' built-in curl (`C:\Windows\System32\curl.exe`) versions **8.13–8.15** have a [Schannel bug](https://github.com/curl/curl/issues/18029) that breaks ANAF's TLS renegotiation with a certificate-store cert. Check with `curl --version`; if it's in that range, install [Git for Windows](https://git-scm.com/download/win) (its bundled curl is newer) and point `ANAFPY_CURL` at `C:\\Program Files\\Git\\mingw64\\bin\\curl.exe` — in the `env` block (with the extension: its **curl program (Windows fix)** settings field) and in PowerShell before `anafpy spv login` (run `cygpath -w "$(command -v curl)"` in Git Bash to get the exact path). anafpy pins the Schannel backend for you. |
+| `anafpy spv login` fails instantly with `SEC_E_UNKNOWN_CREDENTIALS` on a Windows-on-ARM computer (e.g. Parallels on a Mac) | The certificate vendor's software is Intel-only (certSIGN vToken is), so Windows' built-in curl can't use the certificate. Install [Git for Windows](https://git-scm.com/download/win) (the **64-bit** version, not ARM64) and paste `C:\Program Files\Git\mingw64\bin\curl.exe` into the extension's **curl program (Windows fix)** settings field (manual configuration: `"ANAFPY_CURL"` with doubled backslashes next to the other `env` entries); set the same variable in PowerShell before `anafpy spv login`. |
+| `anafpy spv login` fails with `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` on Windows | Windows' built-in curl (`C:\Windows\System32\curl.exe`) versions **8.13–8.15** have a [Schannel bug](https://github.com/curl/curl/issues/18029) that breaks ANAF's TLS renegotiation with a certificate-store cert. Check with `curl --version`; if it's in that range, install [Git for Windows](https://git-scm.com/download/win) (its bundled curl is newer) and point the extension's **curl program (Windows fix)** settings field at `C:\Program Files\Git\mingw64\bin\curl.exe` (manual configuration: `"ANAFPY_CURL"` in the `env` block) and set the same variable in PowerShell before `anafpy spv login` (run `cygpath -w "$(command -v curl)"` in Git Bash to get the exact path). anafpy pins the Schannel backend for you. |

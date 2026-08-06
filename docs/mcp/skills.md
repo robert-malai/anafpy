@@ -77,7 +77,7 @@ walks Claude through:
 
 Because it only uses the read-only `spv_*` tools, there is no filing gate — the
 human gate here is the SPV login (certificate PIN / 2FA), described in the
-[setup walkthrough](setup.md) step 7.
+[setup walkthrough](setup.md) step 6.
 
 ## `declaratie-prepare`
 
