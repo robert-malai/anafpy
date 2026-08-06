@@ -222,6 +222,37 @@ Windows to its thumbprint (the 40-character code `anafpy spv certs` lists). When
 Claude signs, it warns you first, then your token's PIN/2FA prompt fires —
 approving it on your device produces the signed PDF.
 
+## Step 8 (optional) — Install the workflow skills
+
+The extension gives Claude the individual tools; the **anafpy workflows**
+plugin adds the [workflow playbooks](skills.md) on top — multi-step recipes
+Claude follows on its own when you ask in plain language:
+
+- **`etransport-declare`** — file an e-Transport declaration and get the UIT
+  starting from any source (an email, a PDF invoice, a CMR), with the legal
+  guardrails built in. Works with the base setup (steps 1–4).
+- **`declaratie-prepare`** — build, validate, sign, and file a tax declaration
+  from unstructured source data (needs step 7).
+- **`personal-income-summary`** — collect yearly income certificates from SPV
+  and summarize them (needs step 6).
+
+To install, in Claude Desktop (or Cowork on the web):
+
+1. Click the **+** button next to the message box and choose
+   **Plugins → Add plugin**.
+2. Add this marketplace:
+
+    ```text
+    robert-malai/anafpy
+    ```
+
+3. Install the **anafpy workflows** plugin from it.
+
+The skills then fire by themselves — asking *"declare this transport from the
+attached invoice"* is enough; they appear in the skills list too. Without the
+plugin the same playbooks are still reachable, just manually: the extension
+serves them as prompts in Claude Desktop's **+** menu.
+
 ## The terminal route
 
 Everything above needs no terminal. The command-line tool exists for the

@@ -12,8 +12,8 @@ seeds the workflow with where the data lives.
 
 There is one source of truth — the plugin's SKILL.md files — with two consumers.
 A skill drives the anafpy tools, so a Cowork user needs both the plugin (the
-playbooks) and the anafpy connector (the tools; see the
-[setup walkthrough](setup.md)).
+playbooks — [setup walkthrough](setup.md) step 8) and the anafpy connector (the
+tools — steps 2–4 of the same walkthrough).
 
 ## `etransport-declare`
 

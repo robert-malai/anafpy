@@ -237,6 +237,37 @@ caractere pe care îl listează `anafpy spv certs`). Când Claude semnează, te
 avertizează mai întâi, apoi se declanșează solicitarea de PIN/2FA a token-ului
 tău — aprobând-o pe dispozitivul tău obții PDF-ul semnat.
 
+## Pasul 8 (opțional) — Instalează skill-urile de lucru
+
+Extensia îi dă lui Claude uneltele individuale; plugin-ul **anafpy workflows**
+adaugă peste ele [playbook-urile de lucru](skills.md) — rețete în mai mulți
+pași pe care Claude le urmează singur când îi ceri în limbaj obișnuit:
+
+- **`etransport-declare`** — depune o declarație e-Transport și obține UIT-ul
+  pornind de la orice sursă (un e-mail, o factură PDF, un CMR), cu garanțiile
+  legale incluse. Funcționează cu instalarea de bază (pașii 1–4).
+- **`declaratie-prepare`** — construiește, validează, semnează și depune o
+  declarație fiscală din date-sursă nestructurate (are nevoie de pasul 7).
+- **`personal-income-summary`** — adună adeverințele de venit anuale din SPV
+  și le rezumă (are nevoie de pasul 6).
+
+Pentru instalare, în Claude Desktop (sau în Cowork pe web):
+
+1. Apasă butonul **+** de lângă caseta de mesaje și alege
+   **Plugins → Add plugin**.
+2. Adaugă acest marketplace:
+
+    ```text
+    robert-malai/anafpy
+    ```
+
+3. Instalează de acolo plugin-ul **anafpy workflows**.
+
+Skill-urile se declanșează apoi singure — este de ajuns să ceri *„declară
+transportul acesta din factura atașată"*; apar și în lista de skill-uri. Fără
+plugin, aceleași playbook-uri rămân accesibile, doar manual: extensia le
+servește ca prompt-uri în meniul **+** din Claude Desktop.
+
 ## Ruta prin terminal
 
 Nimic de mai sus nu are nevoie de un terminal. Unealta în linie de comandă
