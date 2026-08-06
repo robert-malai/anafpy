@@ -114,7 +114,11 @@ jobs:
         if: matrix.target == 'darwin-x64'
         run: echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
       - name: Build the bundle
-        run: uv run --no-project --python 3.13 scripts/build_mcpb.py --target ${{ matrix.target }}
+        # No --python: the builder interpreter follows .python-version. It is
+        # independent of the bundle's runtime — the script is stdlib-only, and
+        # everything bundle-relevant is evaluated against the staged
+        # interpreter, pinned by [tool.anafpy] bundle-python.
+        run: uv run --no-project scripts/build_mcpb.py --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
         with:
           name: mcpb-${{ matrix.target }}

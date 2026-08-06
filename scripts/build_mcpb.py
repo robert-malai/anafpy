@@ -53,7 +53,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 # Copied into the bundle as icon.png — the name the manifest declares.
 ICON = ROOT / "imgs" / "anafpy-icon-512.png"
-# Exact packer pin — the packer decides the archive layout.
+# Exact packer pin — the packer decides the archive layout and owns the
+# manifest schema. This constant is the pin's ONE home: `pack` ships with it
+# and `--manifests-only --validate` checks with it, so CI never restates it.
 MCPB_PACKER = "@anthropic-ai/mcpb@2.1.2"
 
 # Interpreter flags, chosen deliberately (each rejected flag would break the
@@ -508,23 +510,36 @@ def main() -> None:
         "manifest.json and exit. Manifest generation is pure — no native "
         "host, no uv — so CI schema-validates all three from one runner.",
     )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="with --manifests-only: schema-validate each generated manifest "
+        "with the pinned packer (needs npx; plain generation stays "
+        "dependency-free)",
+    )
     args = parser.parse_args()
+    if args.validate and args.manifests_only is None:
+        parser.error("--validate requires --manifests-only")
 
     version, pin = read_pins()
     minor = pin.rsplit(".", 1)[0]
     targets = _targets(minor)
 
     if args.manifests_only is not None:
+        npx = _which("npx") if args.validate else None
         for target in targets.values():
             target_dir = args.manifests_only / target.name
             target_dir.mkdir(parents=True, exist_ok=True)
-            (target_dir / "manifest.json").write_text(
+            manifest_path = target_dir / "manifest.json"
+            manifest_path.write_text(
                 json.dumps(manifest(version, target), indent=2, ensure_ascii=False)
                 + "\n"
             )
             # The validator resolves the manifest's icon path — ship it too.
             shutil.copy2(ICON, target_dir / "icon.png")
-            print("wrote", target_dir / "manifest.json")
+            print("wrote", manifest_path)
+            if npx:
+                _run([npx, "--yes", MCPB_PACKER, "validate", str(manifest_path)])
         return
 
     target = targets[args.target or host_target()]
