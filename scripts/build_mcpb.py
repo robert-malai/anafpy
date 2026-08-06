@@ -40,6 +40,7 @@ sets OPENSSL_DIR).
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import platform
 import shutil
@@ -271,6 +272,18 @@ def install_closure(
     (lib / "sitecustomize.py").write_text(SITECUSTOMIZE)
 
 
+def _fold(text: str) -> str:
+    """Collapse a triple-quoted block into manifest prose.
+
+    Lets the long descriptive texts read as prose in the source: cleandoc
+    strips the indent, in-paragraph line breaks (a source-width concern, not
+    content) fold into spaces, and blank lines survive as the ``\\n\\n``
+    paragraph breaks the install dialog renders.
+    """
+    paragraphs = inspect.cleandoc(text).split("\n\n")
+    return "\n\n".join(" ".join(p.split()) for p in paragraphs)
+
+
 def manifest(version: str, target: Target) -> dict[str, object]:
     """The extension manifest, specialised for one target.
 
@@ -292,32 +305,37 @@ def manifest(version: str, target: Target) -> dict[str, object]:
         "name": "anafpy",
         "display_name": "anafpy — ANAF tools",
         "version": version,
-        "description": (
-            "Talk to Romania's ANAF tax authority: e-Factura inbox and filing, "
-            "e-Transport declarations, SPV mailbox, tax declarations, and "
-            "public registry lookups."
-        ),
-        "long_description": (
-            "Local MCP server for ANAF's services — e-Factura (electronic "
-            "invoicing), e-Transport (goods transport declarations), the SPV "
-            "mailbox, tax declarations via ANAF's own DUKIntegrator validator, "
-            "and the public no-auth lookups (taxpayer registry, VAT status, "
-            "financial statements).\n\nThe extension is self-contained — it "
-            "carries its own Python — and the public lookup tools work "
-            "immediately after install, with no configuration. The "
-            "authenticated e-Factura and e-Transport tools additionally need "
-            "your own ANAF OAuth application (Client ID + Secret) and a "
-            "one-time certificate login — once the settings below are filled "
-            "in, just ask Claude to log you in to ANAF (your browser opens for "
-            "the certificate step; roughly yearly). Every ANAF filing is "
-            "two-step — the server prepares a preview and nothing is submitted "
-            "until you explicitly approve it.\n\nThe workflow playbooks — "
-            "declare an e-Transport from any document, prepare a tax "
-            "declaration, summarize personal income — are served as same-name "
-            "prompts, and are also available as Cowork Agent Skills from the "
-            "plugin marketplace at github.com/robert-malai/anafpy.\n\nFull "
-            "setup guide: https://anafpy.readthedocs.io/en/latest/mcp/setup/"
-        ),
+        "description": _fold("""
+            Talk to Romania's ANAF tax authority: e-Factura inbox and filing,
+            e-Transport declarations, SPV mailbox, tax declarations, and
+            public registry lookups.
+        """),
+        "long_description": _fold("""
+            Local MCP server for ANAF's services — e-Factura (electronic
+            invoicing), e-Transport (goods transport declarations), the SPV
+            mailbox, tax declarations via ANAF's own DUKIntegrator validator,
+            and the public no-auth lookups (taxpayer registry, VAT status,
+            financial statements).
+
+            The extension is self-contained — it carries its own Python — and
+            the public lookup tools work immediately after install, with no
+            configuration. The authenticated e-Factura and e-Transport tools
+            additionally need your own ANAF OAuth application (Client ID +
+            Secret) and a one-time certificate login — once the settings below
+            are filled in, just ask Claude to log you in to ANAF (your browser
+            opens for the certificate step; roughly yearly). Every ANAF filing
+            is two-step — the server prepares a preview and nothing is
+            submitted until you explicitly approve it.
+
+            The workflow playbooks — declare an e-Transport from any document,
+            prepare a tax declaration, summarize personal income — are served
+            as same-name prompts, and are also available as Cowork Agent
+            Skills from the plugin marketplace at
+            github.com/robert-malai/anafpy.
+
+            Full setup guide:
+            https://anafpy.readthedocs.io/en/latest/mcp/setup/
+        """),
         "author": {
             "name": "Robert Malai",
             "url": "https://github.com/robert-malai",
@@ -361,58 +379,57 @@ def manifest(version: str, target: Target) -> dict[str, object]:
             "client_id": {
                 "type": "string",
                 "title": "ANAF Client ID",
-                "description": (
-                    "The Client ID of your own OAuth application on ANAF's "
-                    "portal. Leave empty to use only the public lookup tools "
-                    "— the setup guide explains how to register the "
-                    "application."
-                ),
+                "description": _fold("""
+                    The Client ID of your own OAuth application on ANAF's
+                    portal. Leave empty to use only the public lookup tools —
+                    the setup guide explains how to register the application.
+                """),
                 "required": False,
             },
             "client_secret": {
                 "type": "string",
                 "title": "ANAF Client Secret",
-                "description": (
-                    "The Client Secret shown next to the Client ID when the "
-                    "application was registered. Stored in the system's "
-                    "secure credential store."
-                ),
+                "description": _fold("""
+                    The Client Secret shown next to the Client ID when the
+                    application was registered. Stored in the system's secure
+                    credential store.
+                """),
                 "sensitive": True,
                 "required": False,
             },
             "cif": {
                 "type": "string",
                 "title": "Firm CUI (fiscal code)",
-                "description": (
-                    "Digits only, e.g. 12345678. Used as the default fiscal "
-                    "code when a conversation doesn't say otherwise."
-                ),
+                "description": _fold("""
+                    Digits only, e.g. 12345678. Used as the default fiscal
+                    code when a conversation doesn't say otherwise.
+                """),
                 "required": False,
             },
             "redirect_uri": {
                 "type": "string",
                 "title": "OAuth callback URL",
-                "description": (
-                    "Leave empty for the default, "
-                    "https://localhost:9002/callback — the URL the setup "
-                    "guide has you register. Fill in only if your ANAF "
-                    "application registered a different Callback URL; it "
-                    "must match that registration exactly."
-                ),
+                "description": _fold("""
+                    Leave empty for the default,
+                    https://localhost:9002/callback — the URL the setup guide
+                    has you register. Fill in only if your ANAF application
+                    registered a different Callback URL; it must match that
+                    registration exactly.
+                """),
                 "required": False,
             },
             "curl_path": {
                 "type": "string",
                 "title": "curl program (Windows fix)",
-                "description": (
-                    "Full path to an alternative curl.exe, used by the SPV "
-                    "and declaration-portal certificate logins. Needed only "
-                    "on Windows with a broken built-in curl (versions "
-                    "8.13–8.15) or on Windows-on-ARM — typically "  # noqa: RUF001
-                    "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe from Git "
-                    "for Windows; the setup guide's troubleshooting table "
-                    "has the details. Leave empty everywhere else."
-                ),
+                "description": _fold("""
+                    Full path to an alternative curl.exe, used by the SPV and
+                    declaration-portal certificate logins. Needed only on
+                    Windows with a broken built-in curl (versions
+                    8.13\u20138.15) or on Windows-on-ARM — typically
+                    C:\\Program Files\\Git\\mingw64\\bin\\curl.exe from Git
+                    for Windows; the setup guide's troubleshooting table has
+                    the details. Leave empty everywhere else.
+                """),
                 "required": False,
             },
         },
