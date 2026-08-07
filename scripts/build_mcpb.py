@@ -337,6 +337,33 @@ def install_closure(
     (lib / "sitecustomize.py").write_text(SITECUSTOMIZE)
 
 
+def stamp_curl_release_version(src: Path) -> None:
+    """Drop curl's in-tree ``-DEV`` version suffix — the tarball's own doing.
+
+    curl keeps ``LIBCURL_VERSION "X.Y.Z-DEV"`` in git and stamps the clean
+    string only when ``maketgz`` rolls the release tarball, so a build from
+    the release *tag* would ship a binary introducing itself — in
+    ``curl --version`` and in every User-Agent — as a development snapshot.
+    We build from git because that is what git can verify, so the stamping
+    happens here instead; the code is the tagged release either way.
+
+    Anything other than the two expected states is a hard failure: a pin bump
+    that left ``CURL_VERSION`` behind, or a convention change upstream, must
+    not slip through as a silently unstamped binary.
+    """
+    header = src / "include" / "curl" / "curlver.h"
+    text = header.read_text(encoding="utf-8")
+    if f'"{CURL_VERSION}-DEV"' in text:
+        header.write_text(
+            text.replace(f'"{CURL_VERSION}-DEV"', f'"{CURL_VERSION}"'), encoding="utf-8"
+        )
+    elif f'"{CURL_VERSION}"' not in text:
+        raise SystemExit(
+            f"{header} declares neither {CURL_VERSION!r} nor its -DEV form — "
+            f"CURL_VERSION disagrees with what {CURL_TAG} actually contains."
+        )
+
+
 def stage_curl(stage: Path, build_dir: Path, target: Target) -> None:
     """Compile the pinned curl into ``server/curl`` and prove it is the right one.
 
@@ -380,6 +407,8 @@ def stage_curl(stage: Path, build_dir: Path, target: Target) -> None:
                 "the release before touching CURL_COMMIT."
             )
 
+    stamp_curl_release_version(src)
+
     # Configure into a fresh tree: the checkout is worth reusing, a CMake cache
     # is not — a stale one can leave a second curl.exe from another generator's
     # layout lying around, and the match below would then have to guess.
@@ -401,7 +430,9 @@ def stage_curl(stage: Path, build_dir: Path, target: Target) -> None:
     banner = subprocess.run(
         [str(exe), "--version"], check=True, capture_output=True, text=True
     ).stdout
-    if CURL_VERSION not in banner or "Schannel" not in banner:
+    # `startswith`, not a substring test: "8.21.0" also matches "8.21.0-DEV",
+    # which is exactly the unstamped build this must not let through.
+    if not banner.startswith(f"curl {CURL_VERSION} ") or "Schannel" not in banner:
         raise SystemExit(
             f"the built curl is not curl {CURL_VERSION} with the Schannel "
             f"backend — it reports: {banner.splitlines()[0] if banner else '<nothing>'}"
