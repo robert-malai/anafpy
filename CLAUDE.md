@@ -84,9 +84,11 @@ semantics live in [mcp/config.py](src/anafpy/mcp/config.py)'s docstrings and the
 cross-cutting facts: credentials are optional (without them the public `anaf_*`
 tools still serve); `ANAFPY_DOCS_DIR`'s wheel copy is a curated hatchling
 force-include (a wheel-map tripwire in `test_mcp_server.py` catches a subtree
-missing from the map); `ANAFPY_CURL` (both certificate bootstraps; needed on
-Windows-on-ARM — SPV reference §1.1) is read at the transport layer, not by
-`ServerConfig`; `ANAFPY_DECLARATII_UPLOAD=off` strips the portal-filing tools.
+missing from the map); `ANAFPY_CURL` (both certificate bootstraps; the user's
+override — SPV reference §1.1) and `ANAFPY_BUNDLED_CURL` (what the Windows
+extension ships, set by the manifest, outranked by `ANAFPY_CURL`) are read at
+the transport layer, not by `ServerConfig`; `ANAFPY_DECLARATII_UPLOAD=off`
+strips the portal-filing tools.
 
 Codegen (only when re-vendoring XSDs / Schematron sources — see "Generated code"):
 
@@ -121,8 +123,10 @@ src/anafpy/
                            # timeout (DUK JVM + platform curl)
   _transport/curl.py     # CurlBootstrapperBase — shared platform-curl machinery
                          # of the two APM certificate bootstraps (SPV + portal):
-                         # curl resolution (ANAFPY_CURL), cert selectors, failure
-                         # taxonomy; subclasses own choreography + judgment
+                         # curl resolution (ANAFPY_CURL, then the bundled
+                         # ANAFPY_BUNDLED_CURL, then the OS one), cert
+                         # selectors, failure taxonomy; subclasses own
+                         # choreography + judgment
   auth/                  # OAuth2 layer: models, store, oauth, provider,
                          # callback, tlscert, browser (browser_login — the ONE
                          # login choreography behind the CLI and auth_login,
@@ -221,10 +225,12 @@ scripts/                 # codegen scripts + vendor_card_fonts.py (the card's
                          # build_mcpb.py (the self-contained Claude Desktop
                          # extension bundles — own CPython per pyproject's
                          # [tool.anafpy] bundle-python exact pin + locked
-                         # closure; the extension manifest's ONE home is its
-                         # manifest() dict; native-host-only, defaults to the
-                         # host's target; release.yml builds each target on a
-                         # native runner as anafpy-<target>.mcpb)
+                         # closure, plus a Schannel curl.exe compiled from the
+                         # pinned source on win32-x64 alone; the extension
+                         # manifest's ONE home is its manifest() dict;
+                         # native-host-only, defaults to the host's target;
+                         # release.yml builds each target on a native runner
+                         # as anafpy-<target>.mcpb)
 imgs/                    # brand assets; README hotlinks the social preview
 docs/                    # MkDocs source tree (mkdocs.yml at repo root; RTD
                          # builds via uv); docs/assets/ = site image copies
@@ -521,8 +527,9 @@ silently returning empty results.
   with `pyproject.toml`'s version or ships no `release-notes/<tag>.md`; the
   gates then re-run, the self-contained Claude Desktop extensions are built by
   `scripts/build_mcpb.py` — **one native runner per target** (darwin-arm64 /
-  darwin-x64 / win32-x64; the script refuses a cross-build, and the darwin-x64
-  leg sets `OPENSSL_DIR` for the cryptography sdist), PyPI is published via
+  darwin-x64 / win32-x64; the script refuses a cross-build, the darwin-x64
+  leg sets `OPENSSL_DIR` for the cryptography sdist, and the win32-x64 leg
+  additionally compiles curl), PyPI is published via
   trusted publishing (OIDC, no stored token), and only then the GitHub release
   for the same tag carries the sdist + wheel + the bundles
   (`anafpy-<target>.mcpb` — constant asset names, so

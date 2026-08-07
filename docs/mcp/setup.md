@@ -84,8 +84,8 @@ from step 1: **ANAF Client ID**, **ANAF Client Secret**, and the firm's
 **CUI** (digits only — the default fiscal code used when you don't say
 otherwise in conversation). The secret is kept in the computer's secure
 credential store. The remaining fields cover rare cases (a differently
-registered callback URL; the Windows curl fix from the
-[troubleshooting table](#troubleshooting)) — leave them empty.
+registered callback URL; an alternative curl program, which the Windows
+extension no longer needs — it carries its own) — leave them empty.
 
 ## Step 4 — Log in to ANAF (one-time, with your certificate)
 
@@ -149,11 +149,13 @@ idle time), so you re-run the login when you next need SPV, not yearly.
 The first-time certificate selection uses the `anafpy` terminal command —
 install it first ([the terminal route](#the-terminal-route) explains how).
 
-On **Windows**, run `curl --version` first: the built-in curl versions
-**8.13–8.15** break ANAF's certificate login, and Windows-on-ARM computers need
-Git for Windows' curl regardless of version — apply the `ANAFPY_CURL` fix from
-the [troubleshooting table](#troubleshooting) *before* your first login
-attempt, so it doesn't fail after you've already entered the PIN.
+On **Windows**, run `curl --version` first — this is the one place the
+computer's own curl is still used (the extension carries its own; the terminal
+command does not). The built-in curl versions **8.13–8.15** break ANAF's
+certificate login, and Windows-on-ARM computers need Git for Windows' curl
+regardless of version — apply the `ANAFPY_CURL` fix from the
+[troubleshooting table](#troubleshooting) *before* your first login attempt, so
+it doesn't fail after you've already entered the PIN.
 
 In a terminal:
 
@@ -427,5 +429,6 @@ claude mcp add anafpy \
 | Claude Desktop shows the server as failed / `anafpy-mcp` not found (manual configuration) | Desktop apps don't always see the terminal's PATH. In the config, `"command"` must be the full path — macOS: `/Users/<you>/.local/bin/anafpy-mcp`; Windows: `C:\\Users\\<you>\\.local\\bin\\anafpy-mcp.exe` (run `which anafpy-mcp` / `where.exe anafpy-mcp` to confirm). |
 | Tools answer "log in to ANAF" | Step 4 wasn't completed on this computer, or the token expired (~1 year). Run step 4 again. |
 | Filing rejected by ANAF | That's ANAF's verdict on the document's content, not an installation problem — the error text comes back in the tool result; fix the data and prepare again. |
-| `anafpy spv login` fails instantly with `SEC_E_UNKNOWN_CREDENTIALS` on a Windows-on-ARM computer (e.g. Parallels on a Mac) | The certificate vendor's software is Intel-only (certSIGN vToken is), so Windows' built-in curl can't use the certificate. Install [Git for Windows](https://git-scm.com/download/win) (the **64-bit** version, not ARM64) and paste `C:\Program Files\Git\mingw64\bin\curl.exe` into the extension's **curl program (Windows fix)** settings field (manual configuration: `"ANAFPY_CURL"` with doubled backslashes next to the other `env` entries); set the same variable in PowerShell before `anafpy spv login`. |
-| `anafpy spv login` fails with `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` on Windows | Windows' built-in curl (`C:\Windows\System32\curl.exe`) versions **8.13–8.15** have a [Schannel bug](https://github.com/curl/curl/issues/18029) that breaks ANAF's TLS renegotiation with a certificate-store cert. Check with `curl --version`; if it's in that range, install [Git for Windows](https://git-scm.com/download/win) (its bundled curl is newer) and point the extension's **curl program (Windows fix)** settings field at `C:\Program Files\Git\mingw64\bin\curl.exe` (manual configuration: `"ANAFPY_CURL"` in the `env` block) and set the same variable in PowerShell before `anafpy spv login` (run `cygpath -w "$(command -v curl)"` in Git Bash to get the exact path). anafpy pins the Schannel backend for you. |
+| `anafpy spv login` fails instantly with `SEC_E_UNKNOWN_CREDENTIALS` on a Windows-on-ARM computer (e.g. Parallels on a Mac) | Only the **terminal** command is affected — the extension carries its own curl and is fine. The certificate vendor's software is Intel-only (certSIGN vToken is), so Windows' built-in curl can't use the certificate. Install [Git for Windows](https://git-scm.com/download/win) (the **64-bit** version, not ARM64) and set `ANAFPY_CURL` to `C:\Program Files\Git\mingw64\bin\curl.exe` in PowerShell before `anafpy spv login`. |
+| `anafpy spv login` fails with `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` on Windows | Again the terminal command only. Windows' built-in curl (`C:\Windows\System32\curl.exe`) versions **8.13–8.15** have a [Schannel bug](https://github.com/curl/curl/issues/18029) that breaks ANAF's TLS renegotiation with a certificate-store cert. Check with `curl --version`; if it's in that range, install [Git for Windows](https://git-scm.com/download/win) (its bundled curl is newer) and set `ANAFPY_CURL` to `C:\Program Files\Git\mingw64\bin\curl.exe` in PowerShell before `anafpy spv login` (run `cygpath -w "$(command -v curl)"` in Git Bash to get the exact path). anafpy pins the Schannel backend for you. |
+| The extension's own SPV or declaration-portal login fails on Windows with a curl error | The Windows extension ships its own curl, so this should not happen — but the escape hatch is the same: install [Git for Windows](https://git-scm.com/download/win) (**64-bit**) and paste `C:\Program Files\Git\mingw64\bin\curl.exe` into the extension's **curl program (advanced)** settings field (manual configuration: `"ANAFPY_CURL"` with doubled backslashes next to the other `env` entries). Your value always wins over the bundled one. |

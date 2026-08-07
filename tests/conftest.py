@@ -68,6 +68,17 @@ def isolated_managed_duk_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.fixture(autouse=True)
+def unset_curl_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear the curl resolution's environment for EVERY test (autouse):
+    ``default_curl_path()`` reads ``ANAFPY_CURL`` (the user's override) and
+    ``ANAFPY_BUNDLED_CURL`` (what the extension ships), so a developer running
+    the suite from a shell that sets either would exercise their curl instead
+    of the platform default the assertions describe."""
+    monkeypatch.delenv("ANAFPY_CURL", raising=False)
+    monkeypatch.delenv("ANAFPY_BUNDLED_CURL", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def fake_keyring() -> Iterator[FakeKeyring]:
     """In-memory keyring for EVERY test (autouse): keyring is the default token
     store backend, so without this a test that forgets to pick a backend would

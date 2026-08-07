@@ -1308,3 +1308,64 @@ walkthrough), and a broken extension install is Claude Desktop's surface, not
 ours. `marketplace.json` keeps a `renames` tombstone (`"anafpy-setup": null`,
 the same mechanism that retired `anafpy-connector-test`); the manual
 config-file route survives as the developer path in the walkthrough.
+
+## 16. The Windows bundle ships its own curl (2026-08-07)
+
+The `win32-x64` extension bundle (§15) now carries a **curl.exe of its own**,
+compiled from pinned source by `scripts/build_mcpb.py`'s `stage_curl`, and
+names it to the server in `ANAFPY_BUNDLED_CURL`. Nothing about the certificate
+logins changed — curl is still the only way to present a non-exportable
+platform-store key (§ the SPV bootstrap's rationale) — but *whose* curl runs
+did.
+
+The reason is that on Windows the OS-shipped curl is the broken one, in two
+live-observed ways (SPV reference §1.1): System32 curl **8.13–8.15** carries a
+Schannel bug that kills ANAF's mid-connection renegotiation, and on **Windows
+on ARM** the ARM64 System32 curl cannot load an x64-only vendor key-storage
+provider (certSIGN Paperless vToken, 2026-07-13). Both had the same remedy —
+"install Git for Windows and paste a path into a settings field" — which asks
+the §11 audience (accountants) to install a developer toolchain to work around
+someone else's bug, on the exact machines least able to diagnose it. A bundle
+that already carries a whole CPython can carry a 2 MB curl. The x64 build also
+answers ARM for free: Claude Desktop installs the x64 bundle there and Windows
+emulates it, so the x64 curl loads the x64 KSP the ARM64 one refused.
+
+The decisions:
+
+- **Compiled, not downloaded.** curl's own Windows binaries (curl.se, built by
+  curl-for-win) are LibreSSL builds with Schannel *off*, and the platform key
+  store is the entire point — an OpenSSL/LibreSSL curl cannot present
+  `CurrentUser\MY\<thumbprint>`. The alternative source, MSYS2's
+  `curl-winssl`, is a DLL closure of a dozen packages. Building
+  Schannel-only + `HTTP_ONLY` + static CRT needs no third-party dependency at
+  all and yields one self-contained file that runs without a VC++
+  redistributable.
+- **Pinned by tag *and* commit** (`CURL_TAG` / `CURL_COMMIT`). Tags move; git
+  verifies the objects it fetches, so the commit assertion turns a re-cut tag
+  into a build failure instead of a silently different binary. The staged
+  binary then has to *say* it is that version and speak Schannel
+  (`curl --version`) before it is allowed into the stage — a toolchain default
+  that quietly picked another backend would otherwise surface on a user's
+  machine, mid-2FA.
+- **A separate variable, not the user's.** `ANAFPY_CURL` stays the
+  user-facing override and still wins; `ANAFPY_BUNDLED_CURL` is what the
+  manifest sets. One variable could not carry both — the MCPB manifest
+  substitutes an unset `user_config` field as an empty string, which would
+  erase the bundled path for exactly the users who configured nothing. A
+  bundled path that no longer resolves degrades to the OS curl rather than
+  failing on a missing file (a moved or half-removed install).
+- **Windows only.** macOS's `/usr/bin/curl` is a working SecureTransport
+  build; bundling one there would be megabytes and a compile step bought for
+  nothing.
+- **The CLI is unchanged.** `anafpy spv login` from a terminal still uses the
+  OS curl and still wants the Git-for-Windows fix — a pip-installed CLI has no
+  bundle to borrow from, and shipping a binary in the wheel is not on the
+  table. The setup guide's troubleshooting rows now say which surface each fix
+  is for.
+
+Accepted trade-off: the win32-x64 release leg now needs git, CMake and MSVC
+(all present on `windows-latest`) and takes a couple of minutes longer, and
+the compile is exercised only by a release or a `workflow_dispatch` dry run —
+not by CI on every push. `tests/test_mcpb_bundle.py` covers what is checkable
+from any host (the generated manifest's content, the pin's shape, the
+Schannel flags); the build itself is not.

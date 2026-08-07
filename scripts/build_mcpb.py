@@ -26,6 +26,15 @@ Stage layout, mirrored by the manifest the script writes:
                          # with --target; plus a generated sitecustomize.py
                          # that replays .pth files (pywin32 needs it — PYTHONPATH
                          # entries get no .pth processing of their own)
+        curl/            # win32-x64 ONLY: a Schannel curl.exe compiled here
+                         # from curl's pinned source, so the certificate
+                         # logins never touch the broken System32 curl
+                         # (see stage_curl)
+
+The Windows bundle additionally compiles **curl** from source (``stage_curl``)
+— the one native dependency the certificate logins have, and the one piece
+Windows itself ships broken. That leg therefore needs git, CMake and MSVC on
+top of uv and npx.
 
 The interpreter version is the exact ``[tool.anafpy] bundle-python`` pin in
 pyproject.toml; a loose pin fails the build. The dependency closure is
@@ -57,6 +66,52 @@ ICON = ROOT / "imgs" / "anafpy-icon-512.png"
 # manifest schema. This constant is the pin's ONE home: `pack` ships with it
 # and `--manifests-only --validate` checks with it, so CI never restates it.
 MCPB_PACKER = "@anthropic-ai/mcpb@2.1.2"
+
+# The curl the Windows bundle carries, pinned twice: by release tag and by the
+# commit that tag named when the pin was taken. git verifies the objects it
+# fetches, so the commit check turns a moved or re-cut tag into a build
+# failure rather than a silently different binary. Bumping the pin is
+# `git ls-remote --tags --refs https://github.com/curl/curl 'refs/tags/curl-*'`
+# for the newest release, then a clone of it for the commit (an annotated
+# tag's own object id is NOT the commit id).
+CURL_REPOSITORY = "https://github.com/curl/curl"
+CURL_VERSION = "8.21.0"
+CURL_TAG = "curl-8_21_0"
+CURL_COMMIT = "68720b4837284335b2d63cb358f8f6ce65f5bc55"
+
+# Schannel and nothing else. The whole point of shipping curl is the platform
+# key store — a LibreSSL/OpenSSL curl (what curl.se's own Windows binaries
+# are) cannot present `CurrentUser\MY\<thumbprint>` — and every optional
+# dependency switched off here is one the stage would otherwise have to carry
+# as a DLL beside the .exe. HTTP_ONLY keeps http/https, WinIDN is Windows' own
+# so it costs nothing, and static libcurl + /MT make one file that runs
+# without a VC++ redistributable. No `-G`: the host's default generator is the
+# installed Visual Studio, and `-A x64` fails loudly if it is not a VS one.
+CURL_CMAKE_OPTIONS = [
+    "-A",
+    "x64",
+    "-DBUILD_SHARED_LIBS=OFF",
+    "-DBUILD_STATIC_LIBS=ON",
+    "-DBUILD_STATIC_CURL=ON",
+    "-DBUILD_CURL_EXE=ON",
+    "-DCURL_STATIC_CRT=ON",
+    "-DCURL_USE_SCHANNEL=ON",
+    "-DCURL_USE_OPENSSL=OFF",
+    "-DHTTP_ONLY=ON",
+    "-DUSE_WIN32_IDN=ON",
+    "-DUSE_LIBIDN2=OFF",
+    "-DUSE_NGHTTP2=OFF",
+    "-DCURL_USE_LIBPSL=OFF",
+    "-DCURL_USE_LIBSSH2=OFF",
+    "-DCURL_ZLIB=OFF",
+    "-DCURL_BROTLI=OFF",
+    "-DCURL_ZSTD=OFF",
+    "-DENABLE_CURL_MANUAL=OFF",
+    "-DBUILD_LIBCURL_DOCS=OFF",
+    "-DBUILD_EXAMPLES=OFF",
+    "-DBUILD_TESTING=OFF",
+    "-DCURL_DISABLE_INSTALL=ON",
+]
 
 # Interpreter flags, chosen deliberately (each rejected flag would break the
 # bundle): -P keeps cwd off sys.path (the client spawns the server from an
@@ -93,6 +148,12 @@ class Target:
     # missing wheel must fail the build, not silently compile against an
     # incompatible system library.
     sdist_packages: tuple[str, ...] = field(default=())
+    # Staged path of a curl the bundle carries, relative to the stage root, or
+    # None for targets that use the OS one. Set for Windows alone: macOS's
+    # /usr/bin/curl is a working SecureTransport build, while Windows ships
+    # the exact curl the certificate logins trip over. Its presence drives the
+    # staging, the manifest's ANAFPY_BUNDLED_CURL, and the audit alike.
+    bundled_curl: str | None = None
 
 
 def _targets(python_minor: str) -> dict[str, Target]:
@@ -102,7 +163,9 @@ def _targets(python_minor: str) -> dict[str, Target]:
         "darwin-x64": Target(
             "darwin-x64", "darwin", posix_bin, sdist_packages=("cryptography",)
         ),
-        "win32-x64": Target("win32-x64", "win32", "python.exe"),
+        "win32-x64": Target(
+            "win32-x64", "win32", "python.exe", bundled_curl="server/curl/curl.exe"
+        ),
     }
 
 
@@ -274,6 +337,116 @@ def install_closure(
     (lib / "sitecustomize.py").write_text(SITECUSTOMIZE)
 
 
+def stamp_curl_release_version(src: Path) -> None:
+    """Drop curl's in-tree ``-DEV`` version suffix — the tarball's own doing.
+
+    curl keeps ``LIBCURL_VERSION "X.Y.Z-DEV"`` in git and stamps the clean
+    string only when ``maketgz`` rolls the release tarball, so a build from
+    the release *tag* would ship a binary introducing itself — in
+    ``curl --version`` and in every User-Agent — as a development snapshot.
+    We build from git because that is what git can verify, so the stamping
+    happens here instead; the code is the tagged release either way.
+
+    Anything other than the two expected states is a hard failure: a pin bump
+    that left ``CURL_VERSION`` behind, or a convention change upstream, must
+    not slip through as a silently unstamped binary.
+    """
+    header = src / "include" / "curl" / "curlver.h"
+    text = header.read_text(encoding="utf-8")
+    if f'"{CURL_VERSION}-DEV"' in text:
+        header.write_text(
+            text.replace(f'"{CURL_VERSION}-DEV"', f'"{CURL_VERSION}"'), encoding="utf-8"
+        )
+    elif f'"{CURL_VERSION}"' not in text:
+        raise SystemExit(
+            f"{header} declares neither {CURL_VERSION!r} nor its -DEV form — "
+            f"CURL_VERSION disagrees with what {CURL_TAG} actually contains."
+        )
+
+
+def stage_curl(stage: Path, build_dir: Path, target: Target) -> None:
+    """Compile the pinned curl into ``server/curl`` and prove it is the right one.
+
+    Windows is the only target that needs this, and it needs it because both
+    known certificate-login failures are the *operating system's* curl: the
+    Schannel renegotiation bug in System32 curl 8.13-8.15, and the ARM64 curl
+    that cannot load an x64-only vendor key-storage provider (SPV reference
+    §1.1). Shipping our own x64 Schannel build answers both, and the user no
+    longer has to install Git for Windows to borrow its curl.
+
+    Built from source rather than downloaded: curl's own Windows binaries are
+    LibreSSL builds with Schannel switched off, so the one property that
+    matters here is exactly the one no published binary has. The source is
+    pinned by tag *and* commit; the finished .exe then has to say it is that
+    version and that it speaks Schannel before it is allowed into the stage —
+    a stray toolchain default that quietly picked another TLS backend would
+    otherwise only surface on a user's machine, mid-2FA.
+    """
+    git, cmake = _which("git"), _which("cmake")
+    src = build_dir / "curl-src"
+
+    def head() -> str:
+        if not (src / "CMakeLists.txt").is_file():
+            return ""
+        done = subprocess.run(
+            [git, "-C", str(src), "rev-parse", "HEAD"], capture_output=True, text=True
+        )
+        return done.stdout.strip() if done.returncode == 0 else ""
+
+    # Re-clone when the checkout is absent or stale — reusing it across runs
+    # keeps local iteration quick, but a bumped pin must not silently build
+    # the previous release.
+    if head() != CURL_COMMIT:
+        shutil.rmtree(src, ignore_errors=True)
+        clone = ["clone", "--depth", "1", "--branch", CURL_TAG]
+        _run([git, *clone, CURL_REPOSITORY, str(src)])
+        if (cloned := head()) != CURL_COMMIT:
+            raise SystemExit(
+                f"{CURL_TAG} is commit {cloned or '<unknown>'}, not the pinned "
+                f"{CURL_COMMIT} — the tag moved, or the pin is stale. Verify "
+                "the release before touching CURL_COMMIT."
+            )
+
+    stamp_curl_release_version(src)
+
+    # Configure into a fresh tree: the checkout is worth reusing, a CMake cache
+    # is not — a stale one can leave a second curl.exe from another generator's
+    # layout lying around, and the match below would then have to guess.
+    build = build_dir / "curl-build"
+    shutil.rmtree(build, ignore_errors=True)
+    _run([cmake, "-S", str(src), "-B", str(build), *CURL_CMAKE_OPTIONS])
+    _run([cmake, "--build", str(build), "--config", "Release", "--target", "curl"])
+    # Exactly one match, asserted rather than assuming the generator's layout
+    # (a multi-config VS build writes src/Release/, a single-config one src/).
+    match sorted(build.rglob("curl.exe")):
+        case [only]:
+            exe = only
+        case matches:
+            raise SystemExit(
+                f"expected exactly one built curl.exe under {build}, "
+                f"found {[str(m) for m in matches]}"
+            )
+
+    banner = subprocess.run(
+        [str(exe), "--version"], check=True, capture_output=True, text=True
+    ).stdout
+    # `startswith`, not a substring test: "8.21.0" also matches "8.21.0-DEV",
+    # which is exactly the unstamped build this must not let through.
+    if not banner.startswith(f"curl {CURL_VERSION} ") or "Schannel" not in banner:
+        raise SystemExit(
+            f"the built curl is not curl {CURL_VERSION} with the Schannel "
+            f"backend — it reports: {banner.splitlines()[0] if banner else '<nothing>'}"
+        )
+    print("+", banner.splitlines()[0], flush=True)
+
+    assert target.bundled_curl is not None  # only called for targets that have one
+    staged = stage / target.bundled_curl
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(exe, staged)
+    # curl's licence travels with curl's binary.
+    shutil.copy2(src / "COPYING", staged.parent / "COPYING")
+
+
 def _fold(text: str) -> str:
     """Collapse a triple-quoted block into manifest prose.
 
@@ -300,8 +473,23 @@ def manifest(version: str, target: Target) -> dict[str, object]:
       ``runtimes``: a binary bundle has no runtime requirements.
     - ``user_config`` types are the MCPB schema's — it has no enum/dropdown,
       so constrained values ride in descriptions and the server validates.
+    - ``ANAFPY_BUNDLED_CURL`` appears only where a curl is staged, and is
+      **not** a user setting: it names what the bundle ships, and
+      ``ANAFPY_CURL`` (the ``curl_path`` setting) still wins over it. The two
+      cannot share one variable — an empty setting would erase the bundled
+      path, which is precisely the value a user who filled in nothing wants.
     """
     entry = f"server/python/{target.interpreter}"
+    env = {
+        "PYTHONPATH": "${__dirname}/server/lib",
+        "ANAFPY_CLIENT_ID": "${user_config.client_id}",
+        "ANAFPY_CLIENT_SECRET": "${user_config.client_secret}",
+        "ANAFPY_CIF": "${user_config.cif}",
+        "ANAFPY_REDIRECT_URI": "${user_config.redirect_uri}",
+        "ANAFPY_CURL": "${user_config.curl_path}",
+    }
+    if target.bundled_curl:
+        env["ANAFPY_BUNDLED_CURL"] = "${__dirname}/" + target.bundled_curl
     return {
         "manifest_version": "0.4",
         "name": "anafpy",
@@ -367,14 +555,7 @@ def manifest(version: str, target: Target) -> dict[str, object]:
             "mcp_config": {
                 "command": "${__dirname}/" + entry,
                 "args": [*PYTHON_FLAGS, "-m", "anafpy.mcp"],
-                "env": {
-                    "PYTHONPATH": "${__dirname}/server/lib",
-                    "ANAFPY_CLIENT_ID": "${user_config.client_id}",
-                    "ANAFPY_CLIENT_SECRET": "${user_config.client_secret}",
-                    "ANAFPY_CIF": "${user_config.cif}",
-                    "ANAFPY_REDIRECT_URI": "${user_config.redirect_uri}",
-                    "ANAFPY_CURL": "${user_config.curl_path}",
-                },
+                "env": env,
             },
         },
         "user_config": {
@@ -422,15 +603,16 @@ def manifest(version: str, target: Target) -> dict[str, object]:
             },
             "curl_path": {
                 "type": "string",
-                "title": "curl program (Windows fix)",
+                "title": "curl program (advanced)",
                 "description": _fold("""
-                    Full path to an alternative curl.exe, used by the SPV and
-                    declaration-portal certificate logins. Needed only on
-                    Windows with a broken built-in curl (versions
-                    8.13\u20138.15) or on Windows-on-ARM — typically
+                    Leave this empty. The SPV and declaration-portal
+                    certificate logins need a curl that can use your
+                    certificate: on Windows the extension carries its own, on
+                    macOS the built-in one works. Fill in the full path to
+                    another curl program only if the setup guide's
+                    troubleshooting table sends you here — for example
                     C:\\Program Files\\Git\\mingw64\\bin\\curl.exe from Git
-                    for Windows; the setup guide's troubleshooting table has
-                    the details. Leave empty everywhere else.
+                    for Windows.
                 """),
                 "required": False,
             },
@@ -463,6 +645,7 @@ def audit(stage: Path, out: Path, target: Target) -> None:
         f"server/python/{target.interpreter}",
         "server/lib/sitecustomize.py",
         "server/lib/anafpy/__init__.py",
+        *([target.bundled_curl] if target.bundled_curl else []),
     }
     if missing := sorted(expected - names):
         raise SystemExit(f"packed archive is missing {missing}")
@@ -554,6 +737,8 @@ def main() -> None:
     interpreter = stage_runtime(uv, pin, stage, target)
     prune_runtime(stage / "server" / "python", target)
     install_closure(uv, interpreter, stage / "server" / "lib", build_dir, target)
+    if target.bundled_curl:
+        stage_curl(stage, build_dir, target)
     write_manifest(stage, version, target)
 
     out = args.out_dir / f"anafpy-{target.name}.mcpb"

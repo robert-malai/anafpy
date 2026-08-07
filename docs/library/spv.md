@@ -59,7 +59,10 @@ curl cannot load — the login then fails instantly with
 at an **x64** curl with Schannel support — Git for Windows'
 `mingw64\bin\curl.exe` is a known-good one — via the `ANAFPY_CURL`
 environment variable (honored by the CLI, the MCP server, and
-`CurlBootstrapper` alike) or the `curl_path` argument.
+`CurlBootstrapper` alike) or the `curl_path` argument. The Claude Desktop
+extension needs neither: its Windows bundle carries an x64 Schannel curl and
+points `ANAFPY_BUNDLED_CURL` at it, which `default_curl_path()` prefers over
+the OS one — `ANAFPY_CURL` still outranks both.
 
 ## Reading the inbox
 

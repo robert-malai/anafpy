@@ -88,8 +88,8 @@ la pasul 1: **ANAF Client ID**, **ANAF Client Secret** și **CUI-ul firmei**
 (doar cifre — codul fiscal implicit folosit când nu spui altceva în
 conversație). Secretul este păstrat în magazinul securizat de credențiale
 al calculatorului. Câmpurile rămase acoperă cazuri rare (un callback URL
-înregistrat diferit; remedierea curl pentru Windows din
-[tabelul de depanare](#depanare)) — lasă-le goale.
+înregistrat diferit; un alt program curl, de care extensia pe Windows nu mai
+are nevoie — vine cu al ei) — lasă-le goale.
 
 ## Pasul 4 — Autentifică-te la ANAF (o singură dată, cu certificatul)
 
@@ -157,12 +157,14 @@ nevoie data viitoare de SPV, nu anual.
 Selecția inițială a certificatului folosește comanda de terminal `anafpy` —
 instaleaz-o mai întâi ([ruta prin terminal](#ruta-prin-terminal) explică cum).
 
-Pe **Windows**, rulează întâi `curl --version`: versiunile **8.13–8.15** ale
-curl-ului încorporat strică autentificarea cu certificat la ANAF, iar
-calculatoarele Windows-on-ARM au nevoie oricum de curl-ul din Git for Windows,
-indiferent de versiune — aplică rezolvarea cu `ANAFPY_CURL` din
-[tabelul de depanare](#depanare) *înainte* de prima încercare de autentificare,
-ca să nu eșueze după ce ai introdus deja PIN-ul.
+Pe **Windows**, rulează întâi `curl --version` — acesta este singurul loc în
+care se mai folosește curl-ul calculatorului (extensia vine cu al ei; comanda
+din terminal, nu). Versiunile **8.13–8.15** ale curl-ului încorporat strică
+autentificarea cu certificat la ANAF, iar calculatoarele Windows-on-ARM au
+nevoie oricum de curl-ul din Git for Windows, indiferent de versiune — aplică
+rezolvarea cu `ANAFPY_CURL` din [tabelul de depanare](#depanare) *înainte* de
+prima încercare de autentificare, ca să nu eșueze după ce ai introdus deja
+PIN-ul.
 
 Într-un terminal:
 
@@ -446,5 +448,6 @@ claude mcp add anafpy \
 | Claude Desktop arată serverul ca eșuat / `anafpy-mcp` nu este găsit (configurarea manuală) | Aplicațiile desktop nu văd întotdeauna PATH-ul terminalului. În configurare, `"command"` trebuie să fie calea completă — macOS: `/Users/<tu>/.local/bin/anafpy-mcp`; Windows: `C:\\Users\\<tu>\\.local\\bin\\anafpy-mcp.exe` (rulează `which anafpy-mcp` / `where.exe anafpy-mcp` ca să confirmi). |
 | Uneltele răspund „autentifică-te la ANAF" | Pasul 4 nu a fost finalizat pe acest calculator, sau token-ul a expirat (~1 an). Rulează din nou pasul 4. |
 | Depunere respinsă de ANAF | Acesta este verdictul ANAF asupra conținutului documentului, nu o problemă de instalare — textul erorii revine în rezultatul uneltei; corectează datele și pregătește din nou. |
-| `anafpy spv login` eșuează instant cu `SEC_E_UNKNOWN_CREDENTIALS` pe un calculator Windows-on-ARM (de ex. Parallels pe un Mac) | Software-ul furnizorului de certificat este doar pentru Intel (certSIGN vToken este), deci curl-ul încorporat în Windows nu poate folosi certificatul. Instalează [Git for Windows](https://git-scm.com/download/win) (versiunea pe **64 de biți**, nu ARM64) și lipește `C:\Program Files\Git\mingw64\bin\curl.exe` în câmpul de setări **curl program (Windows fix)** al extensiei (configurarea manuală: `"ANAFPY_CURL"` cu backslash dublat, lângă celelalte intrări din `env`); setează aceeași variabilă în PowerShell înainte de `anafpy spv login`. |
-| `anafpy spv login` eșuează cu `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` pe Windows | Curl-ul încorporat în Windows (`C:\Windows\System32\curl.exe`) versiunile **8.13–8.15** au o [eroare Schannel](https://github.com/curl/curl/issues/18029) care strică renegocierea TLS a ANAF cu un certificat din magazinul de certificate. Verifică cu `curl --version`; dacă este în acest interval, instalează [Git for Windows](https://git-scm.com/download/win) (curl-ul lui inclus este mai nou) și direcționează câmpul de setări **curl program (Windows fix)** al extensiei către `C:\Program Files\Git\mingw64\bin\curl.exe` (configurarea manuală: `"ANAFPY_CURL"` în blocul `env`) și setează aceeași variabilă în PowerShell înainte de `anafpy spv login` (rulează `cygpath -w "$(command -v curl)"` în Git Bash ca să afli calea exactă). anafpy fixează backend-ul Schannel pentru tine. |
+| `anafpy spv login` eșuează instant cu `SEC_E_UNKNOWN_CREDENTIALS` pe un calculator Windows-on-ARM (de ex. Parallels pe un Mac) | Este afectată doar comanda din **terminal** — extensia vine cu propriul curl și funcționează. Software-ul furnizorului de certificat este doar pentru Intel (certSIGN vToken este), deci curl-ul încorporat în Windows nu poate folosi certificatul. Instalează [Git for Windows](https://git-scm.com/download/win) (versiunea pe **64 de biți**, nu ARM64) și setează `ANAFPY_CURL` la `C:\Program Files\Git\mingw64\bin\curl.exe` în PowerShell înainte de `anafpy spv login`. |
+| `anafpy spv login` eșuează cu `schannel: failed to read data from server: SEC_E_CONTEXT_EXPIRED (0x80090317)` pe Windows | Din nou, doar comanda din terminal. Curl-ul încorporat în Windows (`C:\Windows\System32\curl.exe`) versiunile **8.13–8.15** au o [eroare Schannel](https://github.com/curl/curl/issues/18029) care strică renegocierea TLS a ANAF cu un certificat din magazinul de certificate. Verifică cu `curl --version`; dacă este în acest interval, instalează [Git for Windows](https://git-scm.com/download/win) (curl-ul lui inclus este mai nou) și setează `ANAFPY_CURL` la `C:\Program Files\Git\mingw64\bin\curl.exe` în PowerShell înainte de `anafpy spv login` (rulează `cygpath -w "$(command -v curl)"` în Git Bash ca să afli calea exactă). anafpy fixează backend-ul Schannel pentru tine. |
+| Autentificarea SPV sau la portalul de declarații a extensiei eșuează pe Windows cu o eroare curl | Extensia pe Windows vine cu propriul curl, deci nu ar trebui să se întâmple — dar portița este aceeași: instalează [Git for Windows](https://git-scm.com/download/win) (**64 de biți**) și lipește `C:\Program Files\Git\mingw64\bin\curl.exe` în câmpul de setări **curl program (advanced)** al extensiei (configurarea manuală: `"ANAFPY_CURL"` cu backslash dublat, lângă celelalte intrări din `env`). Valoarea ta câștigă întotdeauna în fața celei incluse. |
