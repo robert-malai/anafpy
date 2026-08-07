@@ -191,6 +191,8 @@ Configuration is environment-only, set in the MCP client's server entry:
 | `ANAFPY_DUK_JAVA` | The `java` binary DUKIntegrator runs under (optional; falls back to `java` on `PATH`, then to `JAVA_HOME`) |
 | `ANAFPY_SIGN_IDENTITY` | Certificate to sign declarations with — the Keychain identity name on macOS, the SHA-1 thumbprint on Windows (optional; falls back to the persisted SPV certificate selection) |
 | `ANAFPY_DECLARATII_UPLOAD` | Set to `off` to opt out of automated declaration filing — the portal tools (`declaratie_portal_*`, `declaratie_prepare`, `declaratie_submit`) are then not served and Claude guides manual filing instead (default: on) |
+| `ANAFPY_CURL` | The curl program the SPV and declaration-portal certificate logins run (optional). Set it only to work around a broken one — see the setup guide's troubleshooting table. It outranks everything below |
+| `ANAFPY_BUNDLED_CURL` | Set by the Windows extension to the curl it ships, and preferred over the computer's own (which is the one that breaks there). Not a setting to fill in yourself; without it the OS curl is used — `/usr/bin/curl` on macOS, `System32\curl.exe` on Windows |
 
 All three interactive logins are exposed as tools with the same contract —
 your explicit go-ahead per attempt, one attempt per call, failure reported as

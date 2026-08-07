@@ -14,6 +14,12 @@
 # silently bundling the wrong runtime. Constant asset names keep
 # releases/latest/download/anafpy-<target>.mcpb stable install URLs.
 #
+# The win32-x64 leg additionally compiles curl from pinned source (Windows'
+# own curl is the one the certificate logins trip over — DESIGN.md §16), which
+# is why that leg needs git + CMake + MSVC. All three come with
+# windows-latest; a dispatch dry run is the only thing that exercises the
+# compile before a tag does.
+#
 # workflow_dispatch is a dry run: same builds, artifacts only, nothing
 # published (the tag guards are skipped — there is no tag to check).
 name: Release

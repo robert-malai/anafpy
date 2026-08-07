@@ -69,10 +69,7 @@ def test_netscape_jar_parsing_skips_comments_and_junk() -> None:
 # --- command construction -------------------------------------------------------------
 
 
-def test_macos_command_uses_secure_transport_and_the_identity_name(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("ANAFPY_CURL", raising=False)
+def test_macos_command_uses_secure_transport_and_the_identity_name() -> None:
     bootstrapper = CurlBootstrapper("My Identity", platform="darwin")
     command = bootstrapper.command("/tmp/jar.txt")
     assert command[0] == "/usr/bin/curl"
@@ -82,10 +79,7 @@ def test_macos_command_uses_secure_transport_and_the_identity_name(
     assert command[-1].endswith("listaMesaje?zile=1")
 
 
-def test_windows_command_uses_the_cert_store_syntax(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("ANAFPY_CURL", raising=False)
+def test_windows_command_uses_the_cert_store_syntax() -> None:
     bootstrapper = CurlBootstrapper("C5E18AB5", platform="win32")
     command = bootstrapper.command("jar.txt")
     assert command[0].endswith("curl.exe")
@@ -101,6 +95,38 @@ def test_curl_path_env_override_wins(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANAFPY_CURL", r"C:\tools\curl-x64\bin\curl.exe")
     bootstrapper = CurlBootstrapper("C5E18AB5", platform="win32")
     assert bootstrapper.command("jar.txt")[0] == r"C:\tools\curl-x64\bin\curl.exe"
+
+
+def test_bundled_curl_beats_the_os_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # What the Claude Desktop extension sets on Windows: the OS curl is the
+    # broken one (Schannel bug in 8.13-8.15, ARM64 vs x64-only KSPs), so a
+    # staged curl is preferred over System32 without the user configuring it.
+    bundled = tmp_path / "curl.exe"
+    bundled.write_bytes(b"")
+    monkeypatch.setenv("ANAFPY_BUNDLED_CURL", str(bundled))
+    assert CurlBootstrapper("C5E18AB5", platform="win32").curl_path == str(bundled)
+
+
+def test_user_override_still_beats_the_bundled_curl(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    bundled = tmp_path / "curl.exe"
+    bundled.write_bytes(b"")
+    monkeypatch.setenv("ANAFPY_BUNDLED_CURL", str(bundled))
+    monkeypatch.setenv("ANAFPY_CURL", r"C:\tools\curl-x64\bin\curl.exe")
+    bootstrapper = CurlBootstrapper("C5E18AB5", platform="win32")
+    assert bootstrapper.curl_path == r"C:\tools\curl-x64\bin\curl.exe"
+
+
+def test_missing_bundled_curl_falls_back_to_the_os_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A moved or half-removed extension install: degrade to the OS curl rather
+    # than spawn a path that is not there.
+    monkeypatch.setenv("ANAFPY_BUNDLED_CURL", str(tmp_path / "gone" / "curl.exe"))
+    assert "System32" in CurlBootstrapper("C5E18AB5", platform="win32").curl_path
 
 
 def test_curl_path_argument_beats_the_env_override(

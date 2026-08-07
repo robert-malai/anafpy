@@ -11,8 +11,8 @@ platform key store — macOS SecureTransport takes the identity by Keychain
 name, Windows Schannel by ``CurrentUser\\MY`` thumbprint.
 
 This module is the single home for everything the two bootstrappers share:
-curl resolution (including the ``ANAFPY_CURL`` override, covering **both**
-bootstraps), the certificate selector syntax, the
+curl resolution (the ``ANAFPY_CURL`` override and the extension's bundled
+curl, covering **both** bootstraps), the certificate selector syntax, the
 TLS-backend pin, the subprocess runner with its 2FA-aware timeout, the
 cookie-jar plumbing, and the common curl-level failure taxonomy. What stays in
 each subclass is exactly what differs per service: the request choreography
@@ -56,21 +56,33 @@ def parse_netscape_cookies(text: str) -> dict[str, str]:
 
 
 def default_curl_path(platform: str) -> str:
-    """``ANAFPY_CURL`` if set, else the OS-shipped curl.
+    """``ANAFPY_CURL`` if set, else a bundled curl, else the OS-shipped one.
 
     Deliberately not whatever is first on ``PATH``: a Homebrew curl (macOS)
     or a curl.se Windows build lacks the platform TLS backend
     (SecureTransport / Schannel) and would reject the platform cert-store
-    ``--cert`` syntax. One known case *needs* the override: on **Windows on
-    ARM** with x64-only vendor middleware (e.g. certSIGN Paperless vToken,
-    observed 2026-07-13) the ARM64 System32 curl cannot load the key-storage
-    provider — point ``ANAFPY_CURL`` (or ``curl_path``) at an **x64**
-    Schannel curl (Git for Windows' ``mingw64\\bin\\curl.exe`` is one; it is
-    multi-backend, which is why :meth:`CurlBootstrapperBase.environment` pins
-    ``CURL_SSL_BACKEND`` on Windows too). See the SPV reference §1.1.
+    ``--cert`` syntax.
+
+    The OS-shipped curl is the *last* choice on Windows because it is the one
+    that breaks, in two live-observed ways (SPV reference §1.1): System32 curl
+    **8.13-8.15** carries a Schannel bug that kills ANAF's renegotiation, and
+    on **Windows on ARM** the ARM64 System32 curl cannot load an x64-only
+    vendor key-storage provider (certSIGN Paperless vToken, observed
+    2026-07-13). So the self-contained Claude Desktop extension ships its own
+    x64 Schannel curl and names it in ``ANAFPY_BUNDLED_CURL``
+    (``scripts/build_mcpb.py``); a path that no longer exists — a moved or
+    half-removed install — degrades to the OS curl instead of failing on a
+    missing file. ``ANAFPY_BUNDLED_CURL`` is set *by the bundle*, not by the
+    user: the user-facing override is ``ANAFPY_CURL`` (or ``curl_path``),
+    which wins over both. Git for Windows' ``mingw64\\bin\\curl.exe`` is the
+    classic override target; it is multi-backend, which is why
+    :meth:`CurlBootstrapperBase.environment` pins ``CURL_SSL_BACKEND`` on
+    Windows too.
     """
     if override := os.environ.get("ANAFPY_CURL"):
         return override
+    if (bundled := os.environ.get("ANAFPY_BUNDLED_CURL")) and Path(bundled).is_file():
+        return bundled
     if platform == "win32":
         system_root = os.environ.get("SYSTEMROOT", r"C:\Windows")
         return str(Path(system_root) / "System32" / "curl.exe")
