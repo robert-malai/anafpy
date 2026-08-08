@@ -205,6 +205,21 @@ def _which(program: str) -> str:
     raise SystemExit(f"`{program}` not found on PATH")
 
 
+def write_utf8(path: Path, text: str) -> None:
+    """Write a generated file as UTF-8 — never the build host's locale codec.
+
+    Every file this script generates is read back as UTF-8 by something else:
+    ``manifest.json`` by Claude Desktop (JSON is UTF-8 by definition) and
+    ``sitecustomize.py`` by CPython (which decodes source as UTF-8 absent a
+    coding declaration). ``Path.write_text`` without an explicit encoding uses
+    the *build machine's* locale codec, which on a Windows runner is cp1252 —
+    so the em dashes in the manifest prose and in sitecustomize's docstring
+    shipped as 0x97, giving the install dialog mojibake and the interpreter a
+    SyntaxError that silently skipped the .pth replay (and with it pywin32).
+    """
+    path.write_text(text, encoding="utf-8")
+
+
 def read_pins() -> tuple[str, str]:
     """(project version, exact bundle CPython pin) from pyproject.toml."""
     with (ROOT / "pyproject.toml").open("rb") as fh:
@@ -305,7 +320,11 @@ def install_closure(
         ],
         cwd=ROOT,
     )
+    # Emptied first: build_dir survives between runs, so a version bump would
+    # otherwise leave the previous wheel beside the new one and the unpacking
+    # below would fail — on the release build, right after the bump.
     wheel_dir = build_dir / "wheel"
+    shutil.rmtree(wheel_dir, ignore_errors=True)
     _run([uv, "build", "--wheel", "--out-dir", str(wheel_dir)], cwd=ROOT)
     (wheel,) = wheel_dir.glob("anafpy-*.whl")
 
@@ -334,7 +353,7 @@ def install_closure(
     # Console-script shims generated with the build machine's absolute paths.
     shutil.rmtree(lib / "bin", ignore_errors=True)
     shutil.rmtree(lib / "Scripts", ignore_errors=True)
-    (lib / "sitecustomize.py").write_text(SITECUSTOMIZE)
+    write_utf8(lib / "sitecustomize.py", SITECUSTOMIZE)
 
 
 def stamp_curl_release_version(src: Path) -> None:
@@ -622,8 +641,9 @@ def manifest(version: str, target: Target) -> dict[str, object]:
 
 
 def write_manifest(stage: Path, version: str, target: Target) -> None:
-    (stage / "manifest.json").write_text(
-        json.dumps(manifest(version, target), indent=2, ensure_ascii=False) + "\n"
+    write_utf8(
+        stage / "manifest.json",
+        json.dumps(manifest(version, target), indent=2, ensure_ascii=False) + "\n",
     )
     shutil.copy2(ICON, stage / "icon.png")
 
@@ -639,6 +659,11 @@ def audit(stage: Path, out: Path, target: Target) -> None:
     with zipfile.ZipFile(out) as zf:
         names = set(zf.namelist())
         unpacked = sum(i.file_size for i in zf.infolist())
+        packed_text = {
+            name: zf.read(name)
+            for name in ("manifest.json", "server/lib/sitecustomize.py")
+            if name in names
+        }
     expected = {
         "manifest.json",
         "icon.png",
@@ -649,6 +674,21 @@ def audit(stage: Path, out: Path, target: Target) -> None:
     }
     if missing := sorted(expected - names):
         raise SystemExit(f"packed archive is missing {missing}")
+    # Both generated files are consumed as UTF-8 on the user's machine: the
+    # manifest by the install dialog, sitecustomize.py by CPython's source
+    # decoder. Prove it of the *packed bytes*, whatever wrote them — the one
+    # thing no other host can check for a Windows bundle, and the one that
+    # shipped broken (cp1252 em dashes: mojibake in the dialog, and a
+    # SyntaxError that skipped the .pth replay, hiding pywin32).
+    for name, raw in packed_text.items():
+        try:
+            match name:
+                case "server/lib/sitecustomize.py":
+                    compile(raw, name, "exec")  # applies CPython's own decode
+                case _:
+                    json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, SyntaxError, ValueError) as exc:
+            raise SystemExit(f"{name} is not readable as UTF-8: {exc}") from exc
     # mcpb pack silently drops .env* at any depth and materialises symlinks
     # into full copies. The stage has neither (assert, don't hope): nothing
     # dotfile-shaped goes in, and prune_runtime removed every link — so the
@@ -714,9 +754,10 @@ def main() -> None:
             target_dir = args.manifests_only / target.name
             target_dir.mkdir(parents=True, exist_ok=True)
             manifest_path = target_dir / "manifest.json"
-            manifest_path.write_text(
+            write_utf8(
+                manifest_path,
                 json.dumps(manifest(version, target), indent=2, ensure_ascii=False)
-                + "\n"
+                + "\n",
             )
             # The validator resolves the manifest's icon path — ship it too.
             shutil.copy2(ICON, target_dir / "icon.png")
