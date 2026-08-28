@@ -857,6 +857,28 @@ async def test_etransport_uit_card_writes_a_pdf_and_offers_the_message_text(
     assert "base64" not in str(result)
 
 
+async def test_uit_card_takes_data_exp_uit_verbatim_from_a_lookup(
+    tmp_path: Path,
+) -> None:
+    """The tool description tells the model to pass `uit_expiry` straight from
+    etransport_lookup, and ANAF's info swagger emits data_exp_uit as a timestamp
+    ("2024-06-29T00:00:00") — so a bare-ISO-only parse would break the very
+    handoff these tools prescribe."""
+    server = create_server(_config(tmp_path))
+    for index, value in enumerate(("2026-08-15T00:00:00", "20260815", "2026-08-15")):
+        out = tmp_path / f"card{index}.pdf"
+        result = await _call(
+            server,
+            "etransport_uit_card",
+            document=_transport_doc(),
+            uit=_UIT,
+            save_as=str(out),
+            uit_expiry=value,
+        )
+        assert result["ok"] is True, (value, result)
+        assert out.read_bytes().startswith(b"%PDF")
+
+
 async def test_etransport_uit_details_writes_the_a4_document(tmp_path: Path) -> None:
     """The partner copy is its own tool: same disk-only contract, but no
     summary_text — the detail document travels as a file, not a message."""
@@ -916,7 +938,8 @@ async def test_etransport_uit_card_reports_a_bad_expiry_as_a_result(
         uit_expiry="15.08.2026",
     )
     assert result["ok"] is False
-    assert "ISO date" in result["message"]
+    assert "uit_expiry" in result["message"]
+    assert "YYYY-MM-DD" in result["message"]
     assert not (tmp_path / "card.pdf").exists()
 
 

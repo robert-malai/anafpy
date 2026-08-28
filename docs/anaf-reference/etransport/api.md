@@ -8,9 +8,10 @@ sources:
     source_revision: "29.07.2024"
     retrieved: 2026-06-28
     local_copy: ../_sources/etransport_29072024.pdf
-  - url: https://mfinante.gov.ro/ro/web/etransport/informatii-tehnice
+  - url: https://etransport.mfinante.gov.ro/informatii-tehnice
     title: "MF — Informații tehnice e-Transport"
-    retrieved: 2026-06-28
+    note: "moved from mfinante.gov.ro/ro/web/etransport/informatii-tehnice"
+    retrieved: 2026-08-28
   - url: https://mfinante.gov.ro/static/10/eTransport/schema_ETR_v2_20230126.xsd
     title: "e-Transport v2 XSD"
     source_revision: "2023-01-26"
@@ -27,7 +28,7 @@ sources:
     local_copy: ../_sources/etransport-swagger/
 compiled: 2026-06-28
 compiled_by: claude-opus-4-8
-last_verified: 2026-07-02
+last_verified: 2026-08-28
 status: draft
 ---
 
@@ -178,10 +179,28 @@ For transport organizers: active notifications where `cui_op` is the declared or
 | `ref_decl` | — | Declarant's reference supplied when the UIT was obtained. |
 
 Returns per record: `uit`, `cod_decl`, `den_decl`, `ref_decl`, `data_transp`,
-**`data_exp_uit`** (UIT expiry), transporter, vehicle, `modif_veh[]`,
+**`data_exp_uit`**, transporter, vehicle, `modif_veh[]`,
 `loc_start`/`loc_final` (`tip_loc`: `PTF` border point / `BV` customs office / `ADR`
 national address; with `judet`, `localitate`, `strada`, `numar`, …), and `documente[]`.
 The swagger example additionally shows a numeric `id` per record (not in the PDF).
+
+**`data_exp_uit` is the first EXPIRED day, not the last valid one.** The PDF defines
+it verbatim as *"data incepand cu care UIT-ul este considerat expirat"* (p. 4) — the
+date **from which** the UIT counts as expired. The swagger example bears it out:
+`data_transp: "2024-06-24T00:00:00"` with `data_exp_uit: "2024-06-29T00:00:00"`, i.e.
+transport date + 5, matching OUG 41/2022 art. 11's *"5 zile calendaristice, începând
+cu data declarată pentru începerea transportului"* (24–28 valid, expired from the
+29th). A reader that prints it under "valid until" is a day too generous, on a code
+whose use past validity is a contravention. Note the **timestamp form** in that
+example: `data_exp_uit` does not arrive as a bare ISO date.
+
+**Only `info` carries it.** `data_exp_uit` appears in the info swagger alone — not in
+`lista`, `stare`, or the upload response (re-checked 2026-08-28), and there is no way
+to *submit* a validity: the XSD's only date attributes are `dataTransport`,
+`dataDocument` and `dataModificare`. ANAF sets the window; the declarant states the
+transport date it runs from. Since `info` is scoped to the transport **organizer**
+(`cui_op`), a filing where the declarant is not the organizer may have no readable
+expiry at all — see the no-results note below.
 
 **No-results shape (live-confirmed 2026-07-02, TEST):** unlike every other endpoint,
 `info` does **not** use `Errors[]` — a query with no matching records answers HTTP 200
@@ -210,6 +229,10 @@ this via `InfoList.error`, tolerating both `error` and `Errors[]`.
    e-Factura's `download`→`DownloadedMessage`; adjust the client design.
 3. `standard` = **`ETRANSP`** (the 2022 OAuth PDF's `ETRANSPORT` was stale), and the
    `{versiune}` (data-schema, 1|2) is appended in the v2 upload form.
+4. **`data_exp_uit` was read as "valid until"** when the UIT card was built; ANAF's own
+   definition makes it the first expired day (§4). Corrected 2026-08-28 — the sources
+   were re-fetched that day and the API PDF, XSD and swagger pages are byte-identical
+   to the vendored copies, so this was a reading error, not upstream drift.
 
 ## `anafpy` endpoint map
 

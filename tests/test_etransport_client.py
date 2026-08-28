@@ -487,8 +487,9 @@ async def test_info_required_param_only() -> None:
                     "cod_decl": "2",
                     "den_decl": "Declarant SRL",
                     "ref_decl": "R2",
-                    "data_transp": "20260701",
-                    "data_exp_uit": "20260703",
+                    # ANAF's info swagger emits both as timestamps.
+                    "data_transp": "2026-07-01T00:00:00",
+                    "data_exp_uit": "2026-07-03T00:00:00",
                     "tr_tara": "RO",
                     "tr_cod": "TR999",
                     "tr_den": "Transp SRL",
@@ -522,7 +523,7 @@ async def test_info_required_param_only() -> None:
     assert len(result.items) == 1
     item = result.items[0]
     assert item.uit == "UITXYZ"
-    assert item.uit_expiry == "20260703"
+    assert item.uit_expiry == "2026-07-03T00:00:00"
     assert item.start_location is not None
     assert item.start_location.location_type == "ADR"
     assert item.start_location.county == "Cluj"

@@ -395,12 +395,17 @@ def _card_rows(card: UitCard, *, expired: bool) -> list[list[_Cell]]:
         # date alone rather than inventing a window.
         rows.append([date])
     else:
+        # ANAF's data_exp_uit is the first EXPIRED day, so a live card prints the
+        # day before it — the last one the driver may actually use — while an
+        # expired card prints ANAF's date itself, which is when it lapsed.
         rows.append(
             [
                 date,
                 _Cell(
                     "A EXPIRAT LA" if expired else "UIT VALABIL PÂNĂ LA",
-                    f"{card.uit_expiry:%d.%m.%Y}",
+                    f"{card.uit_expiry:%d.%m.%Y}"
+                    if expired
+                    else f"{card.last_valid_day:%d.%m.%Y}",
                     mono=True,
                     value_size=98,
                     color=_RED if expired else _INK,
@@ -512,10 +517,15 @@ def render_details(card: UitCard, *, today: dt.date | None = None) -> bytes:
     if card.anaf_state:
         kv("Stare ANAF", card.anaf_state)
     if card.uit_expiry is not None:
-        validity = f"{card.uit_expiry:%d.%m.%Y}"
+        # Both dates, each labelled: the last usable day for the reader, and
+        # ANAF's own data_exp_uit (the first expired day) for the record.
+        validity = (
+            f"până la {card.last_valid_day:%d.%m.%Y} inclusiv "
+            f"(expirat începând cu {card.uit_expiry:%d.%m.%Y})"
+        )
         if card.is_expired(today):
             validity += " — EXPIRAT"
-        kv("Valabilitate UIT", f"până la {validity}")
+        kv("Valabilitate UIT", validity)
 
     section(f"{partner_label(operation)} (partener comercial)")
     kv("Denumire", transport.partner.name)

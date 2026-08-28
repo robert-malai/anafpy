@@ -202,7 +202,7 @@ def test_card_adapts_to_the_trailer_count(
 
 def test_expired_card_says_so() -> None:
     render = load_cardpdf().render_card
-    card = _card()
+    card = _card()  # data_exp_uit = 2026-08-15
     live = _pages(render(card, today=dt.date(2026, 8, 1)))[0]
     assert "EXPIRAT" not in live
     assert "UIT VALABIL PÂNĂ LA" in live
@@ -210,6 +210,35 @@ def test_expired_card_says_so() -> None:
     lapsed = _pages(render(card, today=dt.date(2026, 8, 20)))[0]
     assert "EXPIRAT — UIT-ul nu mai este valabil" in lapsed
     assert "A EXPIRAT LA" in lapsed
+
+
+def test_the_expiry_date_is_the_first_expired_day_not_the_last_valid_one() -> None:
+    """ANAF defines data_exp_uit as *"data incepand cu care UIT-ul este considerat
+    expirat"* (API PDF p. 4), and its info swagger pairs data_transp 2024-06-24
+    with data_exp_uit 2024-06-29 — the 5 calendar days of OUG 41/2022 art. 11
+    counted from the transport date. Printing it as the last valid day would
+    vouch for a day on which using the UIT is a contravention."""
+    card = _card(uit_expiry=dt.date(2026, 8, 15))
+    assert card.last_valid_day == dt.date(2026, 8, 14)
+
+    assert card.is_expired(dt.date(2026, 8, 14)) is False  # last usable day
+    assert card.is_expired(dt.date(2026, 8, 15)) is True  # expired from this date
+
+    render = load_cardpdf().render_card
+    live = _pages(render(card, today=dt.date(2026, 8, 14)))[0]
+    assert "UIT VALABIL PÂNĂ LA" in live
+    assert "14.08.2026" in live
+
+    # On ANAF's own date the card must already read as lapsed, printing that
+    # date as when it expired.
+    lapsed = _pages(render(card, today=dt.date(2026, 8, 15)))[0]
+    assert "EXPIRAT — UIT-ul nu mai este valabil" in lapsed
+    assert "A EXPIRAT LA" in lapsed
+    assert "15.08.2026" in lapsed
+
+    details = _pages(load_cardpdf().render_details(card, today=dt.date(2026, 8, 1)))[0]
+    assert "până la 14.08.2026 inclusiv" in details
+    assert "expirat începând cu 15.08.2026" in details
 
 
 def test_unknown_expiry_is_never_invented() -> None:
@@ -296,7 +325,8 @@ def test_summary_text_leads_with_the_bare_uit() -> None:
     summary = _card().summary_text()
     assert summary.splitlines()[0] == UIT
     assert "CB1234AB + CB5678CD" in summary
-    assert "15.08.2026" in summary
+    # data_exp_uit 15.08 is the first EXPIRED day, so the last usable one is 14.08.
+    assert "valabil până la 14.08.2026 inclusiv" in summary
 
 
 def test_from_upload_refuses_a_rejected_upload() -> None:

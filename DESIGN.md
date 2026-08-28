@@ -1157,6 +1157,27 @@ banner past it, which covers the actual need: a stale card announces itself.
 rather than computing a 15-day window. The same restraint as everywhere else in
 this repo: we do not synthesise a value ANAF is authoritative for.
 
+**Corrected 2026-08-28 — `data_exp_uit` is the first expired day.** The card
+shipped printing it under `UIT VALABIL PÂNĂ LA`, and `is_expired` compared with
+`<`. ANAF's API PDF defines the field as *"data incepand cu care UIT-ul este
+considerat expirat"* (p. 4) and its info swagger pairs `data_transp` 2024-06-24
+with `data_exp_uit` 2024-06-29 — transport date + 5, matching OUG 41/2022
+art. 11. So the card vouched for one day too many, on a code whose use past
+validity is a contravention. Now `UitCard.last_valid_day` is `data_exp_uit - 1`
+and the card prints *that*; `is_expired` is `<=`; an expired card keeps printing
+ANAF's own date under `A EXPIRAT LA` (the day it lapsed), and the A4 document
+carries both, each labelled. The stored field stays ANAF's value verbatim — the
+correction is in what we render, not in what we keep. Sources re-fetched the
+same day: the API PDF, XSD and swagger pages are byte-identical to the vendored
+copies, so this was our reading, not upstream drift.
+
+**`data_exp_uit` does not arrive as a bare ISO date.** ANAF's info example emits
+`"2024-06-29T00:00:00"`, and the MCP tools tell the model to pass it into
+`etransport_uit_card` verbatim — which `date.fromisoformat` rejected, breaking
+the handoff the descriptions prescribe. `etransport.models.parse_uit_expiry` is
+now the one parser (ISO date, timestamp, or compact `YYYYMMDD`), shared by the
+MCP tools and the CLI's `--expiry`.
+
 **Layout rules that are load-bearing rather than cosmetic**, arrived at by
 rendering the alternatives rather than reasoning about them:
 

@@ -70,7 +70,9 @@ class UitCard(BaseModel):
     transport: FlatTransport
     uit_expiry: dt.date | None = Field(
         default=None,
-        description="Expiry ANAF reports as data_exp_uit; never computed locally.",
+        description="ANAF's data_exp_uit, verbatim: *the date from which the UIT "
+        "is considered expired*, so the last day it may be used is the day "
+        "before. Never computed locally.",
     )
     declarant_name: str | None = Field(
         default=None, description="Declarant's registered name."
@@ -128,12 +130,31 @@ class UitCard(BaseModel):
             notes=notes or [],
         )
 
+    @property
+    def last_valid_day(self) -> dt.date | None:
+        """The last day the UIT may still be used, or ``None`` when unknown.
+
+        ANAF's ``data_exp_uit`` is defined as *"data incepand cu care UIT-ul este
+        considerat expirat"* — the first **expired** day, not the last valid one
+        (API PDF p. 4; the info swagger pairs ``data_transp`` 2024-06-24 with
+        ``data_exp_uit`` 2024-06-29, i.e. the 5 calendar days of OUG 41/2022
+        art. 11 counted from the transport date). Printing it under "valabil
+        până la" would vouch for a day on which use is a contravention.
+        """
+        if self.uit_expiry is None:
+            return None
+        return self.uit_expiry - dt.timedelta(days=1)
+
     def is_expired(self, today: dt.date | None = None) -> bool:
-        """Whether the UIT's validity has lapsed. False when ANAF's expiry is
-        unknown — an absent date is not evidence of expiry."""
+        """Whether the UIT's validity has lapsed.
+
+        Expiry is inclusive of ``uit_expiry`` itself — on that very date the UIT
+        already counts as expired. False when ANAF's date is unknown: an absent
+        value is not evidence of expiry.
+        """
         if self.uit_expiry is None:
             return False
-        return self.uit_expiry < (today or dt.date.today())
+        return self.uit_expiry <= (today or dt.date.today())
 
     def summary_text(self) -> str:
         """The card's facts as plain text, for pasting into a chat message.
@@ -151,8 +172,8 @@ class UitCard(BaseModel):
             f"Vehicul {plates}",
             f"Transport {vehicle.transport_date:%d.%m.%Y}",
         ]
-        if self.uit_expiry is not None:
-            lines[-1] += f" · UIT valabil până la {self.uit_expiry:%d.%m.%Y}"
+        if (last_valid := self.last_valid_day) is not None:
+            lines[-1] += f" · UIT valabil până la {last_valid:%d.%m.%Y} inclusiv"
         operation = self.transport.operation_type
         lines.append(f"{operation.value} — {label_for(operation)}")
         return "\n".join(lines)

@@ -129,9 +129,12 @@ they are PDFs rather than images — and `summary_text()` is the paste-into-a-ch
 fallback for phones whose PDF viewer will not select text.
 
 `uit_expiry` is not computed: ANAF owns that clock and reports it as
-`data_exp_uit` on the `info` endpoint. Pass it and the card prints the validity
-and marks a lapsed UIT `EXPIRAT`; omit it and the card shows the transport date
-alone rather than inventing a window.
+`data_exp_uit` on the `info` endpoint — pass the value verbatim, in whatever
+shape ANAF returned it. It is the date **from which** the UIT counts as expired,
+not the last valid day, so the documents print `last_valid_day`
+(`data_exp_uit - 1`) under "valabil până la" and mark a lapsed UIT `EXPIRAT`
+from `data_exp_uit` itself. Omit it and the card shows the transport date alone
+rather than inventing a window.
 
 Both documents are **informative** — generated locally, not issued by ANAF, and
 they say so on their face. The QR encodes the raw 16-character UIT and nothing

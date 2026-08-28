@@ -88,6 +88,7 @@ __all__ = [
     "UploadResult",
     "build_etransport",
     "parse_etransport_document",
+    "parse_uit_expiry",
     "read_flat_transport",
     "render_etransport",
 ]
@@ -230,6 +231,33 @@ class InfoItem(_AliasedReadModel):
     trailer2: _StrNone = Field(default=None, alias="nr_rem2")
     start_location: Location | None = Field(default=None, alias="loc_start")
     end_location: Location | None = Field(default=None, alias="loc_final")
+
+
+def parse_uit_expiry(value: str) -> dt.date:
+    """Parse ANAF's ``data_exp_uit`` in every shape the endpoint emits.
+
+    The ``info`` swagger's own example returns it as a timestamp
+    (``"2024-06-29T00:00:00"``), so the value a caller copies out of a lookup is
+    not a bare ISO date — accepting only ``YYYY-MM-DD`` would reject ANAF's own
+    documented output. Compact ``YYYYMMDD`` is taken too, the form ANAF uses for
+    dates elsewhere on this service.
+
+    Raises:
+        AnafConfigError: when the value matches none of the three shapes.
+    """
+    for parse in (
+        dt.date.fromisoformat,
+        lambda v: dt.datetime.fromisoformat(v).date(),
+        lambda v: dt.datetime.strptime(v, "%Y%m%d").date(),
+    ):
+        try:
+            return parse(value)
+        except ValueError:
+            continue
+    raise AnafConfigError(
+        f"{value!r} is not a date ANAF's data_exp_uit uses — expected "
+        "YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, or YYYYMMDD"
+    )
 
 
 class InfoList(BaseModel):

@@ -27,6 +27,7 @@ from ...etransport.models import (
     FlatTransport,
     FlatVehicleChange,
     parse_etransport_document,
+    parse_uit_expiry,
     read_flat_transport,
     render_etransport,
 )
@@ -126,8 +127,11 @@ def register(mcp: MCPServer, ctx: AppContext, cfg: ServerConfig) -> None:
             select text.
 
             Optional context sharpens it: `uit_expiry` (ANAF's data_exp_uit,
-            from etransport_lookup — never computed here) prints the validity
-            and marks a lapsed UIT EXPIRAT; `declarant_name` /
+            from etransport_lookup — never computed here; paste it verbatim,
+            timestamp form included) prints the validity and marks a lapsed UIT
+            EXPIRAT. ANAF defines data_exp_uit as the date FROM WHICH the UIT
+            counts as expired, so the document prints the day before it as the
+            last valid one — do not adjust the value yourself; `declarant_name` /
             `declarant_code` identify who filed.
 
             Name the file with `save_as` (a full path). An existing file is
@@ -171,8 +175,11 @@ def register(mcp: MCPServer, ctx: AppContext, cfg: ServerConfig) -> None:
             `uit` is the code ANAF issued for it.
 
             Optional context sharpens it: `uit_expiry` (ANAF's data_exp_uit,
-            from etransport_lookup — never computed here) prints the validity
-            and marks a lapsed UIT EXPIRAT; `declarant_name` /
+            from etransport_lookup — never computed here; paste it verbatim,
+            timestamp form included) prints the validity and marks a lapsed UIT
+            EXPIRAT. ANAF defines data_exp_uit as the date FROM WHICH the UIT
+            counts as expired, so the document prints the day before it as the
+            last valid one — do not adjust the value yourself; `declarant_name` /
             `declarant_code` identify who filed; `notes` are the caller's own
             observations, printed in an Observații section — filing-specific
             facts only, never boilerplate.
@@ -566,11 +573,16 @@ def _uit_card(
 
 
 def _iso_date(value: str | None, field: str) -> dt.date | None:
+    """Parse a date parameter, tolerating every shape ANAF's own value takes.
+
+    ``uit_expiry`` is documented as copied straight out of ``etransport_lookup``,
+    where ``data_exp_uit`` arrives as ANAF emits it — a timestamp in the info
+    swagger's example — so a bare-ISO-only parse would reject the very handoff
+    these tools prescribe.
+    """
     if value is None:
         return None
     try:
-        return dt.date.fromisoformat(value)
-    except ValueError as exc:
-        raise AnafConfigError(
-            f"{field} must be an ISO date (YYYY-MM-DD): {exc}"
-        ) from exc
+        return parse_uit_expiry(value)
+    except AnafConfigError as exc:
+        raise AnafConfigError(f"{field}: {exc}") from exc

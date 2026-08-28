@@ -866,7 +866,11 @@ def _uit_card(
 ) -> UitCard:
     """Assemble the card from a declaration XML plus what ANAF returned for it."""
     from ..etransport import UitCard, read_flat_transport
-    from ..etransport.models import FlatTransport, parse_etransport_document
+    from ..etransport.models import (
+        FlatTransport,
+        parse_etransport_document,
+        parse_uit_expiry,
+    )
 
     document = parse_etransport_document(_read_bytes(xml.expanduser(), "declaration"))
     if document is None:
@@ -880,7 +884,7 @@ def _uit_card(
     return UitCard(
         uit=uit,
         transport=submission,
-        uit_expiry=_date_option(expiry, "--expiry"),
+        uit_expiry=parse_uit_expiry(expiry) if expiry else None,
         declarant_name=declarant,
         declarant_code=declarant_code,
         filed_on=_date_option(filed_on, "--filed-on"),
@@ -909,7 +913,11 @@ _UitOutputOption = Annotated[
 ]
 _UitExpiryOption = Annotated[
     str | None,
-    Parameter(help="UIT expiry ANAF reports (data_exp_uit), YYYY-MM-DD"),
+    Parameter(
+        help="ANAF's data_exp_uit for the UIT — the date from which it counts "
+        "as expired, verbatim from the lookup (YYYY-MM-DD, a timestamp, or "
+        "YYYYMMDD)"
+    ),
 ]
 _UitDeclarantOption = Annotated[str | None, Parameter(help="declarant name")]
 _UitDeclarantCodeOption = Annotated[
