@@ -30,9 +30,15 @@ conversation itself. The playbook walks Claude through the full flow:
 5. **Submit** on your explicit approval — `etransport_submit` with the token.
 6. **Poll** the status until ANAF issues a valid UIT, and report it.
 7. **Render the driver's UIT card** (`etransport_uit_card` — a phone-shaped PDF
-   with the code set large and a QR) by default, and offer the A4 detail
-   document (`etransport_uit_details`) for the partner company or the user's
-   records.
+   with the code set large and a QR) after every accepted filing, and offer the
+   A4 detail document (`etransport_uit_details`) for the partner company or the
+   user's records.
+
+The card prints the UIT's validity when ANAF discloses it. Often it does not:
+`data_exp_uit` is served only by the `info` endpoint, which ANAF scopes to the
+**transport organizer**, so a filing where someone else carries the goods has no
+readable expiry. The playbook says so rather than guessing a date, and the card
+then carries the transport date alone.
 
 Before extracting anything, the playbook orients on the legal requirements
 (OUG 41/2022 and the ANAF/AVR procedure): whether the transport must be declared
