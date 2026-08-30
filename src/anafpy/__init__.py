@@ -15,7 +15,7 @@ from .exceptions import (
     AnafWafRejectionError,
 )
 
-__version__ = "0.12.2"
+__version__ = "0.13.0"
 
 __all__ = [
     "AnafAuthError",
