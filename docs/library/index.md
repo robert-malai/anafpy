@@ -45,6 +45,14 @@ context managers.
   `transformare` PDF rendering); both are prod-only on ANAF's side and need no
   login. No credentials, no test/prod split; requests are paced client-side at
   ANAF's stated 1 req/s rule. Guide: [public services](public.md).
+- **`BnrClient`** — the one **non-ANAF** client: Banca Națională a României's
+  published exchange rates (`curs.bnr.ro`), for the lei figures ANAF filings
+  need from foreign-currency documents — e-Transport's `value_ron`, an
+  invoice's BT-111, D301's `curs_valutar`. `get_rates` resolves to the latest
+  **banking day** on or before the date asked for and reports which day that
+  was; `convert` applies BNR's per-100 multiplier and the fiscal rounding.
+  No credentials; documents are cached in-process, as BNR asks. Guide:
+  [exchange rates](bnr.md).
 - **`SpvClient`** (read-only) — the taxpayer's **SPV mailbox** over the
   qualified certificate: `list_messages` (with the certificate's authorization
   inventory), `download_document` (PDF), `request_report` (the full `cerere`

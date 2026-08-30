@@ -6,6 +6,8 @@ The public-services client needs no auth (and ignores the configured environment
 the public host has no test/prod split), so it — and the server as a whole — works
 even when no OAuth credentials are configured; only the authenticated clients then
 fail, with a :class:`~anafpy.exceptions.AnafConfigError` saying how to enable them.
+The BNR rate client is credential-free for the same reason, and reads a different
+publisher altogether.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from typing import Protocol, cast
 from pydantic import BaseModel
 
 from ..auth import FileTokenStore, KeyringTokenStore, TokenProvider, TokenStore
+from ..bnr import BnrClient
 from ..declaratii import (
     DeclarationStatusClient,
     DeclarationUploadClient,
@@ -75,6 +78,7 @@ _LAZY_CLIENTS = (
     "efactura",
     "etransport",
     "public",
+    "bnr",
     "spv",
     "declaration_status",
     "declaration_upload",
@@ -140,6 +144,16 @@ class AppContext:
     @cached_property
     def public(self) -> PublicClient:
         return PublicClient()
+
+    @cached_property
+    def bnr(self) -> BnrClient:
+        """BNR's exchange-rate feed — the one non-ANAF publisher (DESIGN.md §17).
+
+        No credentials, like :attr:`public`, so it serves whether or not the
+        server is logged in. Its in-process cache lives for the process, which
+        is what keeps a multi-line conversion to a single fetch.
+        """
+        return BnrClient()
 
     @cached_property
     def spv(self) -> SpvClient:

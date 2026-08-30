@@ -1390,3 +1390,121 @@ the compile is exercised only by a release or a `workflow_dispatch` dry run —
 not by CI on every push. `tests/test_mcpb_bundle.py` covers what is checkable
 from any host (the generated manifest's content, the pin's shape, the
 Schannel flags); the build itself is not.
+
+## 17. BNR exchange rates: the one non-ANAF source (2026-08-30)
+
+`anafpy.bnr` reads BNR's published exchange-rate XML — the first and, for now,
+only publisher in the project that is not ANAF. It is a genuine widening of
+scope (the project's one-line identity is "clients for ANAF services"), so it is
+recorded here rather than arriving as an e-Transport change.
+
+**Why it is in scope.** Romanian filings are denominated in lei, but the source
+documents often are not, so a conversion sits between an invoice and three
+things anafpy already ships: e-Transport's `value_ron`, e-Factura's BT-111
+(which `compute_totals` explicitly refuses to derive because it "needs an
+exchange rate this library does not know"), and D301's `curs_valutar`. All three
+were holes the caller had to fill from outside. The rate is a supporting datum
+for an ANAF filing, not a new domain.
+
+**Why a client rather than an instruction to the model.** The alternative — and
+what the `etransport-declare` skill briefly said — was to have the model fetch
+the XML, pick the currency, apply the multiplier, multiply and round, per line,
+into a filing that carries 20,000–100,000 RON fines. Three arguments moved it
+into code:
+
+1. **The host may have no fetch at all.** The target audience installs the
+   `.mcpb` into Claude Desktop/Cowork (§11), where the MCP server is the
+   network-capable component. Without the tool the instruction silently
+   degrades to "ask the user for the rate" — the very rule it replaced.
+2. **Determinism.** The `multiplier` attribute (HUF, IDR, ISK, JPY, KRW are
+   quoted per 100 units) is a factor-of-100 trap, and the rounding is fiscal
+   (half away from zero, once, on the final figure). Both are decided in
+   `FxRateSet.convert`, not per call site.
+3. **Drift becomes visible.** BNR moved these files from
+   `www.bnr.ro/nbrfxrates.xml` to `curs.bnr.ro` — the old URL answers a 302 to
+   the site homepage. That break was found by accident while writing the skill
+   text. `tests/test_bnr_live.py` is now the tripwire for the next one; a URL
+   buried in a workflow instruction has no tripwire at all.
+
+**What it deliberately does not do: rule on which rate the law requires.** The
+client returns what BNR published on a date. ANAF's e-Transport procedure does
+not name a conversion source (the compiled legal reference only sets the 10,000
+lei threshold), so asserting one in library code would be inventing authority.
+The declaration-day rule lives in the workflow skill, where a rule of practice
+belongs; the tool reports the rate and the day, and the human approves the
+figure at the filing gate like every other value.
+
+Shape, and why:
+
+- **Banking-day resolution, reported honestly.** BNR publishes once per banking
+  day just after 13:00, so a weekend, a holiday, or a call before publication
+  has no rate of its own. `get_rates` returns the latest set **on or before**
+  the requested day and `FxRateSet.date` carries the day actually served, so
+  Friday's rate is never labelled Sunday's. The MCP payload splits this three
+  ways (`requested_date`, `rate_date`, `fallback_to_last_published`) because
+  the difference has to reach the user, not just the model.
+- **Smallest sufficient document, and a cache.** BNR asks callers to read the
+  XML rather than scrape its pages, and to store what they take. Hence the
+  source ladder — 1.8 KB for today, 14 KB for the last fortnight, the 230 KB
+  year archive only for older dates — plus a TTL cache keyed by document, with
+  concurrent misses sharing one request.
+- **`_peer` on `HttpClientBase`.** Translated network errors named ANAF
+  unconditionally; a BNR outage reporting itself as an ANAF one is a
+  diagnostic lie. The base now carries a `_peer` class attribute that this one
+  client overrides.
+- **One MCP tool, `bnr_fx_rate`**, read-only and credential-free, titled
+  `BNR:` rather than `ANAF:` — the display prefix names the publisher, and
+  implying ANAF published a central-bank rate would be the same false
+  authority the module avoids elsewhere. It takes a list of `amounts` so an
+  invoice's lines demonstrably share one rate.
+
+**The wire tier is generated from BNR's vendored XSD** (`schemas/bnr/`,
+`scripts/generate_bnr.py` → `anafpy.bnr.schema`), like every other schema-backed
+model in the project. This reverses the first cut of this section, which
+hand-rolled an `ElementTree` parser; the reasons it gave were real but two of
+the three turned out to be one-time costs rather than recurring ones, and BNR
+revises this schema rarely enough that paying them once is the better trade.
+What they cost, and how each is paid:
+
+1. **The XSD is not machine-readable as published.** It declares the XML Schema
+   namespace as `https://www.w3.org/2001/XMLSchema` — the canonical identifier
+   is the `http` string, and it is an identifier, not a URL. xsdata refuses the
+   file outright (`Unknown property {http://…}schema:{https://…}complexType`).
+   Paid in `scripts/generate_bnr.py`, which rewrites that one namespace **on a
+   temp copy**: the vendored file stays byte-for-byte what BNR serves, so
+   `schemas/` keeps its promise, and the script warns when a re-vendored copy
+   no longer needs the patch.
+2. **BNR serves two spellings of its own namespace**, and we read both:
+   archives through 2025 are `http://www.bnr.ro/xsd`, 2026 onwards `https://…`
+   (checked across 2005/2014/2020/2025/2026). Generated models bind one
+   namespace into their field metadata, so this is *not* a schema-revision
+   problem that patience solves — it is two live document sets. Paid at the
+   parse boundary by `_canonical_namespace`, which folds the legacy spelling
+   onto the bound one before parsing, in the same spirit as the public client's
+   `_strip_schema_location`. Both spellings are pinned by tests and confirmed
+   live back to 2014.
+3. **The generated tier does not yield `Decimal`.** The XSD restricts a decimal
+   with `pattern="\d+.\d{4}"`, so xsdata emits `value: str`. Unchanged by the
+   reversal: the conversion lives in the domain tier, which is where the
+   multiplier and the rounding belong anyway.
+
+What the generated tier buys, beyond consistency with `efactura/ubl` and
+`etransport/schema`: BNR's own required-ness and types are enforced by the
+schema rather than by hand-written checks (a `<Cube>` with no `date` is now a
+validation failure, not a bespoke `if`), and a re-vendor diffs the models. The
+parser is configured **lenient about unknown content and strict about
+structure** — an element BNR adds must not take the client down, while a
+document missing Header/Body/Cube fails — with a backstop in `_rate_sets` that
+raises when a parse yields no rates at all, so a shape change can never
+degrade into a silently empty rate set.
+
+The split of responsibilities is the one the other services already use:
+generated models are the wire tier, `anafpy.bnr.models` is the domain tier
+(banking-day semantics, the multiplier, the rounding), and nothing hand-edits
+the generated package.
+
+Not done, deliberately: no CLI command (nothing asked for one), no persistence
+of rates (the library is stateless — the cache dies with the process), and no
+second publisher. If a future need is *customs* value rather than a reference
+rate, that is a different monthly rate from a different source and would be its
+own decision.

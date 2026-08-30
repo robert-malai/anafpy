@@ -26,7 +26,15 @@ class HttpClientBase:
     client is rejected the same way: it would duck-type at runtime, but its
     errors are not ``httpx2`` exceptions, so every failure would escape the
     ``AnafError`` hierarchy.
+
+    ``_peer`` names whoever is on the other end in translated network errors —
+    ANAF for every ANAF service, overridden by the one client that reads a
+    different publisher (:class:`~anafpy.bnr.client.BnrClient`), so a BNR
+    outage does not report itself as an ANAF one.
     """
+
+    #: Who a translated network error names (see the class docstring).
+    _peer = "ANAF"
 
     def __init__(
         self,
@@ -91,7 +99,9 @@ class HttpClientBase:
         try:
             return await self._http.request(method, url, **kwargs)
         except httpx2.HTTPError as exc:
-            raise AnafTransportError(f"network error talking to ANAF: {exc}") from exc
+            raise AnafTransportError(
+                f"network error talking to {self._peer}: {exc}"
+            ) from exc
 
     async def _request_checked(
         self,

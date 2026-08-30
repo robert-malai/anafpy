@@ -23,6 +23,22 @@ certificate login (and with no OAuth credentials configured at all):
 | `anaf_financial_statement` | A company's filed financial statements (bilanț) for a year |
 | `efactura_validate` | ANAF's authoritative server-side invoice validation (CIUS-RO / BR-RO) — validates only, files nothing |
 
+## Exchange rates — no login needed
+
+The one tool that does not query ANAF. Romanian filings are in lei, so a
+foreign-currency invoice needs converting before its value can be declared —
+this is where that figure comes from, instead of Claude doing the arithmetic or
+recalling a rate.
+
+| Tool | What it does |
+|---|---|
+| `bnr_fx_rate` | The official BNR reference rate for a currency on a date, and amounts converted to RON at it |
+
+BNR publishes once per banking day, just after 13:00, so a weekend, a holiday
+or an early-morning call answers with the **last published** day. The result
+always carries `rate_date` (the day the rate is from) next to `requested_date`,
+and flags the difference — so the rate's real date is what reaches you.
+
 ## The ANAF session
 
 | Tool | What it does |

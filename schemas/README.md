@@ -111,3 +111,40 @@ Related but vendored elsewhere: the e-Transport **Schematron** (v2.0.2,
 is not codegen input; its *unconditional* rules are hand-mirrored as
 construction checks in `src/anafpy/etransport/models.py` (UIT check digits,
 gross ≥ net, ...) and should be re-checked when ANAF revises it.
+
+## `bnr/` — BNR exchange-rate XSD
+
+- **Source:** <https://curs.bnr.ro/xsd/nbrfxrates.xsd> (Banca Națională a
+  României's published schema for the `nbrfxrates` documents, linked from
+  <https://curs.bnr.ro/> — *Cursurile pieței valutare în format XML*).
+- **Retrieved:** 2026-08-30 (sha256
+  `70809027c46e3cbad53d6c1526b36c98fda859c07ebeeb80112d3e70f8955951`).
+- **Not an ANAF source** — the only publisher here that is not (DESIGN.md §17).
+- **Generates:** `src/anafpy/bnr/schema/`:
+
+```sh
+uv run python scripts/generate_bnr.py
+```
+
+Two BNR quirks the re-vendoring playbook has to carry:
+
+1. **The file is vendored verbatim and patched in flight.** BNR declares the
+   XML Schema namespace as `https://www.w3.org/2001/XMLSchema`; the canonical
+   identifier is the `http` spelling (it is a fixed string, not a URL), so
+   xsdata refuses the file as published —
+   `Unknown property {http://…}schema:{https://…}complexType`. The generator
+   rewrites that one namespace on a temp copy so the file on disk stays
+   byte-for-byte what BNR serves; it warns if a re-vendored copy no longer
+   needs the patch, which is the signal to drop it.
+2. **BNR serves two spellings of its own namespace.** The year archives through
+   2025 declare `http://www.bnr.ro/xsd`, 2026 onwards `https://www.bnr.ro/xsd`
+   — the same schema, and the client reads both (an early-January date falls
+   back to the previous year's archive). The generated models can only bind
+   one, so `anafpy.bnr.client._canonical_namespace` folds the legacy spelling
+   onto the bound one before parsing. If a future re-vendor changes the
+   `targetNamespace` itself, that function is what needs updating with it.
+
+The generated tier is wire-shaped only; `anafpy.bnr.models` is the domain tier,
+and it is where rate values become `Decimal` (BNR's XSD restricts a decimal with
+a pattern, which xsdata renders as `str`) and where the multiplier and the
+fiscal rounding are applied.

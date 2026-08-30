@@ -28,8 +28,9 @@ Typed Python clients for Romania's **ANAF** tax-authority web services —
 **e-Factura** (electronic invoicing), **e-Transport** (goods transport), the
 **SPV mailbox** (certificate-authenticated, read-only), **tax declarations**
 (declarații — local authoring, validation, qualified signing, filing), and the
-**public no-auth registries** (VAT/taxpayer lookups, financial statements) —
-plus a local MCP server that puts all of it inside
+**public no-auth registries** (VAT/taxpayer lookups, financial statements),
+plus **BNR's exchange rates** for the lei figures those filings need from
+foreign-currency documents — and a local MCP server that puts all of it inside
 [Claude](https://claude.com).
 
 anafpy is a **thin transport client** — no persistence, no accounting logic.
@@ -135,6 +136,7 @@ every client; the worked examples live in the per-service guides —
 [invoice authoring](https://anafpy.readthedocs.io/en/latest/library/authoring/),
 [e-Transport](https://anafpy.readthedocs.io/en/latest/library/etransport/),
 [public services](https://anafpy.readthedocs.io/en/latest/library/public/),
+[exchange rates](https://anafpy.readthedocs.io/en/latest/library/bnr/),
 [SPV](https://anafpy.readthedocs.io/en/latest/library/spv/),
 [declarations](https://anafpy.readthedocs.io/en/latest/library/declaratii/),
 and the [error model](https://anafpy.readthedocs.io/en/latest/library/errors/).

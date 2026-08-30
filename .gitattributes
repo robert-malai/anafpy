@@ -1,2 +1,6 @@
 # Raw ANAF originals under _sources/ are preserved verbatim - no EOL normalization.
 docs/anaf-reference/_sources/** -text
+
+# BNR's XSD is vendored verbatim - schemas/README.md records its sha256, and the
+# generator patches a namespace on a temp copy rather than on this file.
+schemas/bnr/** -text

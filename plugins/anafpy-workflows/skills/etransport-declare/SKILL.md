@@ -137,8 +137,20 @@ Helpers while mapping:
 - `anaf_lookup_taxpayers` (no auth needed) verifies a Romanian CUI and returns
   the registered company name — use it to check the partner/carrier instead of
   transcribing names from a scan.
-- Values in EUR or another currency: ask the user for the RON value — do not
-  apply an exchange rate yourself.
+- **Foreign-currency values**: `value_ron` is in RON, always. Convert at the
+  **BNR reference rate of the declaration day** — the day you are filing, not
+  the invoice date — with `bnr_fx_rate`: pass the currency and every line's
+  value in `amounts`, so all the lines demonstrably share one rate. Never
+  compute a conversion yourself and never use a rate from memory; the tool
+  applies BNR's per-100 multiplier (`HUF`, `JPY` and the other
+  small-denomination quotes) and the 2-decimal fiscal rounding.
+
+  BNR publishes once per banking day, just after 13:00, so a filing on a
+  weekend, a holiday, or before publication answers with the last published
+  day — the tool says so in `fallback_to_last_published`. Report
+  **`rate_date`**, never the date you asked for. If the tool is unavailable,
+  ask the user for the rate — naming the day it must be for — rather than
+  guessing one.
 - **Net vs gross**: unless a document labels its figure otherwise, a weight on
   an *invoice* is the **net** weight, a weight on a *transport document* (CMR,
   aviz) is the **gross**. An invoice-only source therefore gives `net_weight` —
@@ -147,7 +159,8 @@ Helpers while mapping:
 
 Before preparing, show a short summary of what you extracted and which fields
 came from where, flagging anything you had to ask about or that looks off
-(gross below net, transport date in the past or more than 3 days ahead).
+(gross below net, transport date in the past or more than 3 days ahead) and
+stating any currency conversion with the rate and the `rate_date` it came from.
 
 ## Step 3 — prepare
 
@@ -221,7 +234,10 @@ Template rules:
   *Reference* rows, the trailer suffix, and the ⚠️ line entirely when unset;
   inside the goods table an unset optional cell is `—`.
 - **Totals**: total value is the sum of `value_ron` over the lines that carry
-  one — if some don't, write `<sum> RON (<n> of <goods_count> lines)`.
+  one — if some don't, write `<sum> RON (<n> of <goods_count> lines)`. When
+  any line was converted, append the rate and `rate_date` to the Goods heading
+  (`… RON · 1 EUR = 5.2584 RON, BNR 2026-08-28`), so the user reviews the
+  conversion together with the figures.
 - **Scope**: when every goods line has the same `operation_scope`, append it
   once to the Goods heading (`… RON · scope Comercializare`); otherwise add a
   *Scope* column.

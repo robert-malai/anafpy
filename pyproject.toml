@@ -159,6 +159,7 @@ src = ["src", "tests"]
 extend-exclude = [
     "src/anafpy/efactura/ubl",
     "src/anafpy/etransport/schema",
+    "src/anafpy/bnr/schema",
     "design",
 ]
 
@@ -184,6 +185,7 @@ exclude = [
     ".venv",
     "src/anafpy/efactura/ubl",
     "src/anafpy/etransport/schema",
+    "src/anafpy/bnr/schema",
 ]
 
 [[tool.mypy.overrides]]
@@ -197,6 +199,7 @@ source = ["anafpy"]
 omit = [
     "*/anafpy/efactura/ubl/*",
     "*/anafpy/etransport/schema/*",
+    "*/anafpy/bnr/schema/*",
 ]
 # CI merges reports from ubuntu/macos/windows legs on Codecov; keep paths portable.
 relative_files = true

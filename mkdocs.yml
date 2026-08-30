@@ -78,6 +78,7 @@ nav:
       - Invoice authoring: library/authoring.md
       - e-Transport: library/etransport.md
       - Public services: library/public.md
+      - Exchange rates (BNR): library/bnr.md
       - SPV: library/spv.md
       - Declarations: library/declaratii.md
       - Error model: library/errors.md
@@ -86,6 +87,7 @@ nav:
       - Invoice authoring: api/authoring.md
       - e-Transport: api/etransport.md
       - Public services: api/public.md
+      - Exchange rates (BNR): api/bnr.md
       - SPV: api/spv.md
       - Authentication: api/auth.md
       - Exceptions: api/exceptions.md

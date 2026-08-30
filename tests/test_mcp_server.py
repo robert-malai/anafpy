@@ -1056,6 +1056,109 @@ async def test_anaf_financial_statement(tmp_path: Path) -> None:
     }
 
 
+# --- BNR exchange rates (the one non-ANAF source) -------------------------------------
+
+BNR_FX = "https://curs.bnr.ro"
+
+# A complete document: the generated wire model enforces BNR's XSD, so the
+# Header and Subject are required, not decoration.
+_BNR_DOCUMENT = (
+    b'<?xml version="1.0" encoding="utf-8"?>'
+    b'<DataSet xmlns="https://www.bnr.ro/xsd">'
+    b"<Header><Publisher>National Bank of Romania</Publisher>"
+    b"<PublishingDate>2026-08-28</PublishingDate>"
+    b"<MessageType>DR</MessageType></Header>"
+    b"<Body><Subject>Reference rates</Subject>"
+    b"<OrigCurrency>RON</OrigCurrency>"
+    b'<Cube date="2026-08-28">'
+    b'<Rate currency="EUR">5.2584</Rate>'
+    b'<Rate currency="HUF" multiplier="100">1.4430</Rate>'
+    b"</Cube></Body></DataSet>"
+)
+
+
+@pytest.fixture
+def _bnr_today(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin Romania's today to the Sunday after the fixture's banking day."""
+    monkeypatch.setattr(
+        "anafpy.bnr.client._today", lambda: datetime(2026, 8, 30).date()
+    )
+
+
+@respx.mock
+async def test_bnr_fx_rate_converts_without_credentials(
+    tmp_path: Path, _bnr_today: None
+) -> None:
+    # A past date is served by the ten-day file, not the one-day one.
+    respx.get(f"{BNR_FX}/nbrfxrates10days.xml").mock(
+        return_value=httpx.Response(200, content=_BNR_DOCUMENT)
+    )
+    server = create_server(_credential_free(tmp_path))
+    out = await _call(
+        server, "bnr_fx_rate", currency="eur", date="2026-08-28", amounts=[100, "12.34"]
+    )
+    assert out["currency"] == "EUR"
+    assert out["lei_per_unit"] == "5.2584"
+    assert out["rate_date"] == "2026-08-28"
+    assert out["fallback_to_last_published"] is False
+    assert [c["amount_ron"] for c in out["conversions"]] == ["525.84", "64.89"]
+
+
+@respx.mock
+async def test_bnr_fx_rate_flags_the_banking_day_fallback(
+    tmp_path: Path, _bnr_today: None
+) -> None:
+    # Asked for a Sunday; BNR published on the Friday. The payload must say so
+    # rather than presenting Friday's rate as Sunday's.
+    respx.get(f"{BNR_FX}/nbrfxrates.xml").mock(
+        return_value=httpx.Response(200, content=_BNR_DOCUMENT)
+    )
+    server = create_server(_config(tmp_path))
+    out = await _call(server, "bnr_fx_rate", currency="EUR", date="2026-08-30")
+    assert out["requested_date"] == "2026-08-30"
+    assert out["rate_date"] == "2026-08-28"
+    assert out["fallback_to_last_published"] is True
+
+
+@respx.mock
+async def test_bnr_fx_rate_defaults_to_romanias_today(
+    tmp_path: Path, _bnr_today: None
+) -> None:
+    respx.get(f"{BNR_FX}/nbrfxrates.xml").mock(
+        return_value=httpx.Response(200, content=_BNR_DOCUMENT)
+    )
+    server = create_server(_config(tmp_path))
+    out = await _call(server, "bnr_fx_rate", currency="EUR")
+    assert out["requested_date"] == "2026-08-30"
+    assert out["fallback_to_last_published"] is True
+
+
+@respx.mock
+async def test_bnr_fx_rate_applies_the_multiplier(
+    tmp_path: Path, _bnr_today: None
+) -> None:
+    respx.get(f"{BNR_FX}/nbrfxrates.xml").mock(
+        return_value=httpx.Response(200, content=_BNR_DOCUMENT)
+    )
+    server = create_server(_config(tmp_path))
+    out = await _call(server, "bnr_fx_rate", currency="HUF", amounts=[250000])
+    assert out["multiplier"] == 100
+    assert out["lei_per_unit"] == "0.01443"
+    assert out["conversions"][0]["amount_ron"] == "3607.50"
+
+
+@respx.mock
+async def test_bnr_fx_rate_unknown_currency_lists_the_quoted_ones(
+    tmp_path: Path, _bnr_today: None
+) -> None:
+    respx.get(f"{BNR_FX}/nbrfxrates.xml").mock(
+        return_value=httpx.Response(200, content=_BNR_DOCUMENT)
+    )
+    server = create_server(_config(tmp_path))
+    with pytest.raises(ToolError, match="EUR"):
+        await _call(server, "bnr_fx_rate", currency="XYZ")
+
+
 # --- tool metadata ------------------------------------------------------------------
 
 
@@ -1070,6 +1173,7 @@ async def test_every_tool_has_a_service_prefixed_title(tmp_path: Path) -> None:
         "SPV: ",
         "ANAF: ",
         "Declarations: ",
+        "BNR: ",
     )
     for tool in await server.list_tools():
         assert tool.title is not None, f"{tool.name} has no title"

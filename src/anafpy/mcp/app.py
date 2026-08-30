@@ -15,7 +15,17 @@ from inspect import cleandoc
 
 from mcp.server import MCPServer
 
-from . import declaratii, efactura, etransport, login, prompts, public, reference, spv
+from . import (
+    bnr,
+    declaratii,
+    efactura,
+    etransport,
+    login,
+    prompts,
+    public,
+    reference,
+    spv,
+)
 from .artifacts import READ_ONLY
 from .config import ServerConfig
 from .context import AppContext, AuthStatus
@@ -169,6 +179,7 @@ def create_server(config: ServerConfig | None = None) -> MCPServer:
     efactura.register(mcp, ctx, cfg)
     etransport.register(mcp, ctx, cfg)
     public.register(mcp, ctx)
+    bnr.register(mcp, ctx)
     spv.register(mcp, ctx, cfg)
     declaratii.register(mcp, ctx, cfg)
     reference.register(mcp, cfg)

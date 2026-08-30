@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns="https://www.bnr.ro/xsd" xmlns:x="https://www.bnr.ro/xsd" xmlns:xsd="https://www.w3.org/2001/XMLSchema" targetNamespace="https://www.bnr.ro/xsd" elementFormDefault="qualified"
+	attributeFormDefault="qualified">
+	<!-- Local types -->
+	<xsd:complexType name="LT_Header">
+		<xsd:sequence>
+			<xsd:element name="Publisher">
+				<xsd:simpleType>
+					<xsd:restriction base="xsd:string">
+						<xsd:pattern value="[\S]{1}.{0,99}" />
+						<xsd:minLength value="1" />
+					</xsd:restriction>
+				</xsd:simpleType>
+			</xsd:element>
+			<xsd:element name="PublishingDate" type="xsd:date" />
+			<xsd:element name="MessageType">
+				<xsd:simpleType>
+					<xsd:restriction base="xsd:string">
+						<xsd:pattern value="[A-Z]{2}" />
+					</xsd:restriction>
+				</xsd:simpleType>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:simpleType name="LT_RateValue">
+		<xsd:restriction base="xsd:decimal">
+			<xsd:minExclusive value="0" />
+			<xsd:pattern value="\d+.\d{4}" />
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:complexType name="LT_Cube">
+		<xsd:sequence>
+			<xsd:element name="Rate" maxOccurs="unbounded">
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:extension base="LT_RateValue">
+							<xsd:attribute name="currency" use="required" form="unqualified">
+								<xsd:simpleType>
+									<xsd:restriction base="xsd:string">
+										<xsd:pattern value="[A-Z]{3}" />
+									</xsd:restriction>
+								</xsd:simpleType>
+							</xsd:attribute>
+							<xsd:attribute name="multiplier" use="optional" form="unqualified">
+								<xsd:simpleType>
+									<xsd:restriction base="xsd:integer">
+										<xsd:minInclusive value="1" />
+									</xsd:restriction>
+								</xsd:simpleType>
+							</xsd:attribute>
+						</xsd:extension>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+		</xsd:sequence>
+		<xsd:attribute name="date" use="required" form="unqualified" type="xsd:date" />
+	</xsd:complexType>
+	<!-- Message description -->
+	<xsd:element name="DataSet">
+		<xsd:annotation>
+			<xsd:documentation>nbrfxrates.xsd</xsd:documentation>
+		</xsd:annotation>
+		<xsd:complexType>
+			<xsd:sequence>
+				<xsd:element name="Header" type="LT_Header" />
+				<xsd:element name="Body">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element name="Subject">
+								<xsd:simpleType>
+									<xsd:restriction base="xsd:string">
+										<xsd:pattern value="[\S]{1}.{0,99}" />
+										<xsd:minLength value="1" />
+									</xsd:restriction>
+								</xsd:simpleType>
+							</xsd:element>
+							<xsd:element name="Description" minOccurs="0">
+								<xsd:simpleType>
+									<xsd:restriction base="xsd:string">
+										<xsd:pattern value="[\S]{1}.{0,499}" />
+										<xsd:minLength value="1" />
+									</xsd:restriction>
+								</xsd:simpleType>
+							</xsd:element>
+							<xsd:element name="OrigCurrency">
+								<xsd:simpleType>
+									<xsd:restriction base="xsd:string">
+										<xsd:pattern value="[A-Z]{3}" />
+									</xsd:restriction>
+								</xsd:simpleType>
+							</xsd:element>
+							<xsd:element name="Cube" type="LT_Cube" maxOccurs="unbounded" />
+						</xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+			</xsd:sequence>
+		</xsd:complexType>
+		<xsd:unique name="CubeDateUnique">
+			<xsd:selector xpath="./x:Body/x:Cube" />
+			<xsd:field xpath="@date" />
+		</xsd:unique>
+	</xsd:element>
+</xsd:schema>
