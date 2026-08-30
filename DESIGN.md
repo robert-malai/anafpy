@@ -1467,6 +1467,32 @@ Shape, and why:
 
   The TTL is a module constant rather than a constructor argument: it is a
   property of BNR's publication calendar, not of a caller.
+
+  **Considered and rejected (2026-08-31): holding today's rate until the next
+  publication.** Once BNR has published for a day, nothing newer can arrive
+  until 13:00 tomorrow, so the 15-minute re-read looks like waste. It was
+  built — the publication cycle as a cache *key* rather than a duration, since
+  the window is 23 hours at 14:00 and one hour at noon — and then dropped,
+  because the arithmetic does not survive contact with the numbers: **79 lines
+  of production code to avoid re-reading a 1,796-byte file**, saving perhaps
+  20 KB on a day of heavy use and nothing at all on a normal one (a filing is
+  already a single call, so a single fetch).
+
+  The comparison that settles it is the tier above. Caching closed archives
+  saves 350 KB per repeat lookup — 195× more — and rests on something true by
+  definition: a year that has ended cannot gain a day. The publication hold
+  rests instead on BNR never revising a published rate, which is unverified,
+  and it lengthens the stale window from 15 minutes to 23 hours if that
+  assumption is ever wrong.
+
+  The mistake in proposing it was reading the 15-minute TTL as a crude
+  approximation of the publication cycle. It is not: it is a hedge against not
+  knowing BNR's behaviour — late publication, holidays, revisions. Replacing a
+  hedge with a precise model is progress only when the model's assumptions are
+  verified. Trading a correctness margin for kilobytes, in a client feeding a
+  legal filing, is the wrong direction whatever the code looks like. Revisit
+  only if the daily file's traffic ever becomes a real cost, or if BNR's
+  revision behaviour gets pinned down.
 - **`_peer` on `HttpClientBase`.** Translated network errors named ANAF
   unconditionally; a BNR outage reporting itself as an ANAF one is a
   diagnostic lie. The base now carries a `_peer` class attribute that this one
