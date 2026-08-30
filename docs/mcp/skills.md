@@ -23,7 +23,10 @@ conversation itself. The playbook walks Claude through the full flow:
 
 1. **Extract** the transport data from the source you point it at.
 2. **Map** it onto the structured declaration (looking up ANAF codes via
-   `etransport_nomenclature` where needed).
+   `etransport_nomenclature` where needed). A value in euro or another currency
+   is converted at BNR's official rate for the filing day, by the `bnr_fx_rate`
+   tool — Claude never does that arithmetic itself, and the rate's own date is
+   reported back to you with the figures.
 3. **Prepare** — `etransport_prepare_declaration` composes the XML and returns a
    preview plus a confirmation token.
 4. **Show you the preview for approval.** Nothing has been filed yet.

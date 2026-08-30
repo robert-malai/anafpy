@@ -46,6 +46,14 @@ mass carrying goods of total gross mass **> 500 kg** or total value
   import/export (IMP/EXP), lohn (LHI/LHE), call-off stock (SCI/SCE), or
   intra-community transit with storage/regrouping in Romania (DIN/DIE).
 
+Both thresholds are read in RON and kilograms, so a source document in another
+currency has to be converted before the value test means anything — with
+`bnr_fx_rate`, the same way and at the same rate the declared values will carry
+(step 2). Never eyeball it here: 10,000 RON is around €1,900, close enough to
+ordinary invoice sizes that a rate guessed at 5 instead of 5.2584 puts a €1,950
+invoice at 9,750 lei — under the threshold — when it is really 10,253.88, over
+it. That arithmetic decides whether the transport gets declared at all.
+
 **Exemptions** — if one applies, say so and stop; do not declare what the law
 does not ask to be declared:
 
@@ -140,7 +148,10 @@ Helpers while mapping:
 - **Foreign-currency values**: `value_ron` is in RON, always. Convert at the
   **BNR reference rate of the declaration day** — the day you are filing, not
   the invoice date — with `bnr_fx_rate`: pass the currency and every line's
-  value in `amounts`, so all the lines demonstrably share one rate. Never
+  value in `amounts`, so all the lines demonstrably share one rate, and **leave
+  `date` unset** — the tool prices at today in Romania, which is the
+  declaration day. Never pass `transport_date`: it may be up to 3 days ahead,
+  and a day BNR has not reached is not the day you are filing on. Never
   compute a conversion yourself and never use a rate from memory; the tool
   applies BNR's per-100 multiplier (`HUF`, `JPY` and the other
   small-denomination quotes) and the 2-decimal fiscal rounding.
@@ -309,7 +320,12 @@ not blocked by an announced outage.
 ## After filing
 
 - **Fix a mistake in an issued UIT**: re-run this flow with `correction_of_uit`
-  set to that UIT (full declaration again, corrected).
+  set to that UIT (full declaration again, corrected). If the original carried
+  a currency conversion, **ask before re-pricing**: re-running step 2 on a
+  later day would restate values the user never asked to change. Whether a
+  correction keeps the original rate or takes the correction day's is the
+  user's call, not yours — and whichever they choose, say which day's rate the
+  figures carry.
 - **Vehicle broke down / plate changed**: `etransport_prepare_vehicle_change` →
   `etransport_submit` (only the plate/trailers change; anything else needs a
   correction).
