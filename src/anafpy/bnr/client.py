@@ -281,6 +281,19 @@ class BnrClient(HttpClientBase):
             paths.append(_YEAR_PATH.format(year=day.year - 1))
         return paths
 
+    def resolve_date(self, date: datetime.date | str | None = None) -> datetime.date:
+        """The day a lookup is *for*: the caller's, or today in Romania.
+
+        The one definition of that default. A caller who has to report which
+        day it asked about — the MCP tool does, so a banking-day fallback is
+        visible — must not compute it a second time: two clocks drift apart,
+        and the one that drifts is the one nothing tests.
+
+        Raises:
+            AnafConfigError: *date* is not an ISO date.
+        """
+        return _as_date(date) if date is not None else _today()
+
     async def get_rates(self, date: datetime.date | str | None = None) -> FxRateSet:
         """The reference rates in force for *date* (default: today in Romania).
 
@@ -294,7 +307,7 @@ class BnrClient(HttpClientBase):
             AnafResponseError: BNR served something that is not a rate
                 document, or published nothing on or before *date*.
         """
-        day = _as_date(date) if date is not None else _today()
+        day = self.resolve_date(date)
         if day.year < _FIRST_ARCHIVED_YEAR:
             raise AnafConfigError(
                 f"BNR publishes exchange rates from {_FIRST_ARCHIVED_YEAR} "

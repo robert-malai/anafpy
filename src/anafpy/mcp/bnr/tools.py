@@ -9,13 +9,11 @@ reports the day it actually served so a wrong one is visible.
 
 from __future__ import annotations
 
-from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from inspect import cleandoc
 
 from mcp.server import MCPServer
 
-from ..._transport.base import ROMANIA_TZ
 from ...exceptions import AnafConfigError
 from ..artifacts import READ_ONLY
 from ..context import AppContext
@@ -73,10 +71,10 @@ def register(mcp: MCPServer, ctx: AppContext) -> None:
             )
             for value in amounts or []
         ]
-        # "Today" is ANAF/BNR-semantic, so the implicit request date is
-        # Romania's today — not the host machine's, and not whatever day the
-        # served rate happens to carry (that would hide every fallback).
-        requested = date or datetime.now(tz=ROMANIA_TZ).date().isoformat()
+        # Asked of the client, not recomputed: it owns what "today" means
+        # here (Romania's, not the host's), and a second clock would drift
+        # from the one get_rates actually resolved against.
+        requested = ctx.bnr.resolve_date(date).isoformat()
         return {
             "currency": rate.currency,
             "requested_date": requested,

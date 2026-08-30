@@ -1122,14 +1122,25 @@ async def test_bnr_fx_rate_flags_the_banking_day_fallback(
 
 @respx.mock
 async def test_bnr_fx_rate_defaults_to_romanias_today(
-    tmp_path: Path, _bnr_today: None
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The default request date is the client's "today in Romania", so pinning
+    that one clock must move the tool's answer with it.
+
+    Pinned far from any real date on purpose: the first version of this test
+    asserted the day it was written, and the tool computed its own `today`
+    from the system clock rather than asking the client. It passed until
+    midnight, then failed the release. A date nothing can coincide with is
+    what makes a second clock show up here instead of in CI.
+    """
+    monkeypatch.setattr("anafpy.bnr.client._today", lambda: datetime(2031, 7, 4).date())
     respx.get(f"{BNR_FX}/nbrfxrates.xml").mock(
         return_value=httpx.Response(200, content=_BNR_DOCUMENT)
     )
     server = create_server(_config(tmp_path))
     out = await _call(server, "bnr_fx_rate", currency="EUR")
-    assert out["requested_date"] == "2026-08-30"
+    assert out["requested_date"] == "2031-07-04"
+    assert out["rate_date"] == "2026-08-28"
     assert out["fallback_to_last_published"] is True
 
 
