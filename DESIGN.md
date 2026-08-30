@@ -1443,11 +1443,30 @@ Shape, and why:
   Friday's rate is never labelled Sunday's. The MCP payload splits this three
   ways (`requested_date`, `rate_date`, `fallback_to_last_published`) because
   the difference has to reach the user, not just the model.
-- **Smallest sufficient document, and a cache.** BNR asks callers to read the
-  XML rather than scrape its pages, and to store what they take. Hence the
-  source ladder — 1.8 KB for today, 14 KB for the last fortnight, the 230 KB
-  year archive only for older dates — plus a TTL cache keyed by document, with
-  concurrent misses sharing one request.
+- **Smallest sufficient document, and a cache keyed to mutability.** BNR asks
+  callers to read the XML rather than scrape its pages, and to store what they
+  take. Hence the source ladder — 1.8 KB for today, 14 KB for the last
+  fortnight, the 350 KB year archive only for older dates — and a cache whose
+  lifetime follows what BNR can still change: a **closed year's archive** is
+  final and never expires, while a still-updating document (today, the ten-day
+  window, the current year) is re-read on a 15-minute TTL so a 13:00
+  publication lands. The uniform TTL of the first cut got this backwards: it
+  re-fetched the 350 KB immutable archive while adding nothing for the 1.8 KB
+  file that actually changes.
+
+  The mechanism is `async-lru`'s `@alru_cache`, not hand-rolled expiry
+  bookkeeping — the first version buried four lines of `time.monotonic()`
+  arithmetic inside the fetch method, where a reader missed it entirely. Two
+  decorated readers now *are* the policy statement. `functools.cache` is not an
+  option on a coroutine function: it caches the coroutine, so the second call
+  raises `cannot reuse already awaited coroutine`. The decorator also subsumes
+  the `asyncio.Lock` (concurrent misses share one fetch) and does not cache
+  failures, so a transient outage cannot poison an entry for the TTL. Its
+  `maxsize` doubles as the bound on how many client instances a class-level
+  cache can keep alive — the one real cost of decorating a method.
+
+  The TTL is a module constant rather than a constructor argument: it is a
+  property of BNR's publication calendar, not of a caller.
 - **`_peer` on `HttpClientBase`.** Translated network errors named ANAF
   unconditionally; a BNR outage reporting itself as an ANAF one is a
   diagnostic lie. The base now carries a `_peer` class attribute that this one

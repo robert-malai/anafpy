@@ -43,6 +43,14 @@ dependencies = [
     # natively, help text comes from the Google-style docstrings, env-var
     # fallbacks live on the Parameter annotations.
     "cyclopts>=3.14",
+    # Declarative caching for the BNR rate documents (anafpy.bnr.client). Chosen
+    # over hand-rolled expiry bookkeeping, and over functools: @cache on a
+    # coroutine function caches the COROUTINE, which raises "cannot reuse
+    # already awaited coroutine" on the second call. alru_cache also gives
+    # single-flight (concurrent misses share one fetch) and does not cache
+    # failures, so a transient network error never poisons an entry. Pure
+    # Python, py.typed, no transitive dependencies.
+    "async-lru>=2.0",
     # Ephemeral self-signed certificate for the OAuth callback listener — ANAF
     # registers only https:// callbacks and no public CA may issue for
     # localhost, so the default login mints a throwaway cert per attempt
@@ -211,6 +219,14 @@ testpaths = ["tests"]
 # wants the `legacy` family: it puts the dotted module path in `classname`, which
 # is what renders as a readable test name in the UI.
 junit_family = "legacy"
+filterwarnings = [
+    # Every pytest-asyncio test gets its own event loop, and the alru_cache on
+    # BnrClient's document readers lives on the class, so it clears the previous
+    # test's entries when the loop changes — which is exactly the isolation the
+    # suite wants. The library warns because that is unusual in production (one
+    # loop, one server process), where it never fires.
+    "ignore::async_lru.AlruCacheLoopResetWarning",
+]
 markers = [
     "live: exercises real ANAF endpoints — public (no-auth) and authenticated TEST (needs .env + `anafpy auth login`); opt in with ANAFPY_LIVE=1",
 ]

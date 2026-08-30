@@ -22,20 +22,19 @@ own: :meth:`BnrClient.get_rates` resolves to the latest day *on or before* the
 one asked for and reports that day in :attr:`~anafpy.bnr.models.FxRateSet.date`
 — it never labels Friday's rate as Sunday's. And **BNR asks callers to cache**
 rather than re-fetch, and to read these files instead of scraping the site
-pages; hence the in-process cache and the smallest-sufficient document per
-query (1.8 KB for today, 14 KB for the last fortnight, the 230 KB year archive
-only for older dates).
+pages; hence the smallest-sufficient document per query (1.8 KB for today,
+14 KB for the last fortnight, the 350 KB year archive only for older dates)
+and an in-process cache keyed to how mutable each document actually is.
 """
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 import re
-import time
 from decimal import Decimal, InvalidOperation
 
 import httpx2
+from async_lru import alru_cache
 from pydantic import ValidationError
 from xsdata.exceptions import ParserError
 from xsdata.formats.dataclass.parsers.config import ParserConfig
@@ -64,6 +63,21 @@ _FIRST_ARCHIVED_YEAR = 2005
 #: How far back the ten-day file is worth trying: ten *banking* days is at most
 #: two weeks of calendar plus holidays, and a miss only costs the year archive.
 _TEN_DAYS_REACH = datetime.timedelta(days=18)
+
+#: A year archive's path, for telling a closed year from the current one.
+_YEAR_PATH_RE = re.compile(r"files/xml/years/nbrfxrates(\d{4})\.xml$")
+
+#: How long a document BNR is *still updating* stays cached. It publishes once
+#: per banking day just after 13:00, so a quarter of an hour is short enough to
+#: pick that up promptly and long enough that a whole filing — every line of an
+#: invoice — reads one fetch. Deliberately a constant rather than a constructor
+#: argument: it is a property of BNR's publication calendar, not of a caller.
+_LIVE_TTL = 900.0
+
+#: Entries per cache. Small on purpose — a session touches a handful of
+#: documents — and it doubles as the bound on how many client instances the
+#: decorators' caches can keep alive.
+_CACHE_SIZE = 8
 
 #: Parser guard. The largest real document is the year archive at ~230 KB;
 #: anything past this is not a rate file and is refused rather than parsed.
@@ -187,6 +201,18 @@ def _parse_document(body: bytes, source_url: str) -> list[FxRateSet]:
     return _rate_sets(dataset, source_url)
 
 
+def _is_closed_archive(path: str) -> bool:
+    """Is *path* a year archive whose year has already ended?
+
+    Such a document is final — BNR appends a banking day at a time and never
+    revisits a closed year — so it is worth caching for the life of the
+    process. The current year's archive still grows daily and is not.
+    """
+    if (match := _YEAR_PATH_RE.search(path)) is None:
+        return False
+    return int(match.group(1)) < _today().year
+
+
 def _latest_on_or_before(sets: list[FxRateSet], day: datetime.date) -> FxRateSet | None:
     """The most recent published set not after *day*, or ``None``."""
     candidates = [entry for entry in sets if entry.date <= day]
@@ -201,9 +227,12 @@ class BnrClient(HttpClientBase):
     Use it as an async context manager so an owned client closes cleanly; an
     injected client must carry a non-empty ``base_url``.
 
-    Fetched documents are cached in-process for ``cache_ttl`` seconds (BNR asks
-    callers to store what they take rather than re-fetch it); pass ``0`` to
-    disable. Concurrent misses share one request instead of racing.
+    Fetched documents are cached in-process, because BNR asks callers to store
+    what they take rather than re-fetch it. The lifetime follows what BNR can
+    still change: a **closed year's archive** is final and never expires, while
+    a document BNR is still updating — today's file, the ten-day window, the
+    current year — is re-read after :data:`_LIVE_TTL`. Concurrent misses share
+    one fetch, and a failed fetch is not cached.
     """
 
     _peer = "BNR"
@@ -213,24 +242,30 @@ class BnrClient(HttpClientBase):
         *,
         http: httpx2.AsyncClient | None = None,
         timeout: float = 30.0,
-        cache_ttl: float = 900.0,
     ) -> None:
         super().__init__(http=http, base_url=BNR_FX_HOST, timeout=timeout)
-        self._cache_ttl = cache_ttl
-        self._cache: dict[str, tuple[float, list[FxRateSet]]] = {}
-        self._lock = asyncio.Lock()
+
+    async def _download(self, path: str) -> list[FxRateSet]:
+        """Fetch and parse one rate document. Uncached — the callers cache."""
+        response = await self._request_checked("GET", path)
+        return _parse_document(response.content, f"{BNR_FX_HOST}/{path}")
+
+    @alru_cache(maxsize=_CACHE_SIZE, ttl=_LIVE_TTL)
+    async def _live_document(self, path: str) -> list[FxRateSet]:
+        """A document BNR still adds to: today's file, the ten-day window, the
+        current year's archive. Re-read on the TTL so a publication lands."""
+        return await self._download(path)
+
+    @alru_cache(maxsize=_CACHE_SIZE)
+    async def _closed_document(self, path: str) -> list[FxRateSet]:
+        """A year archive whose year has ended — final, so it never expires."""
+        return await self._download(path)
 
     async def _document(self, path: str) -> list[FxRateSet]:
-        """Fetch and parse one rate document, honouring the cache."""
-        async with self._lock:
-            now = time.monotonic()
-            if (entry := self._cache.get(path)) is not None and now < entry[0]:
-                return entry[1]
-            response = await self._request_checked("GET", path)
-            sets = _parse_document(response.content, f"{BNR_FX_HOST}/{path}")
-            if self._cache_ttl > 0:
-                self._cache[path] = (now + self._cache_ttl, sets)
-            return sets
+        """One rate document, from whichever cache its mutability calls for."""
+        if _is_closed_archive(path):
+            return await self._closed_document(path)
+        return await self._live_document(path)
 
     def _sources_for(self, day: datetime.date) -> list[str]:
         """The documents to try for *day*, smallest first."""

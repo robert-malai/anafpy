@@ -7,6 +7,7 @@ a ``multiplier`` attribute on the small-denomination currencies.
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 from decimal import Decimal
 
@@ -16,6 +17,7 @@ import pytest
 import respx
 
 from anafpy.bnr import BnrClient, FxRate, FxRateSet
+from anafpy.bnr.client import _is_closed_archive
 from anafpy.exceptions import (
     AnafConfigError,
     AnafResponseError,
@@ -66,8 +68,9 @@ def frozen_today(monkeypatch: pytest.MonkeyPatch) -> datetime.date:
 
 
 def _client() -> BnrClient:
-    """Cache off, so each test's route assertions count real requests."""
-    return BnrClient(cache_ttl=0.0)
+    """A fresh client per test — the caches key on the instance, so nothing
+    a previous test fetched can answer this one."""
+    return BnrClient()
 
 
 # --- fetching and resolving ------------------------------------------------
@@ -206,29 +209,87 @@ async def test_both_bnr_namespaces_parse(frozen_today: datetime.date) -> None:
 
 
 @respx.mock
-async def test_documents_are_cached_within_the_ttl(
+async def test_repeat_reads_of_a_live_document_hit_the_cache(
     frozen_today: datetime.date,
 ) -> None:
-    """BNR asks callers to store what they take — a second read must not refetch."""
-    route = respx.get(f"{BASE}/nbrfxrates.xml").mock(
-        return_value=httpx.Response(200, content=_document(_FRIDAY))
-    )
-    async with BnrClient(cache_ttl=600.0) as client:
-        await client.get_rates()
-        await client.get_rates()
-        await client.convert(10, "EUR")
-    assert route.call_count == 1
-
-
-@respx.mock
-async def test_zero_ttl_disables_the_cache(frozen_today: datetime.date) -> None:
+    """BNR asks callers to store what they take — the reads of one filing
+    (every line of an invoice) must cost one fetch."""
     route = respx.get(f"{BASE}/nbrfxrates.xml").mock(
         return_value=httpx.Response(200, content=_document(_FRIDAY))
     )
     async with _client() as client:
         await client.get_rates()
         await client.get_rates()
+        await client.convert(10, "EUR")
+    assert route.call_count == 1
+
+
+def test_closed_archive_predicate(frozen_today: datetime.date) -> None:
+    """Which documents are final, and which BNR still adds to. Today is 2026,
+    so 2026's archive is still growing and 2025's never will again."""
+    assert _is_closed_archive("files/xml/years/nbrfxrates2025.xml") is True
+    assert _is_closed_archive("files/xml/years/nbrfxrates2014.xml") is True
+    assert _is_closed_archive("files/xml/years/nbrfxrates2026.xml") is False
+    assert _is_closed_archive("nbrfxrates.xml") is False
+    assert _is_closed_archive("nbrfxrates10days.xml") is False
+
+
+@respx.mock
+async def test_documents_go_to_the_cache_their_mutability_calls_for(
+    frozen_today: datetime.date,
+) -> None:
+    """The policy, asserted where it is decided: a closed year's 350 KB archive
+    is held for the life of the process, while today's file expires on a TTL."""
+    archive = respx.get(f"{BASE}/files/xml/years/nbrfxrates2025.xml").mock(
+        return_value=httpx.Response(
+            200, content=_document("2025-06-02", namespace=_NS_ARCHIVE)
+        )
+    )
+    respx.get(f"{BASE}/nbrfxrates.xml").mock(
+        return_value=httpx.Response(200, content=_document(_FRIDAY))
+    )
+    async with _client() as client:
+        await client.get_rates("2025-06-02")
+        await client.get_rates()
+        await client.get_rates("2025-06-02")
+
+        # The bound wrapper already knows its instance, so the key is the path.
+        assert client._closed_document.cache_contains(
+            "files/xml/years/nbrfxrates2025.xml"
+        )
+        assert client._live_document.cache_contains("nbrfxrates.xml")
+        assert not client._closed_document.cache_contains("nbrfxrates.xml")
+    assert archive.call_count == 1
+
+
+@respx.mock
+async def test_concurrent_misses_share_one_fetch(
+    frozen_today: datetime.date,
+) -> None:
+    """Single-flight: five lines converted at once must not be five requests."""
+    route = respx.get(f"{BASE}/nbrfxrates.xml").mock(
+        return_value=httpx.Response(200, content=_document(_FRIDAY))
+    )
+    async with _client() as client:
+        await asyncio.gather(*(client.get_rates() for _ in range(5)))
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_a_failed_fetch_is_not_cached(frozen_today: datetime.date) -> None:
+    """A transient outage must not poison the entry for the whole TTL."""
+    route = respx.get(f"{BASE}/nbrfxrates.xml").mock(
+        side_effect=[
+            httpx.Response(503),
+            httpx.Response(200, content=_document(_FRIDAY)),
+        ]
+    )
+    async with _client() as client:
+        with pytest.raises(AnafResponseError):
+            await client.get_rates()
+        rates = await client.get_rates()
     assert route.call_count == 2
+    assert rates.rate("EUR") is not None
 
 
 # --- conversion ------------------------------------------------------------

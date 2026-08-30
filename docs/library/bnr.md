@@ -89,10 +89,20 @@ that boundary parses the same way.
 ## Caching and traffic
 
 BNR asks callers to read these XML files rather than scrape its site pages, and
-to store what they take. The client does both: fetched documents are cached
-in-process for `cache_ttl` seconds (default 900; pass `0` to disable), and each
-query uses the smallest document that can answer it — the one-day file for
-today, the ten-day file for the recent past, the year archive only for older
-dates. Concurrent misses share a single request.
+to store what they take. The client does both.
+
+Each query uses the smallest document that can answer it — the one-day file
+(~2 KB) for today, the ten-day file (~14 KB) for the recent past, the year
+archive (~350 KB) only for older dates. And what is fetched is cached for as
+long as BNR could still change it:
+
+- a **closed year's archive** is final — BNR will never add a day to a year
+  that has ended — so it is held for the life of the process;
+- a document BNR is **still updating** (today's file, the ten-day window, the
+  current year's archive) is re-read every 15 minutes, so a 13:00 publication
+  is picked up promptly.
+
+Either way, the reads of one filing — every line of an invoice — cost a single
+fetch, concurrent reads share it, and a failed fetch is never cached.
 
 The cache lives and dies with the process; nothing is written to disk.

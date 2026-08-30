@@ -166,7 +166,9 @@ src/anafpy/
     schema/              # GENERATED from BNR's XSD — do not hand-edit
     client.py            # BnrClient: banking-day resolution (latest set ON OR
                          # BEFORE the date; FxRateSet.date is what was served),
-                         # smallest-sufficient document + TTL cache;
+                         # smallest-sufficient document; alru_cache per
+                         # document mutability (closed year = forever,
+                         # still-updating = TTL);
                          # _canonical_namespace folds BNR's legacy http
                          # namespace onto the one the models bind
     models.py            # FxRate (quoted + multiplier kept as published),
