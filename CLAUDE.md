@@ -41,7 +41,10 @@ The service strands:
   (declaration/correction, deletion, confirmation, vehicle change); XML input
   remains supported. **UIT presentation** (extra `anafpy[cards]`, DESIGN.md §13)
   renders a filed declaration into two PDFs — a phone-shaped driver card and an
-  A4 detail document — locally, informative, never issued by ANAF.
+  A4 detail document — locally, informative, never issued by ANAF. Validity is
+  ANAF's `data_exp_uit` when the caller has one and the **statutory** OUG
+  41/2022 window otherwise (ANAF discloses the date only to the transport
+  organizer, so that is the common case) — the two are never rendered alike.
 - **Public no-auth services** (`anafpy.public`) — registry lookups, financial
   statements, and the stateless e-Factura `validare`/`transformare`.
 - **Exchange rates** (`anafpy.bnr`, DESIGN.md §17) — the one **non-ANAF**
@@ -155,8 +158,14 @@ src/anafpy/
                          # + read/build/render
     labels.py            # display labels for the nomenclatures — the ONE home,
                          # shared by cardpdf and the MCP nomenclature tool
+    validity.py          # the OUG 41/2022 art. 11 window (5 days, 15 for
+                         # AIC/LHI/LHE/SCI/SCE/DIN) — the ONE home of the rule,
+                         # shared by the card, the MCP prepare preview and the
+                         # nomenclature; shorter window where sources doubt
     card.py              # UitCard + summary_text + load_cardpdf loader (no
-                         # optional imports; missing extra -> AnafConfigError)
+                         # optional imports; missing extra -> AnafConfigError);
+                         # UitCard.validity() = the ONE resolution of ANAF's
+                         # data_exp_uit vs the statutory window (ANAF wins)
     cardpdf.py           # the fpdf2/segno renderer — needs anafpy[cards]
     _fonts/              # VENDORED OFL Noto subsets (scripts/vendor_card_fonts.py)
   public/
@@ -249,6 +258,10 @@ scripts/                 # codegen scripts + vendor_card_fonts.py (the card's
                          # native-host-only, defaults to the host's target;
                          # release.yml builds each target on a native runner
                          # as anafpy-<target>.mcpb)
+design/                  # gallery.py renders EVERY state of the UIT card +
+                         # detail document from the SHIPPED renderer (not a
+                         # second layout); README.md is the decision record,
+                         # output is git-ignored
 imgs/                    # brand assets; README hotlinks the social preview
 docs/                    # MkDocs source tree (mkdocs.yml at repo root; RTD
                          # builds via uv); docs/assets/ = site image copies

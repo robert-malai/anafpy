@@ -161,14 +161,13 @@ line-length = 88
 target-version = "py312"
 src = ["src", "tests"]
 # Generated model packages are formatted by their regeneration scripts, not linted.
-# design/ is the visual exploration that settled the UIT card's layout — kept as
-# the decision record (design/README.md), but it draws with macOS system fonts
-# and is not shipped; the shipped renderer is src/anafpy/etransport/cardpdf.py.
+# design/ IS linted: since gallery.py drives the shipped renderer rather than
+# carrying its own copy of the layout, it is ordinary code and held to the same
+# bar. It stays out of mypy's `files`, being a script rather than a package.
 extend-exclude = [
     "src/anafpy/efactura/ubl",
     "src/anafpy/etransport/schema",
     "src/anafpy/bnr/schema",
-    "design",
 ]
 
 [tool.ruff.lint]

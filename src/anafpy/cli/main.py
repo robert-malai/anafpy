@@ -916,7 +916,8 @@ _UitExpiryOption = Annotated[
     Parameter(
         help="ANAF's data_exp_uit for the UIT — the date from which it counts "
         "as expired, verbatim from the lookup (YYYY-MM-DD, a timestamp, or "
-        "YYYYMMDD)"
+        "YYYYMMDD). Omit it (ANAF serves it only to the transport organizer) "
+        "and the document prints the OUG 41/2022 window, marked as an estimate"
     ),
 ]
 _UitDeclarantOption = Annotated[str | None, Parameter(help="declarant name")]
@@ -954,6 +955,14 @@ def etransport_card(
     out = output.expanduser()
     _write_bytes(out, pdf, "card PDF")
     print(f"✓ Rendered card -> {out}")
+    window = card.validity()
+    if window.source == "statutory":
+        print(
+            f"  Validity is ESTIMATED: {window.days} calendar days from the "
+            f"transport date (OUG 41/2022 art. 11), last usable day "
+            f"{window.last_valid_day:%d.%m.%Y}. ANAF discloses data_exp_uit "
+            f"only to the transport organizer — pass --expiry when you have it."
+        )
     print("  Message text to send with it:")
     for line in card.summary_text().splitlines():
         print(f"    {line}")

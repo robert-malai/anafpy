@@ -32,7 +32,7 @@ from typing import NamedTuple
 import segno
 from fpdf import FPDF
 
-from .card import UitCard, partner_label
+from .card import UitCard, UitValidity, partner_label
 from .labels import country_text, label_for
 from .models import (
     FlatTransportDocument,
@@ -52,8 +52,10 @@ _ACCENT = (29, 78, 216)
 _SLATE = (51, 65, 85)
 _GRAY = (107, 114, 128)
 _RED = (185, 28, 28)
+_AMBER = (180, 83, 9)
 _LIGHT_GRAY = (243, 244, 246)
 _LIGHT_RED = (254, 226, 226)
+_LIGHT_AMBER = (254, 243, 199)
 _RULE = (229, 231, 235)
 _WHITE = (255, 255, 255)
 
@@ -64,6 +66,19 @@ _CARD_WIDTH_MM = 90.0
 _MARGIN = 64
 _FOOTER_OFFSET = 145
 _DISCLAIMER = "Document informativ, generat local cu anafpy — nu este emis de ANAF."
+
+# A caption takes its colour from its band, so a cell states its own standing.
+_CAPTION_COLOR = {_LIGHT_RED: _RED, _LIGHT_AMBER: _AMBER}
+
+# The expiry cell's wording and colour, by (window source, expired). ANAF's
+# dates get the plain caption and red when lapsed; a derived window says
+# "estimat" and stays amber either way — it is our arithmetic, not a verdict.
+_EXPIRY_STYLE = {
+    ("anaf", False): ("UIT VALABIL PÂNĂ LA", _LIGHT_GRAY, _INK),
+    ("anaf", True): ("A EXPIRAT LA", _LIGHT_RED, _RED),
+    ("statutory", False): ("VALABIL (ESTIMAT) PÂNĂ LA", _LIGHT_AMBER, _INK),
+    ("statutory", True): ("PROBABIL EXPIRAT DIN", _LIGHT_AMBER, _AMBER),
+}
 
 
 class _Cell(NamedTuple):
@@ -218,8 +233,8 @@ class _Sheet:
                 width,
                 cell.caption,
                 style="B",
-                size=26,
-                color=_RED if cell.band == _LIGHT_RED else _GRAY,
+                size=self.fit(cell.caption, width - 24, 26, family="NS", style="B"),
+                color=_CAPTION_COLOR.get(cell.band, _GRAY),
                 align="C",
             )
             family, style = ("Mono", "B") if cell.mono else ("NS", "B")
@@ -259,7 +274,9 @@ def render_card(card: UitCard, *, today: dt.date | None = None) -> bytes:
     sheet = _Sheet(_CARD_PX)
     width = sheet.width
     content = width - 2 * _MARGIN
-    expired = card.is_expired(today)
+    window = card.validity(today)
+    expired = window.expired
+    estimated = window.source == "statutory"
     transport = card.transport
     vehicle = transport.vehicle
     operation = transport.operation_type
@@ -280,12 +297,16 @@ def render_card(card: UitCard, *, today: dt.date | None = None) -> bytes:
     y += 44
 
     if expired:
-        sheet.fill(0, y, width, 66, _RED)
+        # An estimated window states its own uncertainty: amber and "probabil",
+        # because a red EXPIRAT is a verdict and only ANAF's date is one.
+        sheet.fill(0, y, width, 66, _AMBER if estimated else _RED)
         sheet.text(
             _MARGIN,
             y + 14,
             content,
-            "EXPIRAT — UIT-ul nu mai este valabil",
+            "PROBABIL EXPIRAT — verificați valabilitatea"
+            if estimated
+            else "EXPIRAT — UIT-ul nu mai este valabil",
             style="B",
             size=34,
             color=_WHITE,
@@ -311,9 +332,11 @@ def render_card(card: UitCard, *, today: dt.date | None = None) -> bytes:
     )
     y += size + 24
 
-    rows = _card_rows(card, expired=expired)
+    rows = _card_rows(card, window)
     table_height = 140 * len(rows) + 112 + 150 * 3
-    footer_top = sheet.height - _FOOTER_OFFSET
+    # The estimate's basis is a third footer line, and it buys its room from the
+    # QR like every other variation on this page.
+    footer_top = sheet.height - _FOOTER_OFFSET - (37 if estimated else 0)
     qr_size = max(560.0, min(860.0, footer_top - 40 - table_height - y - 70))
 
     sheet.qr(card.uit, (width - qr_size) / 2, y, qr_size)
@@ -351,14 +374,14 @@ def render_card(card: UitCard, *, today: dt.date | None = None) -> bytes:
     footer_y = footer_top
     sheet.fill(_MARGIN, footer_y, content, 2, _RULE)
     footer_y += 23
-    for line, color in _card_footer_lines(card):
+    for line, color in _card_footer_lines(card, window):
         size = sheet.fit(line, content, 27, family="NS", style="")
         sheet.text(_MARGIN, footer_y, content, line, size=size, color=color)
         footer_y += 37
     return bytes(sheet.pdf.output())
 
 
-def _card_rows(card: UitCard, *, expired: bool) -> list[list[_Cell]]:
+def _card_rows(card: UitCard, window: UitValidity) -> list[list[_Cell]]:
     """The plate and date rows.
 
     Every plate is a peer and gets its own cell at full size: three across
@@ -390,41 +413,50 @@ def _card_rows(card: UitCard, *, expired: bool) -> list[list[_Cell]]:
         mono=True,
         value_size=98,
     )
-    if card.uit_expiry is None:
-        # ANAF owns that clock; with no expiry reported we show the transport
-        # date alone rather than inventing a window.
-        rows.append([date])
-    else:
-        # ANAF's data_exp_uit is the first EXPIRED day, so a live card prints the
-        # day before it — the last one the driver may actually use — while an
-        # expired card prints ANAF's date itself, which is when it lapsed.
-        rows.append(
-            [
-                date,
-                _Cell(
-                    "A EXPIRAT LA" if expired else "UIT VALABIL PÂNĂ LA",
-                    f"{card.uit_expiry:%d.%m.%Y}"
-                    if expired
-                    else f"{card.last_valid_day:%d.%m.%Y}",
-                    mono=True,
-                    value_size=98,
-                    color=_RED if expired else _INK,
-                    band=_LIGHT_RED if expired else _LIGHT_GRAY,
-                ),
-            ]
-        )
+    # A live card prints the last day the driver may actually use, an expired
+    # one the day it lapsed — which is the shape ANAF's data_exp_uit already
+    # has. A window ANAF never disclosed prints in amber under a caption that
+    # calls it an estimate, so the two are never read as the same claim.
+    caption, band, color = _EXPIRY_STYLE[window.source, window.expired]
+    rows.append(
+        [
+            date,
+            _Cell(
+                caption,
+                f"{window.first_expired_day:%d.%m.%Y}"
+                if window.expired
+                else f"{window.last_valid_day:%d.%m.%Y}",
+                mono=True,
+                value_size=98,
+                color=color,
+                band=band,
+            ),
+        ]
+    )
     return rows
 
 
-def _card_footer_lines(card: UitCard) -> list[tuple[str, tuple[int, int, int]]]:
+def _card_footer_lines(
+    card: UitCard, window: UitValidity
+) -> list[tuple[str, tuple[int, int, int]]]:
     """Substance first — the filing identifiers carry weight, the disclaimer is
-    fine print."""
+    fine print. A derived window names the rule it was derived from, so the date
+    above can be checked rather than trusted."""
     parts = []
     if card.filed_on is not None:
         parts.append(f"Depusă {card.filed_on:%d.%m.%Y}")
     if card.upload_id:
         parts.append(f"index încărcare {card.upload_id}")
     lines = [(_DISCLAIMER, _GRAY)]
+    if window.source == "statutory":
+        lines.insert(
+            0,
+            (
+                f"Valabilitate estimată: {window.days} zile de la data "
+                "transportului (OUG 41/2022).",
+                _AMBER,
+            ),
+        )
     if parts:
         lines.insert(0, (" · ".join(parts), _SLATE))
     return lines
@@ -464,7 +496,13 @@ def render_details(card: UitCard, *, today: dt.date | None = None) -> bytes:
         pdf.set_text_color(*_INK)
 
     def kv(label: str, value: str, mono: bool = False) -> None:
-        pdf.set_font("NS", "", 9)
+        # The label column is fixed, so a long label would run silently under
+        # the value: step the label down until it fits instead.
+        size = 9.0
+        pdf.set_font("NS", "", size)
+        while size > 6.5 and pdf.get_string_width(f"  {label} ") > 38:
+            size -= 0.5
+            pdf.set_font("NS", "", size)
         pdf.set_text_color(*_GRAY)
         pdf.cell(38, 5.4, f"  {label}")
         pdf.set_font("Mono" if mono else "NS", "B", 9 if mono else 9.5)
@@ -516,14 +554,28 @@ def render_details(card: UitCard, *, today: dt.date | None = None) -> bytes:
         kv("Data depunerii", f"{card.filed_on:%d.%m.%Y}")
     if card.anaf_state:
         kv("Stare ANAF", card.anaf_state)
-    if card.uit_expiry is not None:
-        # Both dates, each labelled: the last usable day for the reader, and
-        # ANAF's own data_exp_uit (the first expired day) for the record.
+    # Both dates, each labelled: the last usable day for the reader, and the
+    # first expired day — data_exp_uit's own shape — for the record. A derived
+    # window says so in the label, gives the rule it was counted by, and never
+    # borrows ANAF's plain "EXPIRAT".
+    window = card.validity(today)
+    validity = (
+        f"până la {window.last_valid_day:%d.%m.%Y} inclusiv "
+        f"(expirat începând cu {window.first_expired_day:%d.%m.%Y})"
+    )
+    if window.source == "statutory":
+        # "ESTIMAT" opens the value rather than qualifying the label: it is the
+        # first thing read either way, and the label column has no room for it.
         validity = (
-            f"până la {card.last_valid_day:%d.%m.%Y} inclusiv "
-            f"(expirat începând cu {card.uit_expiry:%d.%m.%Y})"
+            f"ESTIMAT — {validity}; {window.days} zile calendaristice de la data "
+            "transportului (OUG 41/2022 art. 11). ANAF comunică data expirării "
+            "doar organizatorului transportului."
         )
-        if card.is_expired(today):
+        if window.expired:
+            validity += " PROBABIL EXPIRAT."
+        kv("Valabilitate UIT", validity)
+    else:
+        if window.expired:
             validity += " — EXPIRAT"
         kv("Valabilitate UIT", validity)
 

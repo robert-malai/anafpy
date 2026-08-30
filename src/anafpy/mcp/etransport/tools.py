@@ -42,7 +42,12 @@ from ..artifacts import (
 from ..config import ServerConfig
 from ..context import AppContext
 from ..gate import SubmitResult, issue_token, run_submit, submission_context
-from .models import EtransportXmlInput, PreparedTransport, transport_view
+from .models import (
+    EtransportXmlInput,
+    PreparedTransport,
+    statutory_window,
+    transport_view,
+)
 from .nomenclature import nomenclature_entries
 
 __all__ = ["register"]
@@ -126,13 +131,23 @@ def register(mcp: MCPServer, ctx: AppContext, cfg: ServerConfig) -> None:
             way the driver copies the code on a phone whose PDF viewer will not
             select text.
 
-            Optional context sharpens it: `uit_expiry` (ANAF's data_exp_uit,
-            from etransport_lookup — never computed here; paste it verbatim,
-            timestamp form included) prints the validity and marks a lapsed UIT
-            EXPIRAT. ANAF defines data_exp_uit as the date FROM WHICH the UIT
-            counts as expired, so the document prints the day before it as the
-            last valid one — do not adjust the value yourself; `declarant_name` /
-            `declarant_code` identify who filed.
+            Validity is always printed, from one of two sources, and the
+            returned `validity` object says which — relay it that way:
+
+            - `source: "anaf"` — you passed `uit_expiry` (ANAF's data_exp_uit,
+              from etransport_lookup). Paste it verbatim, timestamp form
+              included, and never adjust it: ANAF defines it as the date FROM
+              WHICH the UIT counts as expired, so the document prints the day
+              before as the last valid one.
+            - `source: "statutory"` — no `uit_expiry` was available, so the
+              window is derived from the declared transport date by OUG 41/2022
+              art. 11 (`days` calendar days). The document prints it in amber,
+              captioned as an estimate. Call it an estimate to the user too, and
+              say ANAF discloses the real date only to the transport organizer.
+
+            Omitting `uit_expiry` is normal and expected — ANAF serves it only
+            to the organizer. `declarant_name` / `declarant_code` identify who
+            filed.
 
             Name the file with `save_as` (a full path). An existing file is
             never replaced unless overwrite=true. The card is informative:
@@ -174,15 +189,16 @@ def register(mcp: MCPServer, ctx: AppContext, cfg: ServerConfig) -> None:
             the declaration that was filed ({"xml": ...} or {"path": ...});
             `uit` is the code ANAF issued for it.
 
-            Optional context sharpens it: `uit_expiry` (ANAF's data_exp_uit,
-            from etransport_lookup — never computed here; paste it verbatim,
-            timestamp form included) prints the validity and marks a lapsed UIT
-            EXPIRAT. ANAF defines data_exp_uit as the date FROM WHICH the UIT
-            counts as expired, so the document prints the day before it as the
-            last valid one — do not adjust the value yourself; `declarant_name` /
-            `declarant_code` identify who filed; `notes` are the caller's own
-            observations, printed in an Observații section — filing-specific
-            facts only, never boilerplate.
+            Validity works exactly as in etransport_uit_card, and the
+            returned `validity` object reports its `source`: pass `uit_expiry`
+            (ANAF's data_exp_uit from etransport_lookup) verbatim when you have
+            it, and when you do not — the normal case, since ANAF serves it only
+            to the transport organizer — the document prints the OUG 41/2022
+            art. 11 window derived from the transport date, labelled ESTIMAT.
+
+            `declarant_name` / `declarant_code` identify who filed; `notes` are
+            the caller's own observations, printed in an Observații section —
+            filing-specific facts only, never boilerplate.
 
             Name the file with `save_as` (a full path). An existing file is
             never replaced unless overwrite=true. The document is informative:
@@ -225,6 +241,11 @@ def register(mcp: MCPServer, ctx: AppContext, cfg: ServerConfig) -> None:
             The names are accepted anywhere the etransport_prepare_* tools take
             an enum-coded field.
 
+            operation_types entries also carry validity_days — how many calendar
+            days a UIT for that operation stays usable, counting the transport
+            date in (OUG 41/2022 art. 11). Read it from here rather than
+            recalling it.
+
             unit_codes is code-only: the closed UN/ECE Rec 20/21 list ANAF
             accepts for a goods line's unit_code — check it before guessing a
             unit (kilogram is KGM, piece is H87; 'KG'/'PCS' are not on the
@@ -247,6 +268,13 @@ def register(mcp: MCPServer, ctx: AppContext, cfg: ServerConfig) -> None:
             Show the preview for approval; then call etransport_submit with
             document={'xml': <the returned xml>}, the token, and confirm=True.
             Does NOT file.
+
+            `uit_window` states how long the issued UIT would be usable — the
+            OUG 41/2022 art. 11 window counted from the declared transport date,
+            not a value from ANAF. Put it in front of the human with the
+            preview: the transport date is still changeable now and fixed once
+            filed, so a route that cannot finish inside the window is worth
+            catching here.
 
             Enum-coded fields accept ANAF codes or member names (see
             etransport_nomenclature).
@@ -350,6 +378,11 @@ def register(mcp: MCPServer, ctx: AppContext, cfg: ServerConfig) -> None:
             Show the preview for approval; then call etransport_submit with the
             token and the same cif. Does NOT file. (There is no standalone
             validator — ANAF validates the declaration on upload.)
+
+            For a declaration, `uit_window` states the OUG 41/2022 art. 11
+            validity the issued UIT would carry, counted from the declared
+            transport date — review it with the human while the date can still
+            change.
         """),
     )
     async def etransport_prepare(
@@ -430,6 +463,7 @@ def _prepare_transport(
         confirmation_token=token,
         cif=resolved,
         transport_preview=preview,
+        uit_window=statutory_window(preview),
         message=_prepare_message(parsed=preview is not None),
     )
 
@@ -470,11 +504,13 @@ def _prepare_composed_transport(
         payload=xml,
         context=submission_context(resolved),
     )
+    preview = transport_view(xml)
     return PreparedTransport(
         valid=True,
         confirmation_token=token,
         cif=resolved,
-        transport_preview=transport_view(xml),
+        transport_preview=preview,
+        uit_window=statutory_window(preview),
         xml=xml.decode("utf-8"),
         message="composed; not pre-validated (ANAF validates on upload). Review "
         "the preview with the user, then pass the returned xml and token to "
@@ -529,11 +565,13 @@ async def _render_uit_pdf(
         path = await asyncio.to_thread(write_artifact, target, pdf, overwrite=overwrite)
     except (AnafError, ValidationError) as exc:
         return {"ok": False, "message": str(exc)}
+    window = card.validity()
     result: dict[str, object] = {
         "ok": True,
         "saved_as": path,
         "uit": card.uit,
-        "expired": card.is_expired(),
+        "expired": window.expired,
+        "validity": window.model_dump(mode="json"),
     }
     if not details:
         result["summary_text"] = card.summary_text()

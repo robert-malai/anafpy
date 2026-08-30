@@ -8,6 +8,11 @@ sync); the human labels live one layer down, in
 non-enum list is ``unit_codes`` — the UN/ECE Rec 20/21 codes ANAF's Schematron
 enforces for goods lines (the XSD only pattern-checks them), carried in
 :mod:`.unitcodes`; its entries are code-only.
+
+``operation_types`` entries also carry ``validity_days``, the UIT window
+OUG 41/2022 art. 11 gives that operation. It rides on the nomenclature so the
+model states the window from data rather than from a playbook's prose, which
+would be the copy to drift if the ordinance is ever amended.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from ...etransport.schema.schema_etr_v2_20230126 import (
     TipConfirmareType,
     TipDocumentType,
 )
+from ...etransport.validity import statutory_validity_days
 from ...exceptions import AnafConfigError
 from .unitcodes import UNIT_CODES
 
@@ -60,5 +66,10 @@ def nomenclature_entries(kind: str) -> list[dict[str, object]]:
     return [
         {"name": member.name, "code": member.value}
         | ({"label": label} if (label := labels.get(member.name)) else {})
+        | (
+            {"validity_days": statutory_validity_days(member)}
+            if isinstance(member, CodTipOperatiuneType)
+            else {}
+        )
         for member in enum_cls
     ]

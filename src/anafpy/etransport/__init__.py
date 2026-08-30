@@ -7,7 +7,7 @@ dependencies; rendering a card without ``anafpy[cards]`` raises a clear
 
 from __future__ import annotations
 
-from .card import CardRenderModule, UitCard, load_cardpdf, partner_label
+from .card import CardRenderModule, UitCard, UitValidity, load_cardpdf, partner_label
 from .client import ETransportClient
 from .models import (
     FlatConfirmation,
@@ -36,6 +36,11 @@ from .models import (
     render_etransport,
 )
 from .schema.schema_etr_v2_20230126 import ETransport
+from .validity import (
+    statutory_first_expired_day,
+    statutory_last_valid_day,
+    statutory_validity_days,
+)
 
 __all__ = [
     "CardRenderModule",
@@ -61,6 +66,7 @@ __all__ = [
     "Notification",
     "NotificationMessage",
     "UitCard",
+    "UitValidity",
     "UploadResult",
     "build_etransport",
     "load_cardpdf",
@@ -68,4 +74,7 @@ __all__ = [
     "partner_label",
     "read_flat_transport",
     "render_etransport",
+    "statutory_first_expired_day",
+    "statutory_last_valid_day",
+    "statutory_validity_days",
 ]

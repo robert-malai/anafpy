@@ -8,3 +8,7 @@ lists one-to-one.
 ::: anafpy.etransport.client
 
 ::: anafpy.etransport.models
+
+::: anafpy.etransport.card
+
+::: anafpy.etransport.validity

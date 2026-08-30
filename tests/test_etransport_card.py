@@ -23,12 +23,19 @@ from anafpy.etransport import (
     load_cardpdf,
 )
 from anafpy.etransport.labels import COUNTY_LABELS, country_text, label_for
-from anafpy.etransport.schema.schema_etr_v2_20230126 import CodJudetType
+from anafpy.etransport.schema.schema_etr_v2_20230126 import (
+    CodJudetType,
+    CodTipOperatiuneType,
+)
+from anafpy.etransport.validity import statutory_validity_days
 from anafpy.exceptions import AnafConfigError
 
 # Fictional, and check-digit valid: the last two characters must be the last two
 # digits of the ASCII sum of the first fourteen (BR-019), which `_Uit` enforces.
 UIT = "9T5R204811730587"
+
+
+_RO_PARTNER = {"name": "SC BENEFICIAR SRL", "country": "RO", "code": "RO87654321"}
 
 
 def _transport(**overrides: object) -> FlatTransport:
@@ -101,6 +108,16 @@ def _pages(pdf: bytes) -> list[str]:
     from pypdf import PdfReader
 
     return [page.extract_text() for page in PdfReader(io.BytesIO(pdf)).pages]
+
+
+def _squashed(pdf: bytes) -> str:
+    """Page 1 with whitespace runs collapsed.
+
+    fpdf2 justifies a wrapped ``multi_cell``, which lands in the text layer as
+    runs of spaces between words — real text, wrong shape for a substring
+    assertion about wording.
+    """
+    return " ".join(_pages(pdf)[0].split())
 
 
 def _page_size_mm(pdf: bytes) -> tuple[float, float]:
@@ -241,14 +258,91 @@ def test_the_expiry_date_is_the_first_expired_day_not_the_last_valid_one() -> No
     assert "expirat începând cu 15.08.2026" in details
 
 
-def test_unknown_expiry_is_never_invented() -> None:
-    """ANAF owns that clock: with no data_exp_uit reported the card shows the
-    transport date alone rather than a computed window."""
+def test_an_undisclosed_expiry_falls_to_the_statutory_window() -> None:
+    """ANAF serves data_exp_uit only to the transport organizer, so a declarant
+    who is not the carrier has no date to print. The window is not ANAF's
+    discretion, though — art. 11 fixes it — so the card derives it and says so.
+
+    The sample is an AIC: 15 calendar days counting the transport date (01.08)
+    in, hence 15.08 as the last usable day.
+    """
     card = _card(uit_expiry=None)
-    assert card.is_expired(dt.date(2030, 1, 1)) is False
-    text = _pages(load_cardpdf().render_card(card))[0]
-    assert "DATA TRANSPORT" in text
-    assert "VALABIL" not in text
+    window = card.validity(dt.date(2026, 8, 3))
+    assert (window.source, window.days) == ("statutory", 15)
+    assert window.last_valid_day == dt.date(2026, 8, 15)
+    assert window.first_expired_day == dt.date(2026, 8, 16)
+    assert window.expired is False
+
+    text = _pages(load_cardpdf().render_card(card, today=dt.date(2026, 8, 3)))[0]
+    assert "VALABIL (ESTIMAT) PÂNĂ LA" in text
+    assert "15.08.2026" in text
+    # The rule is named on the card, so the date can be checked, not just trusted.
+    assert "Valabilitate estimată: 15 zile" in text
+    assert "OUG 41/2022" in text
+
+
+def test_a_derived_window_never_borrows_anafs_red_expired() -> None:
+    """Past its derived window the card must not read as live — but the verdict
+    is ours, not ANAF's, so it is hedged rather than stated."""
+    card = _card(uit_expiry=None)
+    assert card.is_expired(dt.date(2026, 8, 16)) is True
+
+    text = _pages(load_cardpdf().render_card(card, today=dt.date(2026, 8, 16)))[0]
+    assert "PROBABIL EXPIRAT — verificați valabilitatea" in text
+    assert "PROBABIL EXPIRAT DIN" in text
+    assert "16.08.2026" in text
+    assert "EXPIRAT — UIT-ul nu mai este valabil" not in text
+
+    summary = card.summary_text(dt.date(2026, 8, 16))
+    assert "PROBABIL EXPIRAT" in summary
+    assert "valabil (estimat) până la 15.08.2026 inclusiv" in summary
+
+
+def test_anafs_date_wins_over_the_statutory_window() -> None:
+    """The statute is the fallback, never an override: whatever ANAF reported is
+    what the card prints, even when the two disagree."""
+    card = _card(uit_expiry=dt.date(2026, 8, 10))  # earlier than art. 11's 16.08
+    window = card.validity(dt.date(2026, 8, 3))
+    assert (window.source, window.days) == ("anaf", None)
+    assert window.first_expired_day == dt.date(2026, 8, 10)
+    assert window.last_valid_day == dt.date(2026, 8, 9)
+
+    text = _pages(load_cardpdf().render_card(card, today=dt.date(2026, 8, 3)))[0]
+    assert "UIT VALABIL PÂNĂ LA" in text
+    assert "09.08.2026" in text
+    assert "ESTIMAT" not in text
+
+
+def test_the_statutory_window_is_five_days_outside_the_listed_operations() -> None:
+    """Art. 11 gives 15 days to AIC and the lohn / call-off / DIN legs, 5 to the
+    rest. DIE is deliberately on the 5-day side: only DIN is named in the
+    sources, and an unverified 15 would be the dangerous direction to guess."""
+    assert statutory_validity_days(CodTipOperatiuneType.AIC) == 15
+    assert statutory_validity_days(CodTipOperatiuneType.DIN) == 15
+    assert statutory_validity_days(CodTipOperatiuneType.DIE) == 5
+    assert statutory_validity_days(CodTipOperatiuneType.TTN) == 5
+
+    domestic = _card(
+        uit_expiry=None, transport=_transport(operation_type="TTN", partner=_RO_PARTNER)
+    )
+    window = domestic.validity(dt.date(2026, 8, 1))
+    assert (window.days, window.last_valid_day) == (5, dt.date(2026, 8, 5))
+
+    text = _pages(load_cardpdf().render_card(domestic, today=dt.date(2026, 8, 1)))[0]
+    assert "Valabilitate estimată: 5 zile" in text
+
+
+def test_details_labels_a_derived_window_as_an_estimate() -> None:
+    """The A4 copy goes to the partner company, so it spells out both dates, the
+    count they were derived from, and why ANAF's own date is absent."""
+    text = _squashed(
+        load_cardpdf().render_details(_card(uit_expiry=None), today=dt.date(2026, 8, 3))
+    )
+    assert "ESTIMAT" in text
+    assert "până la 15.08.2026 inclusiv" in text
+    assert "expirat începând cu 16.08.2026" in text
+    assert "15 zile calendaristice de la data transportului" in text
+    assert "doar organizatorului transportului" in text
 
 
 def test_details_carries_the_whole_filing() -> None:
@@ -327,6 +421,8 @@ def test_summary_text_leads_with_the_bare_uit() -> None:
     assert "CB1234AB + CB5678CD" in summary
     # data_exp_uit 15.08 is the first EXPIRED day, so the last usable one is 14.08.
     assert "valabil până la 14.08.2026 inclusiv" in summary
+    # ANAF's own date is stated flat: no "(estimat)", no rule to cite.
+    assert "estimat" not in summary
 
 
 def test_from_upload_refuses_a_rejected_upload() -> None:

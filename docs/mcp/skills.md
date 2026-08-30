@@ -37,11 +37,14 @@ conversation itself. The playbook walks Claude through the full flow:
    A4 detail document (`etransport_uit_details`) for the partner company or the
    user's records.
 
-The card prints the UIT's validity when ANAF discloses it. Often it does not:
-`data_exp_uit` is served only by the `info` endpoint, which ANAF scopes to the
-**transport organizer**, so a filing where someone else carries the goods has no
-readable expiry. The playbook says so rather than guessing a date, and the card
-then carries the transport date alone.
+The card always prints the UIT's validity — but says where it comes from.
+ANAF's own date, `data_exp_uit`, is served only by the `info` endpoint, which
+ANAF scopes to the **transport organizer**: a filing where someone else carries
+the goods has no readable expiry, which is the usual case. Rather than leaving
+the driver with no date, the card then shows the window the law fixes (OUG
+41/2022 art. 11, counted from the transport date) in amber and labelled as an
+estimate, and the playbook relays it as one. The window is also shown at the
+preview step, while the transport date can still be changed.
 
 Before extracting anything, the playbook orients on the legal requirements
 (OUG 41/2022 and the ANAF/AVR procedure): whether the transport must be declared

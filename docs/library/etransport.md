@@ -128,13 +128,37 @@ for the partner company. Both keep every value as selectable text — that is wh
 they are PDFs rather than images — and `summary_text()` is the paste-into-a-chat
 fallback for phones whose PDF viewer will not select text.
 
-`uit_expiry` is not computed: ANAF owns that clock and reports it as
-`data_exp_uit` on the `info` endpoint — pass the value verbatim, in whatever
-shape ANAF returned it. It is the date **from which** the UIT counts as expired,
-not the last valid day, so the documents print `last_valid_day`
-(`data_exp_uit - 1`) under "valabil până la" and mark a lapsed UIT `EXPIRAT`
-from `data_exp_uit` itself. Omit it and the card shows the transport date alone
-rather than inventing a window.
+`uit_expiry` is never computed: it is ANAF's `data_exp_uit`, reported by the
+`info` endpoint — pass it verbatim, in whatever shape ANAF returned it. It is
+the date **from which** the UIT counts as expired, not the last valid day, so
+the documents print `data_exp_uit - 1` under "valabil până la" and mark a lapsed
+UIT `EXPIRAT` from `data_exp_uit` itself.
+
+Most filings have none to pass, because ANAF scopes `info` to the transport
+**organizer** — a declarant who is not the carrier reads back nothing. The
+documents then fall to the **statutory** window instead of leaving the driver
+with no date: OUG 41/2022 art. 11 counted from the declared transport date, by
+[`anafpy.etransport.validity`](../api/etransport.md). It is rendered as an
+estimate and never as ANAF's word — amber, captioned `VALABIL (ESTIMAT) PÂNĂ
+LA`, with the rule named in the footer, and `PROBABIL EXPIRAT` rather than a red
+`EXPIRAT` once past.
+
+`card.validity(today)` is where the two meet, and the only place to read the
+resolved window from:
+
+```python
+window = card.validity()
+window.source            # "anaf" when data_exp_uit was supplied, else "statutory"
+window.last_valid_day    # last day of use, inclusive
+window.first_expired_day # the day it lapses — data_exp_uit's own shape
+window.days              # the statutory count (5 or 15); None when it is ANAF's
+window.expired
+```
+
+ANAF's date always wins when present. Where the sources leave doubt the shorter
+window is encoded — DIE gets 5, since only DIN is named — because an estimate
+that runs long puts a driver on the road with a lapsed UIT, while one that runs
+short only prompts a check.
 
 Both documents are **informative** — generated locally, not issued by ANAF, and
 they say so on their face. The QR encodes the raw 16-character UIT and nothing
@@ -146,5 +170,6 @@ Each shape is its own CLI command and MCP tool (`etransport_uit_card` /
 
 ```bash
 anafpy etransport card declaration.xml <UIT> -o card.pdf --expiry 2026-08-15
+anafpy etransport card declaration.xml <UIT> -o card.pdf   # statutory estimate
 anafpy etransport details declaration.xml <UIT> -o details.pdf --note "..."
 ```

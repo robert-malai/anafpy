@@ -671,6 +671,14 @@ async def test_prepare_then_submit_files_transport(tmp_path: Path) -> None:
     prepared = await _call(server, "etransport_prepare", document=_transport_doc())
     assert prepared["transport_preview"]["total_gross_weight"] == "120"
     assert prepared["transport_preview"]["operation_type"] == "TTN"
+    # The window the issued UIT would carry, while the transport date can still
+    # be changed: a TTN gets art. 11's 5 days, counting 28.06 in.
+    assert prepared["uit_window"] == {
+        "days": 5,
+        "from_day": "2026-06-28",
+        "last_valid_day": "2026-07-02",
+        "first_expired_day": "2026-07-03",
+    }
     out = await _call(
         server,
         "etransport_submit",
@@ -726,6 +734,14 @@ async def test_prepare_declaration_composes_and_submit_files_it(tmp_path: Path) 
     assert prepared["xml"].startswith("<?xml")
     assert 'codDeclarant="123"' in prepared["xml"]
     assert prepared["transport_preview"]["operation_type"] == "TTN"
+    # The window the issued UIT would carry, while the transport date can still
+    # be changed: a TTN gets art. 11's 5 days, counting 28.06 in.
+    assert prepared["uit_window"] == {
+        "days": 5,
+        "from_day": "2026-06-28",
+        "last_valid_day": "2026-07-02",
+        "first_expired_day": "2026-07-03",
+    }
     out = await _call(
         server,
         "etransport_submit",
@@ -855,6 +871,31 @@ async def test_etransport_uit_card_writes_a_pdf_and_offers_the_message_text(
     assert out.read_bytes().startswith(b"%PDF")
     assert result["summary_text"].splitlines()[0] == _UIT
     assert "base64" not in str(result)
+    # A date the caller supplied is ANAF's word, and the result says so — the
+    # model has to be able to tell it from a window we derived.
+    assert result["validity"]["source"] == "anaf"
+    assert result["validity"]["last_valid_day"] == "2026-08-14"
+
+
+async def test_uit_card_falls_back_to_the_statutory_window(tmp_path: Path) -> None:
+    """ANAF discloses data_exp_uit only to the transport organizer, so most
+    filings have none to pass. The card still carries a validity — derived from
+    the transport date — and the result reports it as derived so the model can
+    relay it as an estimate rather than as ANAF's date."""
+    server = create_server(_config(tmp_path))
+    out = tmp_path / "card.pdf"
+    result = await _call(
+        server,
+        "etransport_uit_card",
+        document=_transport_doc(),
+        uit=_UIT,
+        save_as=str(out),
+    )
+    assert result["ok"] is True
+    assert result["validity"]["source"] == "statutory"
+    assert result["validity"]["days"] == 5  # the sample declaration is a TTN
+    assert "(estimat)" in result["summary_text"]
+    assert "OUG 41/2022" in result["summary_text"]
 
 
 async def test_uit_card_takes_data_exp_uit_verbatim_from_a_lookup(
@@ -953,6 +994,11 @@ async def test_etransport_nomenclature_lists_names_and_codes(tmp_path: Path) -> 
     ttn = next(e for e in ops["entries"] if e["name"] == "TTN")
     assert ttn["code"] == 30
     assert "teritoriul" in ttn["label"]
+    # The art. 11 window rides on the nomenclature, so the model reads the
+    # 5-vs-15 split off data instead of recalling it: 5 for a domestic TTN,
+    # 15 for an intra-community acquisition.
+    assert ttn["validity_days"] == 5
+    assert next(e for e in ops["entries"] if e["name"] == "AIC")["validity_days"] == 15
     docs = await _call(server, "etransport_nomenclature", kind="document_types")
     aviz = next(e for e in docs["entries"] if e["code"] == 30)
     assert aviz["label"] == "Aviz de însoțire a mărfii"

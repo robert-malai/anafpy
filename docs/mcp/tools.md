@@ -88,16 +88,16 @@ Read tools, freely callable:
 | `etransport_list` | Recent notifications for a CIF |
 | `etransport_get_status` | An upload's processing status |
 | `etransport_lookup` | Active declarations / UIT lookups |
-| `etransport_uit_card` | Render a filed declaration's UIT as the driver card — a phone-shaped PDF written to a caller-given path — plus the plain-text message to send with it |
-| `etransport_uit_details` | Render the whole filing as the A4 detail document (goods table, caller's observations), written to a caller-given path |
-| `etransport_nomenclature` | The XSD code lists (counties, border points, customs offices, operation types, …) plus the UN/ECE unit codes — names are accepted anywhere a coded field is |
+| `etransport_uit_card` | Render a filed declaration's UIT as the driver card — a phone-shaped PDF written to a caller-given path — plus the plain-text message to send with it. Prints ANAF's `data_exp_uit` when you have one, otherwise the OUG 41/2022 window derived from the transport date, marked as an estimate |
+| `etransport_uit_details` | Render the whole filing as the A4 detail document (goods table, caller's observations), written to a caller-given path; same validity treatment as the card |
+| `etransport_nomenclature` | The XSD code lists (counties, border points, customs offices, operation types, …) plus the UN/ECE unit codes — names are accepted anywhere a coded field is; operation types also carry the UIT's validity in calendar days |
 
 Filing is split **prepare → confirm → submit**, and nothing reaches ANAF without
 your explicit approval:
 
 | Tool | What it does |
 |---|---|
-| `etransport_prepare_declaration` | Compose a new declaration (or a correction, via `correction_of_uit`) from structured fields |
+| `etransport_prepare_declaration` | Compose a new declaration (or a correction, via `correction_of_uit`) from structured fields; the preview states the validity window the issued UIT would carry, while the transport date can still be changed |
 | `etransport_prepare_deletion` | Compose a UIT deletion |
 | `etransport_prepare_confirmation` | Compose an arrival confirmation |
 | `etransport_prepare_vehicle_change` | Compose a vehicle change |

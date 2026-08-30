@@ -81,9 +81,11 @@ Timing the user must be able to meet:
   of import, respectively **before the vehicle starts moving**.
 - The UIT is valid **5 calendar days** counted from (and including) the declared
   transport date — **15 days** for AIC, transit to storage (DIN), and the lohn /
-  call-off stock legs (LHI/LHE, SCI/SCE). ANAF reports the end of the window as
-  `data_exp_uit`: the **first day the UIT is already expired**, not the last
-  usable one. Using a UIT past its window is a sanctioned contravention.
+  call-off stock legs (LHI/LHE, SCI/SCE). Read the count per operation from
+  `etransport_nomenclature` (`kind: operation_types`, field `validity_days`)
+  rather than from memory. ANAF reports the end of the window as `data_exp_uit`:
+  the **first day the UIT is already expired**, not the last usable one. Using a
+  UIT past its window is a sanctioned contravention.
 - Once the vehicle starts moving (or crosses the border inbound), the declared
   data **can no longer be changed** — the one exception is the vehicle
   identification (see "After filing").
@@ -180,6 +182,11 @@ filing CIF differs from the configured default). It returns:
 
 - `transport_preview` — the declaration parsed back from the XML, with computed
   `goods_count` and `total_gross_weight`;
+- `uit_window` — the validity the issued UIT would carry (`days`, `from_day`,
+  `last_valid_day`, `first_expired_day`), counted from the declared transport
+  date by art. 11. Put it in front of the user: the transport date is still
+  changeable now and fixed the moment the vehicle moves, so a route that cannot
+  realistically finish inside the window is worth catching here;
 - `xml` — the exact document that will be filed;
 - `confirmation_token` — single-use, bound to those XML bytes and the CIF.
 
@@ -213,6 +220,7 @@ from the original request.
 | Carrier | <carrier_name> — <carrier_country>, <carrier_code> |
 | Vehicle | <plate> + trailer(s) <trailer1>, <trailer2> |
 | Transport date | <YYYY-MM-DD> |
+| UIT valid until | <last_valid_day, dd.mm.yyyy> inclusiv (<days> zile cf. art. 11) |
 | From | <locality, county, street no. — or border point / customs office> |
 | To | <locality, county, street no. — or border point / customs office> |
 | Reference | <declarant_ref> |
@@ -244,6 +252,8 @@ Template rules:
 - **Drop, don't blank**: omit the *Correction of UIT*, *Post-incident*, and
   *Reference* rows, the trailer suffix, and the ⚠️ line entirely when unset;
   inside the goods table an unset optional cell is `—`.
+- **UIT valid until** comes from `uit_window`, verbatim — the law's window, not
+  ANAF's word, and the span the driver will have to work inside.
 - **Totals**: total value is the sum of `value_ron` over the lines that carry
   one — if some don't, write `<sum> RON (<n> of <goods_count> lines)`. When
   any line was converted, append the rate and `rate_date` to the Goods heading
@@ -270,7 +280,8 @@ once processing finishes: poll `etransport_get_status` with the returned
 
 On **`ok`**, do all four, in order:
 
-1. **Report the UIT** prominently, with its validity window (step 0) and the
+1. **Report the UIT** prominently, with the validity window from the prepare
+   step's `uit_window` — the same one the user approved — and the
    obligations that attach to it — relay them, the user may not know them: hand
    the code to the driver **before the vehicle moves** (or by border entry), to
    be presented in any intelligible form together with the transport documents
@@ -280,24 +291,29 @@ On **`ok`**, do all four, in order:
    leaving the country, sanctioned since 1 January 2026; the declaration is now
    immutable except for a vehicle change — a data mistake discovered later
    needs a correction filing.
-2. **Read the expiry back**: `etransport_lookup` with `organizer_cui` = the
-   declaration's `carrier_code` and `uit` = the new code. ANAF scopes this
-   endpoint to the **transport organizer**, so expect a record only when the
-   filing CIF is also the carrier; any other filing answers `error` (*"Nu
-   exista informatii pentru aceasta solicitare"*) with empty `items` — not a
-   failure and not worth retrying: ANAF does not expose the expiry to the
-   declarant. Say so in one line and continue. (`etransport_list` confirms the
-   filing landed, but carries no `data_exp_uit`.)
-3. **Render and present the UIT card — always**, expiry or not: it is the
-   document the driver carries. Call `etransport_uit_card` with the filed
-   `xml`, the UIT, `uit_expiry` exactly as the lookup returned it (omit it
-   when the lookup returned none — never compute or adjust a date yourself;
-   the card derives the last valid day), and `save_as` a full path named after
-   the code (e.g. `UIT-<code>.pdf`) in the folder the source documents came
-   from or wherever the user keeps artifacts — ask when there is no natural
-   place. Present the saved path with the returned `summary_text` as the
-   message to send alongside the file — it is also how the driver copies the
-   code on a phone whose PDF viewer won't select text.
+2. **Try to read ANAF's expiry back**: `etransport_lookup` with
+   `organizer_cui` = the declaration's `carrier_code` and `uit` = the new code.
+   ANAF scopes this endpoint to the **transport organizer**, so expect a record
+   only when the filing CIF is also the carrier; any other filing answers
+   `error` (*"Nu exista informatii pentru aceasta solicitare"*) with empty
+   `items` — not a failure and not worth retrying: ANAF simply does not disclose
+   the expiry to a declarant who is not the organizer. Fall through to the
+   statutory window and say which of the two you are quoting.
+   (`etransport_list` confirms the filing landed, but carries no
+   `data_exp_uit`.)
+3. **Render and present the UIT card — always**: it is the document the driver
+   carries. Call `etransport_uit_card` with the filed `xml`, the UIT, and
+   `save_as` a full path named after the code (e.g. `UIT-<code>.pdf`) in the
+   folder the source documents came from or wherever the user keeps artifacts —
+   ask when there is no natural place. Pass `uit_expiry` **only** when the
+   lookup returned one, exactly as it came back — never compute or adjust a date
+   yourself. With none, the card prints the art. 11 window instead, in amber and
+   captioned as an estimate; the result's `validity.source` says which you got
+   (`anaf` or `statutory`). Relay it the way the document does — quote an
+   estimate as an estimate, and add that ANAF discloses the real date only to
+   the transport organizer. Present the saved path with the returned
+   `summary_text` as the message to send alongside the file — it is also how the
+   driver copies the code on a phone whose PDF viewer won't select text.
 4. **Offer the detail document** — `etransport_uit_details`, the whole filing
    on A4 with the goods table, the copy for the partner company or the user's
    own records — and render it if the user wants it (`notes` carry

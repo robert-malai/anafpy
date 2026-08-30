@@ -1130,7 +1130,8 @@ enters the model's context; only the card's `summary_text` returns as text,
 deliberately, because it IS a message.
 
 **The card is a PDF, not an image.** The obvious artifact is a PNG to send over
-WhatsApp, and several were prototyped (`design/`). They lost on one point: a PNG
+WhatsApp, and several were prototyped (`design/`, which since 2026-08-31 renders
+every state of the shipped card instead of carrying its own copy of the layout). They lost on one point: a PNG
 is pixels, so nothing on it can be copied, and the code's whole purpose is to be
 transcribed into someone else's system. The PDF holds the same layout with every
 value as selectable text and the QR drawn as vector rectangles. It is sized
@@ -1152,10 +1153,51 @@ Pass Type ID certificate, and live updates need a hosted service — out of scop
 per §11. The card prints the validity date instead and renders a red `EXPIRAT`
 banner past it, which covers the actual need: a stale card announces itself.
 
-**ANAF owns the expiry clock.** `uit_expiry` is only ever what ANAF reports as
-`data_exp_uit`; with none supplied the card prints the transport date alone
-rather than computing a 15-day window. The same restraint as everywhere else in
-this repo: we do not synthesise a value ANAF is authoritative for.
+**ANAF owns the expiry clock — the statute owns the window (revised
+2026-08-31).** As shipped, `uit_expiry` was only ever ANAF's `data_exp_uit`, and
+with none supplied the card printed the transport date alone rather than
+computing a window: the same restraint as everywhere else in this repo, we do
+not synthesise a value ANAF is authoritative for. Half of that still holds; the
+other half was wrong about who is authoritative.
+
+`data_exp_uit` is served by `info` alone, and ANAF scopes `info` to the
+transport **organizer** (`cui_op`). A declarant who is not also the carrier
+therefore never reads it back — the lookup answers *"Nu exista informatii pentru
+aceasta solicitare"* — which makes the no-date case the **common** one, not the
+edge. The card handed to the driver carried no validity at all, and the
+alternative to printing a derived date was never "no date": it was the
+dispatcher guessing one.
+
+And the window is not ANAF's discretion. OUG 41/2022 art. 11 fixes it at 5
+calendar days from the declared transport date, 15 for AIC / the lohn and
+call-off legs / DIN, and ANAF applies it mechanically — its own info example
+pairs `data_transp` 2024-06-24 with `data_exp_uit` 2024-06-29 (reference §4).
+So the guard is **labelling, not abstention**:
+
+- `etransport/validity.py` is the one home of the art. 11 table, and
+  `UitCard.validity(today)` the one place ANAF's date wins over ours. It returns
+  a `UitValidity` carrying `source` (`anaf` | `statutory`) with the dates, so
+  every consumer can tell them apart; `uit_expiry` still holds ANAF's value
+  alone. `is_expired()` now reads that resolved window instead of answering
+  `False` when ANAF told us nothing — silence from an endpoint we are not
+  entitled to query is not evidence that a UIT still lives.
+- Rendering keeps the two visibly distinct: ANAF's dates stay grey/red, a
+  derived window is **amber** throughout, captioned `VALABIL (ESTIMAT) PÂNĂ LA`
+  / `PROBABIL EXPIRAT DIN`, with a footer line naming the rule and the A4 value
+  opening `ESTIMAT —`. Red stays reserved for a verdict ANAF backs, so a lapsed
+  estimate says *probabil*. `summary_text()` mirrors it.
+- The same table feeds two places the estimate is worth more than on the card:
+  `etransport_prepare_*` returns `uit_window` (the transport date is still a
+  choice at prepare time and fixed after filing), and
+  `etransport_nomenclature`'s `operation_types` carry `validity_days`, so the
+  model reads the 5-vs-15 split off data rather than off a playbook's prose.
+- **Where the sources leave doubt, the shorter window is encoded.** DIE (70)
+  gets 5: only DIN is named in the guide (legal reference §5) and in the
+  ordinance text vendored here. The errors are not symmetric — an estimate that
+  runs long puts a driver on the road with a lapsed UIT, a contravention, while
+  one that runs short makes a card announce itself early and prompts a check.
+  **Unverified**: DIE's window has not been read against the ordinance's own
+  text; doing so is the way to close it.
 
 **Corrected 2026-08-28 — `data_exp_uit` is the first expired day.** The card
 shipped printing it under `UIT VALABIL PÂNĂ LA`, and `is_expired` compared with
