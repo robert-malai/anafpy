@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,8 @@ from anafpy.exceptions import AnafConfigError
 # Fictional, and check-digit valid: the last two characters must be the last two
 # digits of the ASCII sum of the first fourteen (BR-019), which `_Uit` enforces.
 UIT = "9T5R204811730587"
+
+_SANS = "NotoSans-Regular.ttf"
 
 
 _RO_PARTNER = {"name": "SC BENEFICIAR SRL", "country": "RO", "code": "RO87654321"}
@@ -118,6 +121,42 @@ def _squashed(pdf: bytes) -> str:
     assertion about wording.
     """
     return " ".join(_pages(pdf)[0].split())
+
+
+def _drawn(pdf: bytes, page: int = 0) -> list[tuple[str, float]]:
+    """Every text run of a page with the point size it was drawn at.
+
+    The table's figure columns answer an over-wide value by shrinking, which is
+    invisible to :func:`_pages` — the text is all there either way.
+    """
+    import io
+
+    from pypdf import PdfReader
+
+    runs: list[tuple[str, float]] = []
+
+    def visit(text: str, cm: object, tm: object, font: object, size: float) -> None:
+        if text.strip():
+            runs.append((text, size))
+
+    PdfReader(io.BytesIO(pdf)).pages[page].extract_text(visitor_text=visit)
+    return runs
+
+
+def _text_width(text: str, size: float) -> float:
+    """Millimetres the shipped face takes for ``text`` at ``size``.
+
+    The renderer's own measure, so a column-fit assertion says "this stays
+    inside its column" rather than pinning a wrap point that a font revision
+    would move.
+    """
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.add_font("NS", "", str(files("anafpy.etransport") / "_fonts" / _SANS))
+    pdf.add_page()
+    pdf.set_font("NS", "", size)
+    return pdf.get_string_width(text)
 
 
 def _page_size_mm(pdf: bytes) -> tuple[float, float]:
@@ -364,6 +403,94 @@ def test_details_carries_the_whole_filing() -> None:
         "Greutatea brută",
     ):
         assert expected in text
+
+
+def test_details_wraps_a_long_goods_description_inside_its_column() -> None:
+    """An fpdf2 cell neither wraps nor clips, so a 70-character denumireMarfa
+    used to print straight over the Scop and Cod NC columns, leaving the tariff
+    code unreadable (issue #13). The description now breaks inside its own
+    column: every word survives, in order, and none of it reaches the columns
+    beside it.
+    """
+    name = "Rafturi metalice paleti STOW (uzate, demontate) - 12 stalpi, 120 traverse"
+    transport = _transport(
+        goods=[
+            {
+                "operation_scope": "COMERCIALIZARE",
+                "name": name,
+                "quantity": Decimal("5000.00"),
+                "unit_code": "KGM",
+                "gross_weight": Decimal("5000.00"),
+                "net_weight": Decimal("5000.00"),
+                "tariff_code": "730890",
+                "value_ron": Decimal("9386.24"),
+            }
+        ]
+    )
+    text = _pages(load_cardpdf().render_details(_card(transport=transport)))[0]
+
+    words = name.split()
+    # Long enough not to match a CUI or a date elsewhere on the page.
+    distinctive = [word for word in words if len(word) > 4]
+    fragments = [
+        line[min(line.index(word) for word in words if word in line) :]
+        for line in (raw.strip() for raw in text.splitlines())
+        if any(word in line for word in distinctive)
+    ]
+
+    assert len(fragments) > 1  # it wrapped rather than ran on
+    assert " ".join(fragments).split() == words  # and nothing was lost doing so
+    # 47mm is the Denumire marfă column: anything wider prints over Scop.
+    assert all(_text_width(fragment, 8.0) <= 47.0 for fragment in fragments)
+    assert not any("730890" in fragment for fragment in fragments)
+
+
+def test_details_shrinks_a_figure_that_will_not_fit_its_column() -> None:
+    """The figure columns carry no word to break on, so an over-wide value is
+    set smaller instead of wrapped — a quantity is one reading, on one line."""
+    transport = _transport(
+        goods=[
+            {
+                "operation_scope": "COMERCIALIZARE",
+                "name": "Sare",
+                "quantity": Decimal("1234567890.00"),
+                "unit_code": "KGM",
+                "gross_weight": Decimal("5000.00"),
+                "net_weight": Decimal("5000.00"),
+                "tariff_code": "25010099",
+                "value_ron": Decimal("9386.24"),
+            }
+        ]
+    )
+    pdf = load_cardpdf().render_details(_card(transport=transport))
+
+    text, size = next(run for run in _drawn(pdf) if "1.234.567.890,00 KGM" in run[0])
+    # 26mm is the Cantitate column: at the body size this quantity overruns it.
+    assert _text_width(text, 8.0) > 26.0
+    assert size < 8.0
+    assert _text_width(text, size) <= 26.0
+
+
+def test_details_repeats_the_goods_header_on_every_page() -> None:
+    """The goods table is the only unbounded section. A row that would cross
+    the bottom margin moves to the next page whole, and takes the column strip
+    with it — an overleaf row is still read under its own headings."""
+    good = {
+        "operation_scope": "COMERCIALIZARE",
+        "name": "Bicarbonat de sodiu, saci 25 kg",
+        "quantity": Decimal("1000.00"),
+        "unit_code": "KGM",
+        "gross_weight": Decimal("1000.00"),
+        "net_weight": Decimal("1000.00"),
+        "tariff_code": "28363000",
+        "value_ron": Decimal("2500.00"),
+    }
+    transport = _transport(goods=[good] * 30)
+    pages = _pages(load_cardpdf().render_details(_card(transport=transport)))
+
+    assert len(pages) > 1
+    assert all("Denumire marfă" in page for page in pages)
+    assert "TOTAL — 30 linii" in pages[-1]
 
 
 def test_details_omits_the_notes_section_when_there_are_none() -> None:

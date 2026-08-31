@@ -17,6 +17,12 @@ inspector has to squint at. And the QR is sized *last*, from whatever vertical
 space the table leaves — so a filing with a second trailer, or an expired
 banner, gives up QR rather than crowding the page.
 
+On the detail document the goods table is where the caller's prose meets a fixed
+column, and an fpdf2 cell neither wraps nor clips: the free-text columns are
+wrapped to their own width, the codes and figures beside them fit-shrink instead
+(they carry no word to break on), and a row that would cross the bottom margin
+moves to the next page with the column strip above it.
+
 The bundled Noto faces are not decoration: fpdf2's built-in core fonts are
 Latin-1 only, so ``ș`` and ``ț`` cannot be represented in them, and this is a
 Romanian document.
@@ -27,7 +33,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import segno
 from fpdf import FPDF
@@ -91,6 +97,35 @@ class _Cell(NamedTuple):
     value_size: float = 46
     color: tuple[int, int, int] = _INK
     band: tuple[int, int, int] = _LIGHT_GRAY
+
+
+class _Column(NamedTuple):
+    """One goods-table column: its width, its header, and how values sit in it.
+
+    ``wrap`` marks the two free-text columns — the caller's (and ANAF's) prose,
+    of no bounded length. Everything else is a code or a figure: short by
+    construction, with no word to break on, so those fit-shrink instead.
+    """
+
+    width: float
+    header: str
+    align: str = "L"
+    wrap: bool = False
+
+
+# 180mm of content, in ANAF's own reading order for a goods line.
+_GOODS_COLUMNS = (
+    _Column(7.0, "#"),
+    _Column(47.0, "Denumire marfă", wrap=True),
+    _Column(24.0, "Scop", wrap=True),
+    _Column(18.0, "Cod NC"),
+    _Column(26.0, "Cantitate", align="R"),
+    _Column(19.0, "Net (kg)", align="R"),
+    _Column(19.0, "Brut (kg)", align="R"),
+    _Column(20.0, "Valoare RON", align="R"),
+)
+_GOODS_LINE_H = 4.4
+_GOODS_ROW_PAD = 2.0
 
 
 def _amount(value: Decimal | None) -> str:
@@ -635,6 +670,7 @@ def _details_goods(pdf: FPDF, goods: list[FlatTransportGood], content_w: float) 
     """The goods table, last because it is the only unbounded section: a long
     one spills onto page 2 while everything identifying the filing stays on
     page 1."""
+    left = pdf.l_margin
     pdf.ln(3)
     pdf.set_fill_color(*_SLATE)
     pdf.set_text_color(*_WHITE)
@@ -643,79 +679,129 @@ def _details_goods(pdf: FPDF, goods: list[FlatTransportGood], content_w: float) 
         content_w, 6, "  BUNURI TRANSPORTATE", fill=True, new_x="LMARGIN", new_y="NEXT"
     )
     pdf.ln(1.5)
+    _goods_header(pdf, left)
 
-    widths = [7.0, 47.0, 24.0, 18.0, 26.0, 19.0, 19.0, 20.0]
-    headers = [
-        "#",
-        "Denumire marfă",
-        "Scop",
-        "Cod NC",
-        "Cantitate",
-        "Net (kg)",
-        "Brut (kg)",
-        "Valoare RON",
-    ]
-    numeric = {"Cantitate", "Net (kg)", "Brut (kg)", "Valoare RON"}
-    pdf.set_font("NS", "B", 7.5)
-    pdf.set_draw_color(*_RULE)
-    for width, header in zip(widths, headers, strict=True):
-        pdf.cell(
-            width,
-            6,
-            f" {header}",
-            border=0,
-            fill=True,
-            align="R" if header in numeric else "L",
-        )
-    pdf.ln()
-
-    pdf.set_text_color(*_INK)
-    pdf.set_font("NS", "", 8)
     net_total = Decimal(0)
     value_total = Decimal(0)
     for index, good in enumerate(goods, start=1):
         net_total += good.net_weight or Decimal(0)
         value_total += good.value_ron or Decimal(0)
-        row = [
-            str(index),
-            good.name,
-            label_for(good.operation_scope),
-            good.tariff_code or "—",
-            f"{_amount(good.quantity)} {good.unit_code}",
-            _amount(good.net_weight),
-            _amount(good.gross_weight),
-            _amount(good.value_ron),
-        ]
-        for width, value, header in zip(widths, row, headers, strict=True):
-            pdf.cell(
-                width,
-                6.4,
-                f" {value}",
-                border="B",
-                align="R" if header in numeric else "L",
-            )
-        pdf.ln()
+        _goods_row(
+            pdf,
+            left,
+            [
+                str(index),
+                good.name,
+                label_for(good.operation_scope),
+                good.tariff_code or "—",
+                f"{_amount(good.quantity)} {good.unit_code}",
+                _amount(good.net_weight),
+                _amount(good.gross_weight),
+                _amount(good.value_ron),
+            ],
+            rule=True,
+        )
 
     line_word = "linie" if len(goods) == 1 else "linii"
-    totals = [
-        "",
-        f"TOTAL — {len(goods)} {line_word}",
-        "",
-        "",
-        "",
-        _amount(net_total),
-        _amount(sum((g.gross_weight for g in goods), Decimal(0))),
-        _amount(value_total),
-    ]
-    pdf.set_font("NS", "B", 8)
-    pdf.set_fill_color(*_LIGHT_GRAY)
-    for width, value, header in zip(widths, totals, headers, strict=True):
-        pdf.cell(
-            width,
-            6.4,
-            f" {value}",
-            border=0,
-            fill=True,
-            align="R" if header in numeric else "L",
-        )
+    _goods_row(
+        pdf,
+        left,
+        [
+            "",
+            f"TOTAL — {len(goods)} {line_word}",
+            "",
+            "",
+            "",
+            _amount(net_total),
+            _amount(sum((g.gross_weight for g in goods), Decimal(0))),
+            _amount(value_total),
+        ],
+        bold=True,
+        fill=True,
+    )
+
+
+def _goods_header(pdf: FPDF, left: float) -> None:
+    """The column strip — redrawn on every page the table reaches, so a row
+    that lands overleaf is still read under its own headings."""
+    pdf.set_x(left)
+    pdf.set_font("NS", "B", 7.5)
+    pdf.set_fill_color(*_SLATE)
+    pdf.set_text_color(*_WHITE)
+    for column in _GOODS_COLUMNS:
+        pdf.cell(column.width, 6, f" {column.header}", fill=True, align=column.align)
     pdf.ln()
+
+
+def _goods_row(
+    pdf: FPDF,
+    left: float,
+    values: list[str],
+    *,
+    bold: bool = False,
+    fill: bool = False,
+    rule: bool = False,
+) -> None:
+    """One row, laid out line by line rather than as a strip of fpdf2 cells.
+
+    A cell neither wraps nor clips, so a 70-character goods description used to
+    print straight over the tariff code beside it. Here the free-text columns
+    are wrapped to their own width first, the row takes the depth of the
+    deepest of them, and a row that would cross the bottom margin moves to the
+    next page whole, header and all.
+    """
+    style = "B" if bold else ""
+    pdf.set_font("NS", style, 8)
+    cells = [
+        _wrapped(pdf, value, column.width) if column.wrap else [value]
+        for column, value in zip(_GOODS_COLUMNS, values, strict=True)
+    ]
+    height = max(len(cell) for cell in cells) * _GOODS_LINE_H + _GOODS_ROW_PAD
+    if pdf.get_y() + height > pdf.page_break_trigger:
+        pdf.add_page()
+        _goods_header(pdf, left)
+
+    top = pdf.get_y()
+    width = sum(column.width for column in _GOODS_COLUMNS)
+    if fill:
+        pdf.set_fill_color(*_LIGHT_GRAY)
+        pdf.rect(left, top, width, height, style="F")
+    pdf.set_text_color(*_INK)
+    x = left
+    for column, cell in zip(_GOODS_COLUMNS, cells, strict=True):
+        for offset, line in enumerate(cell):
+            _fit_font(pdf, f" {line} ", column.width, style=style)
+            pdf.set_xy(x, top + _GOODS_ROW_PAD / 2 + offset * _GOODS_LINE_H)
+            pdf.cell(column.width, _GOODS_LINE_H, f" {line}", align=column.align)
+        x += column.width
+    if rule:
+        pdf.set_draw_color(*_RULE)
+        pdf.line(left, top + height, left + width, top + height)
+    pdf.set_xy(left, top + height)
+
+
+def _wrapped(pdf: FPDF, text: str, width: float) -> list[str]:
+    """``text`` broken into the lines it takes inside a ``width`` column, in the
+    font already selected — fpdf2's own line breaking, asked for a measurement
+    instead of a drawing, so what is measured is what will be drawn."""
+    lines = cast(
+        "list[str]",
+        pdf.multi_cell(
+            width - _GOODS_ROW_PAD,
+            _GOODS_LINE_H,
+            text,
+            dry_run=True,
+            output="LINES",
+        ),
+    )
+    return lines or [""]
+
+
+def _fit_font(pdf: FPDF, text: str, width: float, *, style: str = "") -> None:
+    """Select the largest body size, down to 5.5pt, that keeps ``text`` inside
+    ``width`` — the fallback for the columns that carry no word to break on."""
+    size = 8.0
+    pdf.set_font("NS", style, size)
+    while size > 5.5 and pdf.get_string_width(text) > width:
+        size -= 0.25
+        pdf.set_font("NS", style, size)

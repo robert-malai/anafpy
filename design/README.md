@@ -35,6 +35,7 @@ Plus the content edges that move the layout:
 | `uit-card-minimal-estimated.pdf` | Nothing optional supplied — declarant falls to an em dash, the footer loses its identifiers line |
 | `uit-details.pdf` / `uit-details-notes.pdf` | The A4 detail document with ANAF's window, without and with caller notes |
 | `uit-details-estimated.pdf` / `uit-details-estimated-expired.pdf` | The same with a derived window, live and lapsed |
+| `uit-details-long-goods.pdf` | Goods descriptions wider than their column, over a table long enough to break the page |
 | `summaries.txt` | `summary_text()` for the four validity states — the chat message that travels with the card |
 | `*-preview.png` | Raster previews, for viewing only |
 
@@ -190,6 +191,16 @@ software, and a fuller two-page declaration printout.
   day *and* the first expired day, because `data_exp_uit` is the latter and the
   record should show what ANAF actually said. A derived window adds the count
   and the article it was counted by.
+- **The goods table typesets each column by what it carries.** An fpdf2 cell
+  neither wraps nor clips, so a 70-character `denumireMarfa` printed straight
+  over *Scop* and *Cod NC* and took the tariff code with it (issue #13, fixed
+  2026-08-31). The two free-text columns — description and scope, prose of no
+  bounded length — are wrapped to their own width and the row takes the depth
+  of the deeper one. The codes and figures beside them have no word to break
+  on, so those fit-shrink instead, down to 5.5pt: a quantity is one reading and
+  belongs on one line. A row that would cross the bottom margin moves to the
+  next page whole and takes the column strip with it, so an overleaf row is
+  still read under its own headings.
 - **The two unbounded sections sit at the end** — the goods table, then the
   observations. Everything that identifies the filing (parties, vehicle, route,
   UIT, validity) is fixed-length and stays together on page 1; only the

@@ -1233,6 +1233,12 @@ rendering the alternatives rather than reasoning about them:
 - The **QR is sized last**, from whatever vertical space the table leaves
   (clamped 560–860px), so a rarer shape gives up QR instead of crowding the
   footer.
+- The detail document's goods table **wraps its two free-text columns and
+  fit-shrinks the rest** (added 2026-08-31 for issue #13): an fpdf2 cell neither
+  wraps nor clips, so a long `denumireMarfa` printed over the tariff code beside
+  it. Codes and figures carry no word to break on, hence shrink rather than
+  wrap; a row that would cross the bottom margin moves to the next page whole,
+  with the column strip repeated above it.
 - Fiscal codes print **verbatim** — a foreign VAT number already carries its
   country prefix, so "Ungaria (HU) · HU11223344" says it twice. A Romanian code
   carries none, which is why `country` stays a field of its own and the detail

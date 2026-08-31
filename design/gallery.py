@@ -47,6 +47,33 @@ NOTES = [
 ]
 
 
+#: A goods table pushed along both of its unbounded axes: descriptions wider
+#: than their column, and enough lines to run past the bottom margin.
+LONG_GOODS_NAMES = (
+    "Rafturi metalice paletizate STOW (uzate, demontate) - 12 stâlpi, 120 traverse",
+    "Bicarbonat de sodiu, saci 25 kg",
+    "Folie stretch manuala 500 mm x 300 m, 23 microni, bax 6 role",
+)
+
+LONG_GOODS = [
+    {
+        "operation_scope": "COMERCIALIZARE",
+        "name": LONG_GOODS_NAMES[index % len(LONG_GOODS_NAMES)],
+        # One line carries a quantity wider than its column, for the fit-shrink
+        # the figure columns answer with — they have no word to break on.
+        "quantity": Decimal("1234567890.00")
+        if index == 1
+        else Decimal("1000.00") * (index + 1),
+        "unit_code": "KGM",
+        "gross_weight": Decimal("1020.00") * (index + 1),
+        "net_weight": Decimal("1000.00") * (index + 1),
+        "tariff_code": "73084000",
+        "value_ron": Decimal("1850.00") * (index + 1),
+    }
+    for index in range(14)
+]
+
+
 def transport(
     *,
     transport_date: dt.date = LIVE_TRANSPORT,
@@ -237,6 +264,9 @@ def main() -> None:
         "uit-details": card(uit_expiry=LIVE_EXPIRY),
         "uit-details-notes": card(uit_expiry=LIVE_EXPIRY, notes=NOTES),
         "uit-details-estimated": card(),
+        "uit-details-long-goods": card(
+            uit_expiry=LIVE_EXPIRY, transport=transport(goods=LONG_GOODS)
+        ),
         "uit-details-estimated-expired": card(
             transport=transport(transport_date=STALE_TRANSPORT)
         ),
