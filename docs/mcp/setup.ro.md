@@ -247,7 +247,8 @@ pași pe care Claude le urmează singur când îi ceri în limbaj obișnuit:
 
 - **`etransport-declare`** — depune o declarație e-Transport și obține UIT-ul
   pornind de la orice sursă (un e-mail, o factură PDF, un CMR), cu garanțiile
-  legale incluse. Funcționează cu instalarea de bază (pașii 1–4).
+  legale incluse. Îi ajunge un „am de făcut un UIT" sau „trebuie să declar un
+  transport". Funcționează cu instalarea de bază (pașii 1–4).
 - **`declaratie-prepare`** — construiește, validează, semnează și depune o
   declarație fiscală din date-sursă nestructurate (are nevoie de pasul 7).
 - **`personal-income-summary`** — adună adeverințele de venit anuale din SPV

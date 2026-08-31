@@ -5,8 +5,11 @@ description: >
   data found in any source — an email, a PDF invoice, a CMR, a spreadsheet, or the
   conversation. Use when the user wants to declare a transport, get/generate a UIT,
   file an e-Transport declaration, correct an already-issued one, or asks whether a
-  transport must be declared and what the law requires of them. Drives the anafpy
-  MCP tools (etransport_prepare_declaration → etransport_submit).
+  transport must be declared and what the law requires of them. Trigger on Romanian
+  phrasing too, with or without diacritics — "am de făcut un UIT" / "am de facut un
+  UIT", "trebuie să declar un transport" / "trebuie sa declar un transport", "vreau
+  un cod UIT", "am de declarat o marfă". Drives the anafpy MCP tools
+  (etransport_prepare_declaration → etransport_submit).
 ---
 
 # File an e-Transport declaration

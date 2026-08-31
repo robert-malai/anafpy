@@ -19,7 +19,10 @@ tools — steps 2–4 of the same walkthrough).
 
 Files an e-Transport declaration and obtains a UIT code from transport data found
 in **any source** — an email, a PDF invoice, a CMR, a spreadsheet, or the
-conversation itself. The playbook walks Claude through the full flow:
+conversation itself. It triggers on plain-language asks in Romanian or English,
+with or without diacritics (*"am de făcut un UIT"*, *"trebuie să declar un
+transport"*, "declare this transport", "get me a UIT"). The playbook walks Claude
+through the full flow:
 
 1. **Extract** the transport data from the source you point it at.
 2. **Map** it onto the structured declaration (looking up ANAF codes via
