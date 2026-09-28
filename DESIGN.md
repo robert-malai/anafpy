@@ -778,6 +778,22 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   stays a direct dependency because v2 dropped it from the SDK's own set while
   `ServerConfig` still builds on it. v2 serves 2025-era clients from the same
   stdio server, so nothing changes for end users.
+- **Anticipated vs crash, translated once** (2026-09-28). SDK 2.2 split tool
+  failures in two: its own `ToolError` / `ResourceError` reach the model with
+  their text, and *every other exception* is a crash — logged server-side,
+  answered with a bare `Error executing tool <name>`. Under 2.0 any
+  exception's text went through, and the tools rely on that: an `AnafError`
+  is where the remediation lives (the accepted values of a nomenclature, the
+  refusal to overwrite, "log in first"), so redacting it breaks the
+  self-healing flows. `AnafServer` (`mcp/app.py`) overrides `call_tool` and
+  `read_resource` and re-raises a crash whose `__cause__` is an `AnafError`
+  as the anticipated kind. Chosen over raising `ToolError` in the tools: the
+  library's errors stay the one hierarchy (clients raise them from far below
+  the MCP layer), and one seam cannot be forgotten by the next tool. Only
+  `AnafError` is translated — a genuine crash keeps the SDK's redaction; a
+  pydantic `ValidationError` raised while building a model from the
+  caller's arguments is turned into an `AnafConfigError` where it happens
+  (`spv_cerere`). The pin moves to `mcp>=2.2,<3`, the floor of that split.
 
 ## 9. Tooling
 

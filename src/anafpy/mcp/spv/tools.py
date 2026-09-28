@@ -44,6 +44,7 @@ from inspect import cleandoc
 from pathlib import Path
 
 from mcp.server import MCPServer
+from pydantic import ValidationError
 
 from ..._transport.base import ROMANIA_TZ
 from ...exceptions import AnafAuthError, AnafConfigError, AnafError
@@ -417,17 +418,22 @@ def register(mcp: MCPServer, ctx: AppContext, config: ServerConfig) -> None:
         lunas: int | None = None,
         force: bool = False,
     ) -> dict[str, object]:
-        request = ReportRequest(
-            type_=resolve_report_type(tip),
-            cui=config.require_cif(cui),
-            year=an,
-            month=luna,
-            reason=motiv,
-            registration_number=numar_inregistrare,
-            branch_cui=cui_pui,
-            start_month=lunai,
-            end_month=lunas,
-        )
+        try:
+            request = ReportRequest(
+                type_=resolve_report_type(tip),
+                cui=config.require_cif(cui),
+                year=an,
+                month=luna,
+                reason=motiv,
+                registration_number=numar_inregistrare,
+                branch_cui=cui_pui,
+                start_month=lunai,
+                end_month=lunas,
+            )
+        except ValidationError as exc:
+            # The per-type parameter rules: the model's mistake to read and
+            # correct, so it travels as an AnafError rather than as a crash.
+            raise AnafConfigError(str(exc)) from exc
         key = "&".join(f"{k}={v}" for k, v in sorted(request.wire_params().items()))
         today = datetime.now(tz=ROMANIA_TZ).date().isoformat()
         if not force and (logged := ctx.spv_request_log.get(key)) is not None:

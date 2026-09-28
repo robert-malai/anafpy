@@ -5,16 +5,34 @@ closed on shutdown) and the ``auth_status`` tool, and delegates everything else 
 including ``auth_status``'s consequential sibling ``auth_login``
 (:mod:`.login`) — to the service packages' and feature modules' ``register``
 functions.
+
+The server class is :class:`AnafServer`: the SDK withholds the text of any
+exception that is not its own ``ToolError`` / ``ResourceError`` (a crash, as far
+as it can tell), and an :class:`~anafpy.exceptions.AnafError` is the opposite —
+the anticipated failure whose message tells the model what to do next. The
+translation happens once, here, so the tools keep raising the library's errors.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from inspect import cleandoc
+from typing import Any
 
 from mcp.server import MCPServer
+from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver.exceptions import (
+    ResourceError,
+    ToolError,
+    UnexpectedResourceError,
+    UnexpectedToolError,
+)
+from mcp.types import CallToolResult, InputRequiredResult
+from pydantic import AnyUrl
 
+from ..exceptions import AnafError
 from . import (
     bnr,
     declaratii,
@@ -30,7 +48,7 @@ from .artifacts import READ_ONLY
 from .config import ServerConfig
 from .context import AppContext, AuthStatus
 
-__all__ = ["create_server", "main"]
+__all__ = ["AnafServer", "create_server", "main"]
 
 _INSTRUCTIONS = """\
 Typed access to Romania's ANAF e-Factura (e-invoicing) and e-Transport services.
@@ -144,6 +162,39 @@ ANAF's 1 request/second rule, so large batches take time.
 """
 
 
+class AnafServer(MCPServer):
+    """:class:`MCPServer` that reports an ``AnafError`` as an anticipated failure.
+
+    Anything else a tool or resource raises stays what the SDK makes of it: a
+    crash, logged with its traceback and answered with the generic message.
+    """
+
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        context: Context[Any, Any] | None = None,
+    ) -> CallToolResult | InputRequiredResult:
+        """Call a tool, keeping an ``AnafError``'s message for the model."""
+        try:
+            return await super().call_tool(name, arguments, context)
+        except UnexpectedToolError as exc:
+            if isinstance(cause := exc.__cause__, AnafError):
+                raise ToolError(f"{exc}: {cause}") from cause
+            raise
+
+    async def read_resource(
+        self, uri: AnyUrl | str, context: Context[Any, Any] | None = None
+    ) -> Iterable[ReadResourceContents] | InputRequiredResult:
+        """Read a resource, keeping an ``AnafError``'s message for the client."""
+        try:
+            return await super().read_resource(uri, context)
+        except UnexpectedResourceError as exc:
+            if isinstance(cause := exc.__cause__, AnafError):
+                raise ResourceError(f"{exc}: {cause}") from cause
+            raise
+
+
 def create_server(config: ServerConfig | None = None) -> MCPServer:
     """Build the configured :class:`MCPServer` server (stdio transport)."""
     cfg = config or ServerConfig()
@@ -156,7 +207,7 @@ def create_server(config: ServerConfig | None = None) -> MCPServer:
         finally:
             await ctx.aclose()
 
-    mcp = MCPServer("anafpy", instructions=_INSTRUCTIONS, lifespan=lifespan)
+    mcp = AnafServer("anafpy", instructions=_INSTRUCTIONS, lifespan=lifespan)
 
     @mcp.tool(
         title="ANAF: Authentication status",

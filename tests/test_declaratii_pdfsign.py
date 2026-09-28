@@ -118,7 +118,7 @@ def _build_pdf_with_attachment() -> bytes:
 
 async def _validate(signed: bytes, trust_der: bytes) -> object:
     vc = ValidationContext(
-        extra_trust_roots=[ax509.Certificate.load(trust_der)], allow_fetching=False
+        trust_roots=[ax509.Certificate.load(trust_der)], allow_fetching=False
     )
     reader = PdfFileReader(io.BytesIO(signed))
     return await async_validate_pdf_signature(reader.embedded_signatures[0], vc)

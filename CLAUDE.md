@@ -219,7 +219,10 @@ src/anafpy/
     pdfsign.py           # sign_pdf via pyHanko — needs anafpy[declaratii]
   mcp/                   # MCP server — split BY SERVICE; the shared core is
                          # only what 2+ services genuinely use
-    app.py               # composition root: create_server, main, auth_status
+    app.py               # composition root: create_server, main, auth_status;
+                         # AnafServer = the ONE place an AnafError becomes the
+                         # SDK's ToolError/ResourceError (anything else the SDK
+                         # redacts as a crash) — tools keep raising AnafError
     config.py            # ServerConfig — BaseSettings over ANAFPY_*
     context.py           # AppContext: providers + lazy clients + token ledger
                          # + SPV same-day request log; token_store selection

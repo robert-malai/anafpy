@@ -602,15 +602,19 @@ async def test_list_messages_corrects_the_window_from_anaf_clock() -> None:
 
 
 @respx.mock
-async def test_list_messages_corrects_an_explicit_range_by_clamping_end_only() -> None:
+async def test_list_messages_corrects_an_explicit_range_by_clamping_end_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # The caller named absolute instants: the correction pulls `end` back inside
     # ANAF's now and leaves `start` exactly where they put it. The instants are
     # anchored to the fixture's quoted clock, not the machine's — like the
-    # field-observed fault, `end` runs one second past ANAF's moment. (A
-    # wall-clock `now` here made the test expire once real time left the
-    # fixture's date more than the window's 3 days behind.)
+    # field-observed fault, `end` runs one second past ANAF's moment. The
+    # machine's clock is pinned to that same moment: the window is validated
+    # against local time before it is sent, so under a wall-clock `now` the
+    # test expired once real time left the fixture's date 60 days behind.
     end = datetime(2026, 7, 30, 15, 15, 28, tzinfo=ROMANIA_TZ)
     start = end - timedelta(days=3)
+    monkeypatch.setattr(time, "time", end.timestamp)
     route = respx.get(f"{BASE}/listaMesajePaginatieFactura").mock(
         side_effect=[
             httpx.Response(200, json={"eroare": _CLOCK_FAULT}),
