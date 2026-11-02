@@ -67,7 +67,7 @@ async def poll_until[ResultT](
     try:
         async for attempt in AsyncRetrying(
             retry=retry_if_result(pending),
-            wait=wait_exponential_jitter(initial=initial_wait, max=max_wait),
+            wait=wait_exponential_jitter(multiplier=initial_wait, max=max_wait),
             stop=stop_after_delay(timeout),
             reraise=True,
         ):

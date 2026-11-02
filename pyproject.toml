@@ -26,7 +26,8 @@ dependencies = [
     # >=2.9 for PEP 695 generic BaseModels (anafpy.public.models.RegistryLookup).
     "pydantic>=2.9",
     "xsdata-pydantic>=24.5",
-    "tenacity>=8.3",
+    # >=9.2 for wait_exponential_jitter(multiplier=...), which replaced `initial`.
+    "tenacity>=9.2",
     # Unverified `exp` reads to schedule token refresh (verification is ANAF's job).
     "pyjwt>=2.8",
     # OS-credential-store token backend (macOS Keychain, Windows Credential Manager,
