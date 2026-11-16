@@ -68,8 +68,8 @@ context managers.
   for the [twelve common SME forms](../anaf-reference/declaratii/forms/README.md)):
   a DUKIntegrator wrapper (`-v`/`-p`), the `nr_evid` payment-evidence-number
   composers (D300, D100/D710, D101, D301), and a pyHanko qualified-signature
-  path where the raw op is delegated to the OS token (macOS Keychain /
-  CryptoTokenKit; no key material in-process). Filing works two ways: manually
+  path where the raw op is delegated to the OS token (macOS Keychain, or
+  the Windows certificate store; no key material in-process). Filing works two ways: manually
   on the portal, or through `DeclarationUploadClient` (certificate login +
   upload on ANAF's declaration portal), which the MCP server exposes as a
   two-step gated filing flow (opt-out via `ANAFPY_DECLARATII_UPLOAD=off`).

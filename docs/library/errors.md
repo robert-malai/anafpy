@@ -18,9 +18,13 @@ The `AnafError` hierarchy covers failures of the *machinery*:
 - `AnafDownloadExpiredError` — the message left ANAF's 60-day download window;
   carries `message_id`. **Terminal**. See below.
 - `AnafConfigError` — configuration problems (missing credentials, bad env).
+- `InvoiceValidationError` — raised by `render_invoice` / `upload_invoice` when
+  the local rule set reports fatal findings; carries them on `.report`.
 
 `AnafRateLimitError`, `AnafWafRejectionError` and `AnafDownloadExpiredError` all
 subclass `AnafResponseError`, so code that already catches that keeps working.
+`AnafResponseError` itself subclasses `AnafTransportError` — catch the response
+classes first when you need to tell "never completed" from "ANAF answered".
 
 ## The firewall block page
 
@@ -68,9 +72,11 @@ except AnafDownloadExpiredError:
 
 Outcomes of the *filing itself* are returned, never raised:
 
-- an upload rejection (e-Factura `nok`, BR-RO findings) is
-  `UploadResult.accepted is False` with the findings attached;
-- a rejected message's processing state is `MessageStatus.state`;
+- an upload ANAF refuses at submission is `UploadResult.accepted is False`,
+  with ANAF's messages in `.errors`;
+- a document rejected after processing (e-Factura `nok`, BR-RO findings) is
+  `MessageStatus.state is MessageState.NOK`, with `.errors` and the errors file
+  behind `.download_id`;
 - a validation verdict is a `RemoteValidationResult`.
 
 The rationale: a rejection is a *successful* API call telling you something about
@@ -79,8 +85,8 @@ said no" with "the network is down".
 
 ## The 200-with-error-note split
 
-ANAF's listing endpoints (e-Factura `list_messages` / `list_notifications`,
-e-Transport `info`) overload a single response note — e-Factura's `eroare`,
+ANAF's listing endpoints (e-Factura `list_messages`; e-Transport
+`list_notifications` and `info`) overload a single response note — e-Factura's `eroare`,
 e-Transport's `Errors[].errorMessage` (for `info`, also a top-level `error`
 string) — for both "no results in this window" and genuine errors. anafpy
 classifies the note:
@@ -92,19 +98,27 @@ classifies the note:
 So an empty loop body means "nothing there", and you don't have to parse
 Romanian error strings yourself.
 
-## No transport retry (one documented exception)
+## No transport retry (the documented exceptions)
 
-Every discrete method on the OAuth and public clients makes exactly one HTTP
-call: one call, one result-or-raise. This is a hard rule so the non-idempotent
-`upload` POST is never silently repeated. Bring your own retry policy (and make
-it idempotency-aware). The built-in `upload_and_wait` loop polls on the
-*business* "still processing" state only — a transport error inside it
-propagates immediately.
+Discrete methods on the OAuth and public clients do no transport retry: one
+call, one result-or-raise. This is a hard rule so a failed `upload` POST is
+never silently repeated. Bring your own retry policy (and make it
+idempotency-aware). The built-in poll loops (`upload_and_wait`, and SPV's
+`wait_for_report`) wait on the *business* "still processing" state only — a
+transport error inside them propagates immediately.
 
-Two deliberate exceptions. The [SPV client](spv.md): its reads (`list_messages`,
-`download_document`) retry transient *network* failures with backoff, because
-every SPV operation is an idempotent GET. Received HTTP answers — including
-429 — still surface immediately, and `request_report` stays single-shot. And
-`render_invoice_pdf(validate=False)`: a firewall block on the skip-validation URL
-is followed by one attempt at the validating URL (a different endpoint, on a
-stateless public service that files nothing) instead of losing the PDF.
+The deliberate exceptions:
+
+- **The auth layer.** A 401 triggers one token refresh and one re-send of the
+  same request — ANAF refused it unprocessed, so nothing is filed twice.
+- **The [SPV client](spv.md).** Its reads (`list_messages`,
+  `download_document`) retry transient *network* failures with backoff, because
+  every SPV operation is an idempotent GET. Received HTTP answers — including
+  429 — still surface immediately, and `request_report` stays single-shot.
+- **`render_invoice_pdf(validate=False)`.** A firewall block on the
+  skip-validation URL is followed by one attempt at the validating URL (a
+  different endpoint, on a stateless public service that files nothing) instead
+  of losing the PDF.
+- **e-Factura `list_messages`.** When ANAF rejects a `days` window by quoting
+  its own clock, the page is re-asked once on that clock — a correction, not a
+  retry (see the [e-Factura guide](efactura.md)).

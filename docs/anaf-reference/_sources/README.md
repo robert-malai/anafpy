@@ -4,10 +4,17 @@ Authoritative originals behind the compiled reference. **Do not edit.** When ANA
 publishes a new revision, add the new file (don't overwrite) and bump the citing doc's
 frontmatter.
 
+**Last drift check: 2026-11-16** — every file in the tables below that has a
+source URL (the PDFs, the Schematron, the rate-limit note, the 11 swagger
+pages, the `servicii-web/` files) was re-downloaded and is byte-identical to
+ANAF's current copy; the ClientSPV repo head is still the pinned commit; and
+neither *Informații tehnice* page lists a newer revision of anything. The
+live captures (`stared112/`, `decl-portal/`) were not re-taken.
+
 | File | Source URL | Revision | Retrieved |
 |---|---|---|---|
 | `Oauth_procedura_inregistrare_aplicatii_portal_ANAF.pdf` | https://static.anaf.ro/static/10/Anaf/Informatii_R/API/Oauth_procedura_inregistrare_aplicatii_portal_ANAF.pdf | Instrucțiuni actualizate 23.06.2022 | 2026-06-28 |
-| `efactura_prezentare_api.pdf` | https://mfinante.gov.ro/static/10/eFactura/prezentare%20api%20efactura.pdf | (undated; current as linked from informații-tehnice) | 2026-06-28 |
+| `efactura_prezentare_api.pdf` | https://mfinante.gov.ro/static/10/eFactura/prezentare%20api%20efactura.pdf | actualizat 13.02.2025 (date shown on informații-tehnice; file byte-identical on 2026-11-16) | 2026-06-28 |
 | `etransport_29072024.pdf` | https://mfinante.gov.ro/static/10/eTransport/etransport_29072024.pdf | 29.07.2024 | 2026-06-28 |
 | `limiteApeluriAPI.txt` | https://mfinante.gov.ro/static/10/eFactura/limiteApeluriAPI.txt | (undated) | 2026-07-02 |
 | `eTransport-validation_v.2.0.2_12082024.sch` | https://mfinante.gov.ro/static/10/eTransport/eTransport-validation_v.2.0.2_12082024.sch | v2.0.2, 12.08.2024 | 2026-07-03 |
@@ -26,7 +33,7 @@ retrieved 2026-07-02; revision = the date shown next to the link on informații-
 |---|---|---|
 | `efactura-swagger/upload.html` | https://mfinante.gov.ro/static/10/eFactura/upload.html | actualizat 04.02.2025 |
 | `efactura-swagger/staremesaj.html` | https://mfinante.gov.ro/static/10/eFactura/staremesaj.html | (undated) |
-| `efactura-swagger/listamesaje.html` | https://mfinante.gov.ro/static/10/eFactura/listamesaje.html | (undated) |
+| `efactura-swagger/listamesaje.html` | https://mfinante.gov.ro/static/10/eFactura/listamesaje.html | actualizat 29.01.2024 |
 | `efactura-swagger/descarcare.html` | https://mfinante.gov.ro/static/10/eFactura/descarcare.html | (undated) |
 | `efactura-swagger/validare.html` | https://mfinante.gov.ro/static/10/eFactura/validare.html | (undated) |
 | `efactura-swagger/validaresemnatura.html` | https://mfinante.gov.ro/static/10/eFactura/validaresemnatura.html | 03.09.2024 |
@@ -134,16 +141,17 @@ structure is verbatim.
 ## Related ANAF artifacts, deliberately not vendored here
 
 - **CIUS-RO validation artifacts** — `ro16931-ubl-1.0.9.zip` (Schematron + XSD):
-  `anafpy` has **no local validator** (validation is ANAF's server side; see
-  `/DESIGN.md` §4), so these have no consumer in this repo. Listed for completeness
-  only. The e-Transport Schematron (`eTransport-validation_v.2.0.2_12082024.sch`)
+  the Schematron is vendored under `/schemas/efactura/schematron/` instead — codegen
+  input for the `BR-CL-*` code lists and the source of the hand-translated rules in
+  `src/anafpy/efactura/authoring/rules.py` — so it is not duplicated here. ANAF's
+  `validare` stays the authority (see `/DESIGN.md` §4). The e-Transport Schematron (`eTransport-validation_v.2.0.2_12082024.sch`)
   *is* vendored above — not as a validator input, but as the only official statement
   of the business rules (`BR-*`) ANAF enforces on e-Transport upload. It is stricter
   than the XSD in places (no leading zero in `codDeclarant`, min 2 chars for
   locality/street names, enumerated UN/ECE unit codes, country list without `AN`);
   its *unconditional* rules are mirrored as flat-model field constraints in
   `src/anafpy/etransport/models.py`, and its BR-CL-003 unit-code list is carried
-  verbatim in `src/anafpy/mcp/unitcodes.py` (see `/DESIGN.md` §5) — re-check both
+  verbatim in `src/anafpy/mcp/etransport/unitcodes.py` (see `/DESIGN.md` §5) — re-check both
   when ANAF revises the Schematron.
 - `schema_ETR_v2_20230126.xsd` — already vendored at the repo top level under
   `/schemas/etransport/` (codegen input), not duplicated here.

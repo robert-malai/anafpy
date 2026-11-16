@@ -26,8 +26,10 @@ upload (the upload client, or manually) → status/recipisa via StareD112.
   with `anafpy duk install <FORM>`, refresh everything with
   `anafpy duk update`). Programmatically that is
   `await DukInstaller().install()`. A hand-assembled `dist/` folder keeps
-  working — pass its path to `DukIntegrator` (or set `ANAFPY_DUK_DIR`) and it
-  wins over the managed install.
+  working — pass its path to `DukIntegrator`. The CLI and the MCP server also
+  read `ANAFPY_DUK_DIR`, which wins over the managed install there (and is the
+  folder `anafpy duk install`/`update` then converge); the library itself does
+  not read the variable.
 - **A JRE/JDK** (Java 8+) — on `PATH`, via `JAVA_HOME`, or set
   `ANAFPY_DUK_JAVA`.
 - **The `declaratii` extra** for signing: `pip install 'anafpy[declaratii]'`
@@ -42,13 +44,17 @@ CLI contract, the err-file format, and the `nr_evid` layout.
 from pathlib import Path
 from anafpy.declaratii import DukIntegrator, default_duk_dir
 
-duk = DukIntegrator(default_duk_dir())  # the managed dist; or pass a dist/ path
+duk_dir = default_duk_dir()          # the managed dist, or None if not installed
+if duk_dir is None:
+    raise RuntimeError("run `anafpy duk install` first")
+duk = DukIntegrator(duk_dir)         # or DukIntegrator(Path("/path/to/dist"))
 
 xml = Path("d300.xml").read_bytes()
 result = await duk.validate("D300", xml)
+for finding in result.findings:          # DUK's own messages, verbatim
+    print(finding.severity, finding.message)
 if not result.ok:
-    for finding in result.findings:      # DUK's own messages, verbatim
-        print(finding.severity, finding.message)
+    raise SystemExit("DUK rejected the declaration")
 
 # Render the official PDF (validates first; writes nothing on failure).
 rendered = await duk.render("D300", xml, Path("d300.pdf"))
@@ -56,7 +62,9 @@ assert rendered.ok
 ```
 
 `validate`/`render` judge success by the err-file content, never by the exit
-code (DUK exits `0` on a validation failure). `installed_forms()` and
+code (DUK exits `0` on a validation failure). A run with warnings only is still
+`ok=True` — which is why the sample prints the findings unconditionally;
+`result.warnings` and `result.errors` split them. `installed_forms()` and
 `fetch_feed_versions()` power a staleness check — the feed works before DUK is
 installed, and CLI-mode DUK does not auto-update, so an installed validator can
 lag ANAF's current one. `installed_forms()` reads the version the installer
@@ -218,8 +226,10 @@ anafpy declaratii recipisa 1100000001 -o recipisa.pdf    # public — no login
 
 The same operations are MCP tools (`declaratie_validate`, `declaratie_render`,
 `declaratie_sign`, `declaratie_nr_evid`, `declaratie_duk_install`,
-`declaratie_duk_status`, `declaratie_status`, `declaratie_recipisa`) and a
-`declaratie-prepare` skill —
+`declaratie_duk_status`, `declaratie_status`, `declaratie_recipisa`), the gated
+portal-filing tools (`declaratie_portal_login`, `declaratie_portal_status`,
+`declaratie_prepare` → `declaratie_submit`; removed by
+`ANAFPY_DECLARATII_UPLOAD=off`) and a `declaratie-prepare` skill —
 see the [MCP tools](../mcp/tools.md) and [setup](../mcp/setup.md) pages.
 Missing DUK/Java configuration is a tool error for validate/render, distinct
 from a real DUK verdict with `ok=false`. Status/config/network failures use the

@@ -38,6 +38,9 @@ Needs the login:
 - **File a declaration and get a UIT code** from transport data in any source — an
   email, a PDF invoice, a CMR, a spreadsheet — and **correct, delete, confirm, or
   change the vehicle** on an existing one.
+- **Get the UIT as a document**: a phone-shaped driver card (QR, plates, dates)
+  and an A4 detail document for the partner company, saved as PDFs where you
+  say. Informative — generated on your computer, not issued by ANAF.
 - **List recent notifications, check an upload's status, and look up active
   declarations / UIT codes.**
 - Filing is **two-step gated**: Claude shows you a preview, and nothing is submitted to

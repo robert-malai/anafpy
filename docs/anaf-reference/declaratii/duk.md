@@ -63,7 +63,8 @@ certSIGN Paperless vToken).
   **Feed shape** (live-fetched 2026-07-17, wrapper + integrator lists confirmed
   2026-07-26; no XML namespace): one `<integrator>` element for the core, then
   **one container element per form, named after the form** (D-series and
-  S-series — 237 containers, 173 distinct validator jars), inside a
+  S-series — 173 containers, one per validator jar, as re-counted on
+  2026-11-16; the 2026-07-17 fetch was recorded as 237 containers), inside a
   `<declaratii>` wrapper:
 
   ```xml
@@ -217,14 +218,15 @@ java -jar DUKIntegrator.jar [-c configPath] -s <tip> <xml> [errFile] [valOption]
   (proven for D300 and the SAF-T D406T validator), and no `validator.log` is
   written on clean or findings-level runs (it appears only in crash modes, in
   the cwd).
-- `-s` is **not** used on macOS (see §5); on Windows it is the candidate signer
-  with `algorithm=mscapi` (deferred).
+- `-s` is **not** used on any platform (see §5): macOS signs through
+  Security.framework, Windows through the certificate store via PowerShell.
+  DUK's `mscapi` path was rejected.
 
 anafpy always fills every positional explicitly (it passes temp paths, so no `$`
 is needed), prefixed with a per-run `-c`: `-c <run-config-dir> -v <form> <xml>
 <err> <option>` and `-c <run-config-dir> -p <form> <xml> <err> <option> 0
 <pdf>`, where the run config dir carries the dist's settings with `offLine=Y`
-forced (§1.1). Every run executes from its own temp directory (concurrent runs
+forced (§1, "Silent-exit-on-update escape hatch"). Every run executes from its own temp directory (concurrent runs
 share no writable state; a crash-mode `validator.log` lands there and is folded
 into the diagnostics) with `-Dfile.encoding=UTF-8`, so the err file's encoding
 is deterministic; the `-p` PDF is staged in the temp dir and moved to the
@@ -258,11 +260,11 @@ acceptance (2026-07-15):
 | `[7:11]`  | reporting period `MMYY` (zero-padded `luna` + last 2 of `an`) |
 | `[11:17]` | payment due date `25` + `MM` (`luna`+1, wrapping into the next year) + `YY` |
 | `[17:21]` | fixed `0000` |
-| `[21:23]` | check: the two-digit **sum of the first 21 digits** |
+| `[21:23]` | check: the last two digits of the **sum of the first 21 digits** |
 
 Example: 06/2026 monthly → `10` `301` `01` `0626` `250726` `0000` `42`. anafpy
 computes this as a pure function (`declaratii.payment_evidence_number`); the model
-never computes the check digit. Sums here are always < 100 (no modulo).
+never computes the check digit. anafpy applies `% 100`; for real D300 values the sum stays under 100.
 
 ## 4. Iterating a document
 

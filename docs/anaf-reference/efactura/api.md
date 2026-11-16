@@ -5,6 +5,7 @@ language: en
 sources:
   - url: https://mfinante.gov.ro/static/10/eFactura/prezentare%20api%20efactura.pdf
     title: "Prezentare servicii web — Sistemul național RO e-Factura (official PDF, 5 pp)"
+    source_revision: "actualizat 13.02.2025"
     retrieved: 2026-06-28
     local_copy: ../_sources/efactura_prezentare_api.pdf
   - url: https://mfinante.gov.ro/ro/web/efactura/informatii-tehnice
@@ -16,7 +17,7 @@ sources:
     retrieved: 2026-06-28
   - title: "Swagger presentations (per-endpoint OpenAPI specs, 7 pages)"
     url: https://mfinante.gov.ro/static/10/eFactura/upload.html
-    source_revision: "upload actualizat 04.02.2025; validaresemnatura 03.09.2024; others undated"
+    source_revision: "upload actualizat 04.02.2025; validaresemnatura 03.09.2024; listamesaje actualizat 29.01.2024; others undated"
     retrieved: 2026-07-02
     local_copy: ../_sources/efactura-swagger/
   - title: "Limite Apeluri API (per-method rate limits)"
@@ -33,8 +34,10 @@ status: draft
 
 Operations for the RO e-Factura system. Authentication is the shared
 [OAuth2 flow](../oauth/authentication.md) (Bearer token). Invoice **format** is UBL 2.1
-/ CIUS-RO; **validation** is ANAF's server-side `validare` endpoint (§5) — `anafpy`
-deliberately has no local rule engine (see `/DESIGN.md` §4). This doc is the
+/ CIUS-RO; **validation** authority is ANAF's server-side `validare` endpoint (§5) —
+`anafpy` also carries a hand-translated EN 16931 + CIUS-RO rule set
+(`efactura.authoring.validate()`), informational and never authoritative (see
+`/DESIGN.md` §4). This doc is the
 **transport/API surface**.
 
 > **Status:** draft, compiled from the official 5-page API PDF (current as linked from
@@ -60,7 +63,7 @@ Every endpoint has **two access modes**, differing only by host:
 |---|---|---|
 | **OAuth2** (Bearer token) | `https://api.anaf.ro/{prod\|test}` | **This is what `anafpy` uses.** |
 | Certificate-at-call-time | `https://webserviceapl.anaf.ro/{prod\|test}` | Not used (direct mTLS per call). |
-| Public (no auth) — validate/PDF only | `https://webservicesp.anaf.ro/prod` | Optional, for `validare`/`transformare`. |
+| Public (no auth) — validate/PDF only | `https://webservicesp.anaf.ro/prod` | **Always used** for `validare`/`transformare` (`PublicClient`); never for the other operations. |
 
 All paths below are shown for the **OAuth2** mode, e.g.
 `https://api.anaf.ro/prod/FCTEL/rest/...`. Swap `prod`↔`test` for the environments —
@@ -362,7 +365,9 @@ Two behaviours matter and are the basis of `anafpy`'s handling (all live-confirm
   renders it unchanged.
 
 `anafpy`: `raise_for_waf_rejection` (shared transport) turns the block page into
-`AnafWafRejectionError` on every client; `PublicClient` strips `xsi:schemaLocation`
+`AnafWafRejectionError` on every client that goes through the shared
+`_request_checked` (e-Factura, e-Transport, public, BNR — the SPV, StareD112 and
+portal-upload clients read their raw responses themselves); `PublicClient` strips `xsi:schemaLocation`
 from both document services and retries `render_invoice_pdf(validate=False)` once on
 the validating path. Nothing about this is in ANAF's documentation.
 
@@ -409,13 +414,14 @@ limit — the limits file is newer and is the authority.)
 
 | `anafpy` method | HTTP |
 |---|---|
-| `upload(xml, standard, cif, *, extern, autofactura, executare)` | `POST /FCTEL/rest/upload` |
+| `upload(xml, *, cif, standard=UBL, extern, autofactura, executare)` | `POST /FCTEL/rest/upload` |
+| `upload_invoice(document, *, cif, skip_validation=False, …)` | the same `POST`, from an authored `InvoiceDocument` |
 | `upload(..., b2c=True)` | `POST /FCTEL/rest/uploadb2c` |
 | `get_status(index)` | `GET /FCTEL/rest/stareMesaj` |
-| `list_messages(cif, *, days \| start+end, filter=None)` → `AsyncIterator[MessageListItem]` | `GET /FCTEL/rest/listaMesajePaginatieFactura` (paged internally) |
+| `list_messages(*, cif, days \| start+end, filter=None)` → `AsyncIterator[MessageListItem]` | `GET /FCTEL/rest/listaMesajePaginatieFactura` (paged internally) |
 | `download(id)` → `DownloadedMessage` | `GET /FCTEL/rest/descarcare` |
-| `PublicClient.validate_invoice(xml, standard)` | `POST webservicesp.anaf.ro/prod/FCTEL/rest/validare/{std}` (no auth, prod-only) |
-| `PublicClient.render_invoice_pdf(xml, standard, validate=True)` | `POST webservicesp.anaf.ro/prod/FCTEL/rest/transformare/{std}` (no auth, prod-only) |
+| `PublicClient.validate_invoice(xml, *, standard)` | `POST webservicesp.anaf.ro/prod/FCTEL/rest/validare/{std}` (no auth, prod-only) |
+| `PublicClient.render_invoice_pdf(xml, *, standard, validate=True)` | `POST webservicesp.anaf.ro/prod/FCTEL/rest/transformare/{std}[/DA]` (no auth, prod-only; `/DA` when `validate=False`) |
 | `validate_signature(file, signature)` | `POST /api/validate/signature` |
 
 **Implementation notes**
@@ -425,8 +431,8 @@ limit — the limits file is newer and is the authority.)
   and the swagger declares the request body `*/*`, so `text/plain` is a safe uniform
   choice, not a requirement.
 - **Listing**: `list_messages` is a single async iterator that pages
-  `listaMesajePaginatieFactura` under the hood (`days` is converted to a `[now-days, now]`
-  millisecond window; the non-paginated `listaMesajeFactura` (3a) is not used). It stops
+  `listaMesajePaginatieFactura` under the hood (`days` is converted to a millisecond window held a
+  margin inside `[now-days, now]` — 5 min at the start, 60 s at the end, see §3b; the non-paginated `listaMesajeFactura` (3a) is not used). It stops
   on the first empty page and honours the **`numar_total_pagini`** envelope field
   (confirmed by the lista swagger). ANAF returns the same `eroare` field for both "no
   messages in interval" and genuine errors — the former yields an **empty iterator**,

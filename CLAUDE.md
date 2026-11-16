@@ -67,7 +67,7 @@ is the user's responsibility (DESIGN.md §11).
 ## Commands
 
 ```bash
-uv sync --all-extras                 # set up env with all dev dependency groups
+uv sync --all-extras                 # env with every extra + the default dev group
 uv run pytest -q                     # tests (respx-mocked, credential-free)
 uv run pytest tests/test_auth.py     # one file
 uv run ruff check . && uv run ruff format --check .
@@ -189,7 +189,9 @@ src/anafpy/
                          # SessionStore protocol, FileSessionStore (0600)
     auth.py              # SpvSessionProvider + SpvAuth (follows policy-nonce
                          # hops; login wall -> AnafAuthError; NO auto re-login)
-    certs.py             # Keychain identity discovery
+    certs.py             # platform key-store identity discovery (macOS
+                         # Keychain; Windows Cert:\CurrentUser\My) + the
+                         # persisted selection
     client.py            # SpvClient: listaMesaje, descarcare, cerere,
                          # wait_for_report
     models.py            # SpvEnvelope, SpvMessage, ReportType nomenclature +
@@ -240,7 +242,8 @@ src/anafpy/
                          # (incl. UN/ECE Rec 20/21 unit codes) where the service
                          # needs them; resource templates anafmsg:// and spvmsg://
     __main__.py          # `python -m anafpy.mcp` (stdio)
-.claude-plugin/          # marketplace.json — publishes anafpy-workflows (the
+.claude-plugin/          # marketplace.json — publishes anafpy-workflows and
+                         # lists the external anaf-sync-setup plugin (the
                          # retired anafpy-setup plugin lives on only as a
                          # renames tombstone: the self-contained .mcpb made
                          # guided install choreography unnecessary)
@@ -265,11 +268,14 @@ design/                  # gallery.py renders EVERY state of the UIT card +
                          # detail document from the SHIPPED renderer (not a
                          # second layout); README.md is the decision record,
                          # output is git-ignored
+release-notes/           # one written <tag>.md per release — the GitHub release
+                         # body; release.yml refuses a tag without one
 imgs/                    # brand assets; README hotlinks the social preview
 docs/                    # MkDocs source tree (mkdocs.yml at repo root; RTD
                          # builds via uv); docs/assets/ = site image copies
-  mcp/                   # setup.md (end-user walkthrough, accountant
-                         # audience), tools.md, skills.md
+  mcp/                   # index.md (use-case tour), setup.md (end-user
+                         # walkthrough, accountant audience; setup.ro.md =
+                         # its Romanian translation), tools.md, skills.md
   library/               # library guides       api/  # mkdocstrings pages
   anaf-reference/        # compiled ANAF reference — ALSO served as MCP
                          # resources, don't move it; declaratii/forms/ = the
@@ -451,8 +457,8 @@ with per-tool descriptions is
   `anafmsg://{message_id}/pdf`). Parameter-level `Field(description=...)` stays
   a plain string.
 - **Tool display names**: an English MCP `title` per tool, `Service: operation`
-  (`e-Factura`, `e-Transport`, `ANAF Info`, `SPV`, `Declarations`; bare `ANAF`
-  for `auth_status`). Titles are UI-only — the model sees `name` +
+  (`e-Factura`, `e-Transport`, `ANAF Info`, `BNR`, `SPV`, `Declarations`; bare
+  `ANAF` for `auth_status` / `auth_login`). Titles are UI-only — the model sees `name` +
   `description` — keep them single-language.
 
 ## Error model (important)
@@ -461,11 +467,13 @@ Hybrid, per design — do not collapse it:
 
 - **Exceptions** (`AnafError` → `AnafAuthError`, `AnafTransportError`/`AnafResponseError`,
   `AnafRateLimitError`, `AnafWafRejectionError`, `AnafDownloadExpiredError`,
-  `AnafConfigError`) are for transport /
+  `AnafConfigError`, plus authoring's `InvoiceValidationError`) are for transport /
   auth / programming errors. HTTP 429 raises `AnafRateLimitError` exposing
   `retry_after`; the client does **not** auto-back-off. ANAF's WAF block page —
   `Request Rejected` HTML at **HTTP 200**, tripped by legitimate invoices
-  (reference §6.1) — is caught for every client in `_request_checked` and raises
+  (reference §6.1) — is caught in `_request_checked`, so for every client that
+  routes through it (e-Factura, e-Transport, public, BNR; SPV and the two
+  declaration clients read their raw responses themselves), and raises
   `AnafWafRejectionError`; it is infrastructure refusing the call, never a verdict
   on the document.
 - **Terminal vs retryable is typed, not prose.** A `descarcare` 200 whose `eroare`
@@ -570,8 +578,8 @@ silently returning empty results.
 - Don't commit, push, or create branches/PRs unless asked.
 - Remote: `github.com/robert-malai/anafpy`. CI (`.github/workflows/ci.yml`):
   pytest on 3.12 + 3.13 across ubuntu/macos/windows (the SPV and signing layers
-  have platform seams), plus ruff / mypy --strict / the strict docs build on
-  the ubuntu leg; every leg uploads coverage **and** JUnit results to Codecov
+  have platform seams), plus ruff / mypy --strict / the strict docs build /
+  the extension-manifest validation on the ubuntu leg; every leg uploads coverage **and** JUnit results to Codecov
   under per-leg flags (details in the workflow file; two quirks are deliberate:
   the test-results upload runs `if: ${{ !cancelled() }}`, and
   `junit_family = "legacy"` stays in `pyproject.toml` for Codecov's UI).

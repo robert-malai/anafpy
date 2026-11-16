@@ -92,15 +92,15 @@ inbound e-Transport; e-TVA; CII syntax; e-Transport API v1; a sync facade
   in CLAUDE.md. Both this and the pattern-matching rule are review
   conventions, not lint gates — ruff has no check that encodes either.
 - **Single distribution** `anafpy` with optional extras (not a multi-package
-  repo): `anafpy[mcp]` (the server) and `anafpy[declaratii]` (pyHanko signing,
-  §12). The dependency inventory and each dependency's rationale live as
+  repo): `anafpy[mcp]` (the server), `anafpy[declaratii]` (pyHanko signing,
+  §12) and `anafpy[cards]` (the fpdf2 + segno UIT documents, §13). The dependency inventory and each dependency's rationale live as
   comments in `pyproject.toml`; the notable reversals: `keyring` was promoted
   from an extra to core when it became the token-store default (§3), and a
   former `anafpy[validation]` (`saxonche`) extra was removed (§4 Validation).
 - **`src/` layout** (ships generated code as package source); the annotated
   tree lives in CLAUDE.md.
 
-The six network clients share only a small `_transport.HttpClientBase`
+The seven network clients share only a small `_transport.HttpClientBase`
 chassis: owned-versus-injected `httpx2.AsyncClient` lifecycle, trailing-slash
 base-URL convention, and network-error translation. An owned client is
 constructed with the resolved service URL; an injected client is **never
@@ -238,9 +238,9 @@ ANAF OAuth2, Authorization Code grant. Endpoints:
   regeneration script. The client speaks these UBL models internally and publicly.
 - **Serialization**: `xsdata-pydantic`'s `XmlParser`/`XmlSerializer` — zero
   serializer code (no marshmallow). Hand-written on top: the **authoring
-  package** (`efactura/authoring/`), whose strict `build`/`read` modules map
-  `InvoiceDocument` ⇄ generated UBL both ways — strict reading covers every
-  ANAF-validated document.
+  package** (`efactura/authoring/`), whose `build`/`read` modules map
+  `InvoiceDocument` ⇄ generated UBL both ways — authoring is strict, reading is
+  lenient about shape (see *Reading is not authoring* below).
 
 ### Authoring (`efactura.authoring`, added 2026-07-08)
 
@@ -673,7 +673,7 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   UBL XML verbatim (the **strongly recommended** path whenever upstream
   software produced the document, §1) and `efactura_prepare_invoice` composes
   it from the client-layer `InvoiceDocument` (§4 Authoring). Both return the
-  preview (the strict read-back of the exact bytes) and a confirmation token
+  preview (the best-effort read-back of the exact bytes) and a confirmation token
   bound to those bytes + the CIF; the composed path adds informational
   `local_findings` from the translated rule set (never withholding the token).
 - **e-Transport outbound = composed from structured fields** (§5). The prepare
@@ -811,8 +811,8 @@ layer, §4/§5), reads the existing token store, and refreshes headlessly.
   committed with the release: through v0.6.0 those notes were written by hand
   after the fact, and a generated commit list would have been a downgrade, so
   the automation moves the *creation* into CI and leaves the *writing* where it
-  was. GitHub's generated notes remain the fallback when a tag ships no such
-  file, so a release always exists for a published version. The v0.1.0–v0.6.0
+  was. GitHub's generated notes remained the fallback when a tag shipped no such
+  file *(superseded 2026-08-06, §15: a tag without notes no longer releases)*. The v0.1.0–v0.6.0
   notes were **backfilled into `release-notes/` from the published bodies**, so
   the directory — not the GitHub API — is now the corpus; only the compare link
   was dropped from each, being the one line the workflow derives. Notes are
@@ -833,8 +833,8 @@ Resolved items are folded into their sections: `/token` needs no cert (§3),
 callback UX (§3), keyring default (§3, which also settles token-at-rest for the
 common case — the opt-out `FileTokenStore` remains plain JSON under OS perms),
 public lookups (§6), skills-as-prompts (§8), live shape confirmation (§7), the
-CLI surface (grew organically into the `auth` / `spv` / `declaratii` / `duk`
-command groups), and Cowork local-stdio availability (settled: the connector is
+CLI surface (grew organically into the `auth` / `spv` / `declaratii` /
+`etransport` / `duk` command groups), and Cowork local-stdio availability (settled: the connector is
 registered in `claude_desktop_config.json`, which the Cowork tab reads — the
 `anafpy-setup` skill wrote it until the skill's 2026-08-06 retirement, §15;
 the extension install registers itself), and the in-session OAuth browser login
@@ -1380,7 +1380,7 @@ The decisions, each deliberate:
   audit exists because `mcpb pack` also drops `.env*` at any depth silently.
 - **Release guards moved ahead of the matrix**: a `v*` tag whose version
   disagrees with `pyproject.toml` or that ships no `release-notes/<tag>.md`
-  now fails before anything builds — reversing the §11-era "generated notes
+  now fails before anything builds — reversing the §9 "generated notes
   as fallback" stance. `workflow_dispatch` is a dry run (artifacts only).
 
 The bundles also **retired the `anafpy-setup` plugin** (same day): its whole

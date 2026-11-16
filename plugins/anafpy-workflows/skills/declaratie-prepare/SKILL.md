@@ -51,9 +51,12 @@ D100 → D710. Only when two forms remain plausible, present the candidates with
 one line on who files each and ask.
 
 Call `declaratie_duk_status`: it confirms DUKIntegrator is configured and
-whether the form's validator jar is current. Stale jar → tell the user and
-continue with a caveat (ANAF may reject what a stale validator passes). Not
-configured → stop and point at the setup guide.
+whether the form's validator jar is current. DUKIntegrator not
+installed, or the form's `state` is `not installed` → offer
+`declaratie_duk_install` (naming the form), then check again. `stale` → offer
+`declaratie_duk_install` for that form; if the user declines, continue with a
+caveat (ANAF may reject what a stale validator passes). Only a missing Java
+runtime needs the setup guide.
 
 ## Step 2 — read the form's completion guide
 

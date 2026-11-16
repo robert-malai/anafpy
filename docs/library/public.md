@@ -26,10 +26,17 @@ async with PublicClient() as public:
 - `get_financial_statement` — a company's filed financial statements (bilanț)
   for a given year.
 
-Lookups return a `RegistryLookup` with `found` / `not_found` partitions. One
-subtlety anafpy handles for you: **membership is read from the `registered`
-booleans, never from presence in `found`** — RegAgric/RegCult return unknown CUIs
-in `found` with empty fields, so presence alone means nothing.
+The four registry lookups return a `RegistryLookup` with `found` / `not_found`
+partitions (`get_financial_statement` returns a `FinancialStatement`). One
+subtlety: **read membership from the record's booleans, never from presence in
+`found`** — `registered` on a RegAgric/RegCult record, `vat_registered` /
+`efactura_registered` on a taxpayer record. RegAgric/RegCult return unknown
+CUIs in `found` with empty fields, so presence alone means nothing.
+
+One call takes at most **100** CUIs for the taxpayer registry and the e-Factura
+register, **500** for RegAgric/RegCult — ANAF's own batch limits. A longer list
+raises `AnafConfigError` before any request; chunk it yourself (the client
+paces the calls).
 
 ## Stateless e-Factura document services
 

@@ -59,7 +59,7 @@ With the MCP server connected, an accountant can ask Claude to:
   composed from plain fields.
 - **Declare goods transport in e-Transport** and get the UIT code — from an
   email, a PDF invoice, a CMR — then correct, delete, confirm, or change the
-  vehicle.
+  vehicle. The UIT comes back as a driver card and an A4 detail document (PDF).
 - **Read the SPV mailbox** and pull official reports (fiscal vector,
   outstanding obligations, filing history, income certificates...).
 - **Prepare, validate, sign, and file tax declarations** — validated by ANAF's
@@ -94,11 +94,12 @@ the install — no Python, no pip, no venv on the machine.
 pip install anafpy               # or: uv add anafpy
 pip install 'anafpy[mcp]'        # with the MCP server
 pip install 'anafpy[declaratii]' # with declaration signing (pyHanko)
+pip install 'anafpy[cards]'      # with the UIT card / detail PDFs
 ```
 
 The `anafpy` CLI and a standalone `anafpy-mcp` server (for MCP clients other
 than the extension) install as a **uv tool**, outside any project
-environment: `uv tool install "anafpy[mcp]"` — the setup walkthrough's
+environment: `uv tool install "anafpy[mcp,declaratii,cards]"` — the setup walkthrough's
 [terminal route](https://anafpy.readthedocs.io/en/latest/mcp/setup/#the-terminal-route).
 
 ## Use it as a Python library
@@ -174,7 +175,8 @@ Dev setup, the four gates, live smokes, and the generated-code rules are in
 
 anafpy runs entirely on your own computer and collects **nothing** — no
 telemetry, no analytics, no author-operated server. Your data moves only
-between your machine and ANAF; tokens and downloaded documents are stored
+between your machine and ANAF (BNR's public rate feed and your certificate
+issuer's public certificate download receive none of it); tokens and downloaded documents are stored
 locally, and your certificate's private key is never touched. When used
 through an AI assistant, tool results become part of that conversation under
 your AI provider's own policy. The full policy:

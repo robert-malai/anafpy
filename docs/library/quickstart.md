@@ -11,7 +11,8 @@ pip install 'anafpy[mcp]' # with the MCP server
 
 ## The shape of the library
 
-There are three async clients, one per ANAF service family:
+Most integrations start with three async clients (the
+[library overview](index.md) lists the rest — SPV, BNR rates, declarations):
 
 - [`EFacturaClient`](../api/efactura.md) — electronic invoicing: upload, status,
   the message list, and the three-tier download.
@@ -74,7 +75,7 @@ async with EFacturaClient(provider) as efactura:
 **Discrete methods make a single call — no transport retry.** One call, one
 result-or-raise, so the non-idempotent `upload` POST is never silently repeated.
 Bring your own retry policy if you want one. The only built-in polling is
-`upload_and_wait`, which retries on the *business* processing state ("still
+`upload_and_wait` (and SPV's `wait_for_report`), which retries on the *business* processing state ("still
 processing"), never on transport errors.
 
 **Errors are split between exceptions and values.** Transport, auth, and

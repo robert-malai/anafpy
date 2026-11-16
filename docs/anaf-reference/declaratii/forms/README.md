@@ -4,14 +4,14 @@ service: declaratii
 language: en
 sources:
   - url: http://static.anaf.ro/static/10/Anaf/update5/versiuni.xml
-    title: "DUKIntegrator update feed — the authoritative enumeration of electronically filable forms (173 on retrieval) with current validator/PDF jar versions"
-    retrieved: 2026-07-17
+    title: "DUKIntegrator update feed — the authoritative enumeration of electronically filable forms (173 on retrieval) with current validator/PDF jar versions — re-fetched 2026-11-16 (feed dated 13.11.2026): still 173 forms; seven version bumps folded into the tables (D100, D101, D112, D216, D710, A4200, C168)"
+    retrieved: 2026-11-16
   - url: https://static.anaf.ro/static/10/Anaf/Declaratii_R/descarcare_declaratii.htm
     title: "ANAF declaration-download catalog (per-form soft pages; titles for the niche families)"
     retrieved: 2026-07-17
 compiled: 2026-07-17
 compiled_by: claude-fable-5
-last_verified: 2026-07-17
+last_verified: 2026-11-16
 status: draft
 ---
 
@@ -56,9 +56,9 @@ The recurring compliance calendar of a VAT-registered SRL with employees.
 | D300 | VAT return (decont de TVA) — monthly/quarterly | `J12.0.1` / `P9.0.0` | [d300.md](d300.md) |
 | D390 | EU recapitulative statement (VIES) — intra-EU supplies/acquisitions, monthly | `J4.1.2` / `P2.0.0` | [d390.md](d390.md) |
 | D394 | Informative return on domestic supplies/purchases — follows the VAT period | `J8.0.2` / `P4.0.0` | [d394.md](d394.md) |
-| D100 | Payment obligations to the state budget (withheld taxes, micro-enterprise tax, ...) — monthly/quarterly | `J21.0.6` / `P6.0.0` | [d100.md](d100.md) + [nomenclatoare](d100-nomenclatoare.md) |
-| D112 | Payroll: wage income tax + social contributions, per-employee detail — monthly (quarterly for some employers) | `J26.0.3` / `P3.0.1` | [d112.md](d112.md) + [nomenclatoare](d112-nomenclatoare.md) |
-| D101 | Annual corporate profit tax return | `J11.0.3` / `P10.0.0` | [d101.md](d101.md) |
+| D100 | Payment obligations to the state budget (withheld taxes, micro-enterprise tax, ...) — monthly/quarterly | `J21.0.8` / `P6.0.0` | [d100.md](d100.md) + [nomenclatoare](d100-nomenclatoare.md) |
+| D112 | Payroll: wage income tax + social contributions, per-employee detail — monthly (quarterly for some employers) | `J27.0.8` / `P3.0.1` | [d112.md](d112.md) + [nomenclatoare](d112-nomenclatoare.md) |
+| D101 | Annual corporate profit tax return | `J11.0.4` / `P10.0.0` | [d101.md](d101.md) |
 
 ## So-and-so (hands-on: completion guide per form)
 
@@ -70,7 +70,7 @@ Filed on specific events, specific taxpayer categories, or annually.
 | D406 | SAF-T informative — monthly/quarterly by taxpayer category | `J2.2.18` / `P2.0.1` | [d406.md](d406.md) |
 | D205 | Annual informative on income tax withheld at source, per beneficiary | `J9.0.5` / `P5.0.1` | [d205.md](d205.md) |
 | D301 | Special VAT return — persons not VAT-registered who owe VAT (e.g. intra-EU acquisitions) | `J1.2.5` / `P1.1.0` | [d301.md](d301.md) |
-| D710 | Rectifying declaration — corrects D100 obligations (D112 uses its own rectificative) | `J20.0.6` / `P4.0.0` | [d710.md](d710.md) |
+| D710 | Rectifying declaration — corrects D100 obligations (D112 uses its own rectificative) | `J20.0.7` / `P4.0.0` | [d710.md](d710.md) |
 | D212 | Individuals' unified declaration — income tax + CAS/CASS | `J13.0.1` / `P10.0.0` | [d212.md](d212.md) |
 
 ## Rarely (inventory only)
@@ -83,12 +83,12 @@ electronică") — verify on the form's own page before relying on it.
 
 | Form | Purpose | Validator (J/P) | Notes |
 |---|---|---|---|
-| A4200 | XML validator app — Z reports and fiscal receipts | `J1.0.4` / `P1.0.4` |  |
+| A4200 | XML validator app — Z reports and fiscal receipts | `J1.0.5` / `P1.0.4` |  |
 | A4201 | XML validator app — currency-exchange activity | `J1.0.1` / `X1.0.0` |  |
 | A4202 | XML validator app — taxi activity | `J1.0.0` / `X1.0.0` |  |
 | A4203 | XML validator app — other activity types | `J1.0.7` / `X1.0.0` |  |
 | B230 | Bulk submission slip (borderou) of D230 forms by NGOs | `J3.0.0` / `P3.0.0` |  |
-| C168 | Registration of lease contracts | `J3.0.1` / `P3.0.0` |  |
+| C168 | Registration of lease contracts | `J3.0.1` / `P3.0.1` |  |
 | C310 | Request to approve transfers from the VAT account | `J1.0.0` / `P1.0.0` |  |
 | C801 | Cash-register (AMEF) unique-ID assignment request | `J1.0.5` / `P1.0.0` |  |
 | C802 | Cash-register online-mode transition profiles request | `J1.0.0` / `P1.0.0` |  |
@@ -245,7 +245,7 @@ their own page checked.
 | D180 | — | `J1.0.2` / `P1.0.0` |  |
 | D213 | — | `J1.0.0` / `P1.0.0` |  |
 | D214 | — | `J1.0.0` / `P1.0.0` |  |
-| D216 | — | `J1.0.3` / `P1.0.2` |  |
+| D216 | — | `J1.0.4` / `P1.0.2` |  |
 | D397 | — | `J1.0.2` / `P1.0.0` |  |
 | D398 | — | `J1.0.11` / `P1.0.2` |  |
 | D399 | — | `J1.0.5` / `P1.0.0` |  |

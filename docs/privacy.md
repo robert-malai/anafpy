@@ -11,7 +11,8 @@ this page explains what that means for your data.
 
 anafpy collects **nothing**. There is no telemetry, no analytics, no account,
 and no server operated by the author. Your data moves between **your computer
-and ANAF** (Romania's tax authority) — nowhere else — and everything anafpy
+and ANAF** (Romania's tax authority) — nowhere else; the two other hosts anafpy
+contacts receive none of it (see below) — and everything anafpy
 stores, it stores on your own machine.
 
 ## What anafpy collects
@@ -23,11 +24,18 @@ statistics, no crash reports, no document contents, no identifiers.
 
 anafpy talks only to services you ask it to talk to:
 
-- **ANAF's services** (`api.anaf.ro`, `webservicesp.anaf.ro`, `www.anaf.ro`,
-  and ANAF's SPV / declaration-portal and `static.anaf.ro` hosts) — the
+- **ANAF's services** (`api.anaf.ro`, `logincert.anaf.ro`,
+  `webservicesp.anaf.ro`, `www.anaf.ro`, and ANAF's SPV, declaration-portal
+  (`decl.anaf.mfinante.gov.ro`) and `static.anaf.ro` hosts) — the
   documents you file, the lookups you run, the mailbox you read, and the
   DUKIntegrator validator downloads. ANAF processes that data as the tax
   authority; its handling is governed by ANAF's own terms, not this policy.
+- **BNR** (`curs.bnr.ro`) — when you ask for an exchange rate. The request
+  names only the day or year; it carries no data of yours.
+- **Your certificate issuer's server** — when you sign a declaration, anafpy
+  downloads the issuer's public certificate from the address written inside
+  your own certificate (often plain `http://`) to embed it in the signature.
+  Nothing about the declaration is sent.
 - **PyPI** (`pypi.org`) — when you install or update anafpy, like any Python
   package.
 
@@ -58,6 +66,10 @@ for your practice. Two design choices limit it:
   (which keeps the secret in the credential store).
 - **The SPV session cookie** — a file readable only by your user account,
   valid for under an hour of idle time.
+- **Your SPV certificate choice** — the certificate's name and thumbprint
+  (never the key), in `~/.anafpy/spv-identity.json`.
+- **Issuer certificates** — the public CA certificates fetched for signing,
+  cached under `~/.anafpy/ca-cache/`.
 - **Documents you download or produce** — invoices, receipts, rendered PDFs —
   at the paths you chose.
 - **ANAF's DUKIntegrator validator** — under `~/.anafpy/duk-dist`, downloaded
@@ -71,7 +83,7 @@ token's own middleware.
 
 The author retains nothing, because nothing is collected. Everything listed
 above stays on your machine until you remove it: `anafpy auth logout` deletes
-the stored tokens, deleting the files above removes the rest, and uninstalling
+the stored tokens, `anafpy spv logout` the SPV session, deleting the files above removes the rest, and uninstalling
 anafpy leaves no other trace. What ANAF retains on its side (filed documents,
 SPV messages) follows ANAF's own rules.
 

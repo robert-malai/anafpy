@@ -2,7 +2,7 @@
 
 The OAuth2 layer: token models, the store protocol and its backends, the
 headless code-exchange/refresh functions, the provider that clients consume,
-the login callback listener, and the browser-login choreography shared by the
+the login callback listener, its ephemeral TLS certificate, and the browser-login choreography shared by the
 CLI and the MCP server's `auth_login` tool.
 
 ::: anafpy.auth.models
@@ -14,5 +14,7 @@ CLI and the MCP server's `auth_login` tool.
 ::: anafpy.auth.provider
 
 ::: anafpy.auth.callback
+
+::: anafpy.auth.tlscert
 
 ::: anafpy.auth.browser

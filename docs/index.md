@@ -19,7 +19,8 @@ complete CIUS-RO invoice or credit note from plain business fields with the
 for you. Documents you read back come wrapped in a friendly **flat read view**
 for easy display. **e-Transport** is fully translated too: you author
 declarations, UIT deletions, confirmations, and vehicle changes from structured
-fields, no XML handling needed.
+fields, no XML handling needed — and a filed UIT renders to a driver card and an
+A4 detail document (`anafpy[cards]`).
 
 Requires **Python 3.12+**. Built on **httpx2** and **Pydantic v2**. Licensed
 [Apache-2.0](https://github.com/robert-malai/anafpy/blob/main/LICENSE) —
@@ -49,7 +50,9 @@ own software.
 - Start with [the clients at a glance](library/index.md), then the
   [quickstart](library/quickstart.md) and the per-service guides:
   [authentication](library/auth.md), [e-Factura](library/efactura.md),
-  [e-Transport](library/etransport.md), [public services](library/public.md), and
+  [e-Transport](library/etransport.md), [public services](library/public.md),
+  [SPV](library/spv.md), [declarations](library/declaratii.md),
+  [BNR exchange rates](library/bnr.md), and
   the [error model](library/errors.md) (worth reading before shipping anything).
 - The [API reference](api/efactura.md) documents the public surface from the
   docstrings.
@@ -58,7 +61,7 @@ own software.
 
 - [ANAF API reference](anaf-reference/README.md) — a compiled, English-language
   local reference of ANAF's own APIs (OAuth, e-Factura, e-Transport, public
-  services), with per-section provenance back to ANAF's original documents.
+  services, SPV, declarations), with per-section provenance back to ANAF's original documents.
 - Contributing or curious about the internals? The design rationale lives in
   [DESIGN.md](https://github.com/robert-malai/anafpy/blob/main/DESIGN.md) in the
   repository — developer material, kept next to the code.

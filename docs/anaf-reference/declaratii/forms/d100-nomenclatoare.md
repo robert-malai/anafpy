@@ -3,18 +3,21 @@ title: D100 nomenclatoare — the budget-obligation code list (cod_oblig → bud
 service: declaratii
 language: en
 sources:
-  - url: http://static.anaf.ro/static/10/Anaf/Declaratii_R/AplicatiiDec/structura_D100-D710_0126_170626.pdf
-    title: "D100/D710 structure annex, 2026 revision — 'Nomenclatorul obligațiilor de plată la bugetul de stat' (code, legal basis, budget account, periodicity, term, scadență, completion model)"
-    retrieved: 2026-07-17
+  - url: http://static.anaf.ro/static/10/Anaf/Declaratii_R/AplicatiiDec/structura_D100-D710_0126_140926.pdf
+    title: "D100/D710 structure annex, 2026 revision (14.09.2026 edition; token-diffed against the 17.06.2026 edition — only cod 704 added) — 'Nomenclatorul obligațiilor de plată la bugetul de stat' (code, legal basis, budget account, periodicity, term, scadență, completion model)"
+    retrieved: 2026-11-16
   - url: http://static.anaf.ro/static/10/Anaf/Declaratii_R/AplicatiiDec/d100_24022022.xsd
     title: "D100 v2 XSD — Int_listaCodObligSType (the frozen 72-code enum, superseded by the jar)"
     retrieved: 2026-07-17
   - url: https://static.anaf.ro/static/10/Anaf/legislatie/OPANAF_57_2026.pdf
     title: "OPANAF 57/2026 — added positions 113 (cod 702) and 114 (cod 247)"
     retrieved: 2026-07-17
+  - url: https://static.anaf.ro/static/10/Anaf/legislatie/OPANAF_1075_2026.pdf
+    title: "OPANAF 1075/09.09.2026 — added position 117 (cod 704, contribuție pe venituri excepționale, Legea 162/2026), from the 08.2026 reporting month"
+    retrieved: 2026-11-16
 compiled: 2026-07-17
 compiled_by: claude-opus-4-8
-last_verified: 2026-07-17
+last_verified: 2026-11-16
 status: draft
 ---
 
@@ -23,10 +26,11 @@ status: draft
 The `<obligatie>/@cod_oblig` values, split out of [d100.md](d100.md) because the
 active list runs past 100 codes. Source of truth is the **"Nomenclatorul
 obligațiilor de plată la bugetul de stat"** in the D100/D710 structure annex
-(`structura_D100-D710_0126_170626.pdf`); ANAF's validator jar
-(`D100Validator.jar`, `J21.0.6`) is authoritative and **carries a newer list
+(`structura_D100-D710_0126_140926.pdf`); ANAF's validator jar
+(`D100Validator.jar`, `J21.0.8`) is authoritative and **carries a newer list
 than the frozen 2022 XSD** — the XSD's `Int_listaCodObligSType` enumerates only
-72 codes, the jar 100+ (verified: `cod 702`, added 01/2026, validates). Romanian
+72 codes, the jar 100+ (verified: `cod 702`, added 01/2026, and `cod 704`, added
+08/2026, both validate). Romanian
 labels are kept verbatim, with an English gloss.
 
 **How the columns work (verified against the jar):**
@@ -183,6 +187,7 @@ code but different scadențe are allowed.
 | `709` | Contribuție de solidaritate (OUG 186/2022) | Solidarity contribution (energy) | `5509` | A/L | 2506AU | 1# |
 | `494` | Contribuție trimestrială temporară de solidaritate | Temporary quarterly solidarity contribution | `26A120900` | T | 25LU2 | 7# |
 | `703` | Contribuție de solidaritate (OUG 24/2026) | Solidarity contribution (fuel, 04.2026–03.2027) | `20A122000` | L | 25LU | 1# |
+| `704` | Contribuție pe venituri excepționale (Legea 162/2026) | Windfall-revenue contribution (from the 08.2026 reporting month; OPANAF 1075/2026, poz. 117) | `20A122000` | L | 25LU | 1# |
 | `702` | Taxa logistică pentru gestionarea fluxurilor de bunuri extracomunitare | Extra-EU goods logistics tax (from 01/2026) | `20A333400` | L | 25LU | 1# |
 
 ## Health contributions (quarterly)

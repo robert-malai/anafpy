@@ -131,7 +131,8 @@ Ask Claude, in a new conversation:
 
 For e-Transport, filing is deliberately two-step: Claude prepares the declaration
 and shows you a preview, and **nothing is filed until you explicitly approve it**
-— then it submits and reports the UIT. Try it by asking Claude to declare a
+— then it submits, reports the UIT, and saves it as a driver card (a PDF made
+for a phone screen). Try it by asking Claude to declare a
 transport from an invoice or CMR you have at hand.
 
 ## Step 6 (optional) — Unlock the SPV mailbox tools
@@ -146,18 +147,12 @@ you used in step 4's browser login), so this is a separate, equally one-time-ish
 step — the difference is that SPV sessions are short-lived (under an hour of
 idle time), so you re-run the login when you next need SPV, not yearly.
 
-The first-time certificate selection uses the `anafpy` terminal command —
-install it first ([the terminal route](#the-terminal-route) explains how).
+Ask Claude: *"List my SPV certificates"*, then *"Use the one named …"*, then
+*"Log me in to SPV"* — Claude asks for your confirmation, and your token's
+PIN/2FA prompt fires.
 
-On **Windows**, run `curl --version` first — this is the one place the
-computer's own curl is still used (the extension carries its own; the terminal
-command does not). The built-in curl versions **8.13–8.15** break ANAF's
-certificate login, and Windows-on-ARM computers need Git for Windows' curl
-regardless of version — apply the `ANAFPY_CURL` fix from the
-[troubleshooting table](#troubleshooting) *before* your first login attempt, so
-it doesn't fail after you've already entered the PIN.
-
-In a terminal:
+The same three steps exist as terminal commands
+([the terminal route](#the-terminal-route) installs them):
 
 ```bash
 anafpy spv certs                  # lists your certificates
@@ -169,6 +164,14 @@ USB-token and cloud certificates (e.g. certSIGN vToken) appear in `certs` via
 their own middleware — it must be installed and running, exactly as for SPV in
 the browser. The login can occasionally fail on ANAF's side; just run it again
 (your PIN/2FA prompt fires on every attempt — that is normal).
+
+On **Windows**, the terminal commands use the computer's own curl (the
+extension carries its own), so run `curl --version` before them. The built-in
+curl versions **8.13–8.15** break ANAF's certificate login, and Windows-on-ARM
+computers need Git for Windows' curl regardless of version — apply the
+`ANAFPY_CURL` fix from the [troubleshooting table](#troubleshooting) *before*
+your first login attempt, so it doesn't fail after you've already entered the
+PIN.
 
 Then ask Claude: *"What's my SPV status?"* — it should report your certificate
 and the list of companies (CUIs) it may query. When the session expires (they
@@ -212,7 +215,7 @@ install by itself. (Already have your own DUKIntegrator `dist/` folder? Point
 `ANAFPY_DUK_DIR` at it in the manual configuration's `env` block — an explicit
 directory always wins over the managed one.)
 
-Restart Claude and ask *"check the declaration setup"* — Claude runs
+Then ask *"check the declaration setup"* — Claude runs
 `declaratie_duk_status`, which confirms the install and warns if a validator is
 out of date (the command-line DUKIntegrator does not auto-update, unlike its
 desktop window — Claude fixes that with `declaratie_duk_install`, and the
@@ -232,7 +235,8 @@ Claude follows on its own when you ask in plain language:
 
 - **`etransport-declare`** — file an e-Transport declaration and get the UIT
   starting from any source (an email, a PDF invoice, a CMR), with the legal
-  guardrails built in. Works with the base setup (steps 1–4).
+  guardrails built in. A plain "I need a UIT" or "I have to declare a
+  transport" is enough. Works with the base setup (steps 1–4).
 - **`declaratie-prepare`** — build, validate, sign, and file a tax declaration
   from unstructured source data (needs step 7).
 - **`personal-income-summary`** — collect yearly income certificates from SPV
@@ -258,8 +262,7 @@ serves them as prompts in Claude Desktop's **+** menu.
 ## The terminal route
 
 Everything above needs no terminal. The command-line tool exists for the
-optional steps (SPV certificate selection in step 6), for options the
-extension's settings don't expose, and for developers who prefer wiring the
+signing out, for options the extension's settings don't expose, and for developers who prefer wiring the
 server by hand.
 
 ### Install the command-line tool
@@ -283,16 +286,18 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 Close and reopen the terminal, then:
 
 ```bash
-uv tool install "anafpy[mcp]"
+uv tool install "anafpy[mcp,declaratii,cards]"
 ```
 
 This downloads anafpy from [PyPI](https://pypi.org/project/anafpy/) and installs
 two commands: `anafpy` (the CLI) and `anafpy-mcp` (the same server the
-extension bundles, for the manual configuration below). They land in
+extension bundles, for the manual configuration below — the `declaratii` and
+`cards` extras add declaration signing and the UIT documents, which the
+extension already includes). They land in
 `~/.local/bin` on macOS and `%USERPROFILE%\.local\bin` on Windows. To update
 later: `uv tool upgrade anafpy`. (Developers who want to run from a source
-checkout instead: see the
-[README](https://github.com/robert-malai/anafpy#install).)
+checkout instead: see
+[CONTRIBUTING.md](https://github.com/robert-malai/anafpy/blob/main/CONTRIBUTING.md).)
 
 ### The login, from the terminal
 
@@ -409,7 +414,10 @@ claude mcp add anafpy \
   `anafpy auth logout` in a terminal (this needs
   [the command-line tool](#the-terminal-route)). It deletes the tokens
   from this computer — afterwards the tools answer "log in to ANAF"
-  until someone signs in again with the certificate. (ANAF offers no way for a
+  until someone signs in again with the certificate. `anafpy spv logout` does
+  the same for the SPV session; the certificate you picked stays remembered in
+  `~/.anafpy/spv-identity.json` (its name and thumbprint, never the key) —
+  delete that file too. (ANAF offers no way for a
   program to revoke the tokens on its side; they expire on their own. To cut
   everything off at ANAF's side too, use *Renunțare Oauth* in the ANAF portal,
   which deletes the whole app registration.)

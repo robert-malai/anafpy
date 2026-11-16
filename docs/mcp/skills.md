@@ -73,7 +73,7 @@ and casual phrasing, in Romanian or English (*"veniturile mele"*, *"cât am
 câștigat anul trecut"*, "income summary", "adeverință de venit"). The playbook
 walks Claude through:
 
-1. **Confirm the SPV session** — `auth_status` then `spv_status` (which returns
+1. **Confirm the SPV session** — `spv_status` (which returns
    the certificate holder's CNP and authorized CUIs). This skill is read-only:
    it never files anything.
 2. **Pick the CNP and years** — defaults to *personal* income (the CNP on the
@@ -104,8 +104,8 @@ playbook walks Claude through:
 
 1. **Identify the form** — named by you it is simply echoed; otherwise inferred
    from the data against the form inventory, asking only when two forms remain
-   plausible. `declaratie_duk_status` confirms DUKIntegrator is configured and
-   flags a stale validator.
+   plausible. `declaratie_duk_status` confirms DUKIntegrator is installed and
+   flags a stale or missing validator, which `declaratie_duk_install` fixes.
 2. **Read the form's completion guide** (served as an `anafref://` resource) —
    who files and when, the row-by-row → XSD attribute map, validated example
    instances, and the known gotchas.

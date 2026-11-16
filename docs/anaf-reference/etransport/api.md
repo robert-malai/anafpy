@@ -40,7 +40,8 @@ Authentication is the shared [OAuth2 flow](../oauth/authentication.md). The decl
 for codegen). There is **no standalone validator** — ANAF validates on upload; the
 business rules it enforces there are ANAF's official **Schematron** (vendored:
 [`_sources/eTransport-validation_v.2.0.2_12082024.sch`](../_sources/eTransport-validation_v.2.0.2_12082024.sch),
-v2.0.2 — reference only, `anafpy` runs no local validation). This doc is the
+v2.0.2 — reference only: `anafpy` runs no Schematron, though its flat authoring
+models mirror the unconditional rules as construction-time checks). This doc is the
 **transport/API surface**.
 
 > **Status:** draft, from the official **29.07.2024** API PDF — the current version,
@@ -238,9 +239,10 @@ this via `InfoList.error`, tolerating both `error` and `Errors[]`.
 
 | `anafpy` method | HTTP |
 |---|---|
-| `upload(xml, cif, *, version=2)` | `POST /ETRANSPORT/ws/v1/upload/ETRANSP/{cif}/{version}` |
+| `upload(xml, *, cif, version=2)` | `POST /ETRANSPORT/ws/v1/upload/ETRANSP/{cif}/{version}` |
+| `upload_document(document, *, cif, version=2)` | the same `POST`, from a flat authoring model |
 | `get_status(index)` | `GET /ETRANSPORT/ws/v1/stareMesaj/{index}` |
-| `list(days, cif)` | `GET /ETRANSPORT/ws/v1/lista/{days}/{cif}` |
-| `info(cui_op, *, cui_decl=None, uit=None, ref_decl=None)` | `GET /ETRANSPORT/ws/v1/info` |
+| `list_notifications(*, days, cif)` → `AsyncIterator[Notification]` | `GET /ETRANSPORT/ws/v1/lista/{days}/{cif}` |
+| `info(*, organizer_cui, declarant_cui=None, uit=None, declarant_ref=None)` | `GET /ETRANSPORT/ws/v1/info?cui_op=&cui_decl=&uit=&ref_decl=` |
 
 (No `download` — see Corrections #2.)

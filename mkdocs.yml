@@ -89,8 +89,9 @@ nav:
       - Public services: api/public.md
       - Exchange rates (BNR): api/bnr.md
       - SPV: api/spv.md
+      - Declarations: api/declaratii.md
       - Authentication: api/auth.md
-      - Exceptions: api/exceptions.md
+      - Exceptions and shared types: api/exceptions.md
   - ANAF API reference:
       - Overview: anaf-reference/README.md
       - OAuth: anaf-reference/oauth/authentication.md

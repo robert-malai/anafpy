@@ -87,7 +87,9 @@ generated schema document, `render_etransport` serializes it, and the plain
   [error model](errors.md)).
 - `info` — active declarations / UIT lookups, returned as an `InfoList`.
 - `read_flat_transport` — project any parsed e-Transport document back into the
-  same flat models you author with.
+  same flat models you author with. `parse_etransport_document(xml)` is the step
+  before it: wire XML → the parsed document, or `None` when the bytes are not a
+  declaration (it never raises).
 
 ## Field-level shape checks
 
@@ -106,6 +108,7 @@ carry it, and often to the partner company. ANAF issues no document for that, so
 
 ```python
 import datetime as dt
+from pathlib import Path
 from anafpy.etransport import UitCard, load_cardpdf
 
 card = UitCard.from_upload(
@@ -128,8 +131,10 @@ for the partner company. Both keep every value as selectable text — that is wh
 they are PDFs rather than images — and `summary_text()` is the paste-into-a-chat
 fallback for phones whose PDF viewer will not select text.
 
-`uit_expiry` is never computed: it is ANAF's `data_exp_uit`, reported by the
-`info` endpoint — pass it verbatim, in whatever shape ANAF returned it. It is
+`uit_expiry` is a `date` and is never computed: it is ANAF's `data_exp_uit`,
+which the `info` endpoint reports as a string (`InfoItem.uit_expiry`). Convert
+it with `anafpy.etransport.models.parse_uit_expiry`, which takes every shape
+ANAF emits (`YYYY-MM-DD`, a timestamp, `YYYYMMDD`). It is
 the date **from which** the UIT counts as expired, not the last valid day, so
 the documents print `data_exp_uit - 1` under "valabil până la" and mark a lapsed
 UIT `EXPIRAT` from `data_exp_uit` itself.

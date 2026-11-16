@@ -37,14 +37,16 @@ async with EFacturaClient(provider) as efactura:
         status = await efactura.get_status(result.upload_id)
 ```
 
-- `upload` files the XML and returns an `UploadResult` — a rejection (BR-RO
-  findings and all) comes back as `accepted is False` with the findings attached,
-  **not** as an exception (see the [error model](errors.md)).
+- `upload` files the XML and returns an `UploadResult` — an upload ANAF refuses
+  comes back as `accepted is False` with ANAF's messages in `errors`, **not** as
+  an exception (see the [error model](errors.md)).
 - `upload_invoice` takes an authored
   [`InvoiceDocument`](authoring.md) instead of XML: it renders the document
   (running the local rule set first — `skip_validation=True` opts out) and
   uploads with the right `standard` for an invoice or credit note.
-- `get_status` reports the processing state (`MessageStatus`).
+- `get_status` reports the processing state (`MessageStatus`). Once it is `ok`
+  or `nok`, `status.download_id` is the id to hand to `download` — the signed
+  invoice, or the errors file.
 - `upload_and_wait` combines upload and polling: it polls `get_status` until the
   message leaves the "processing" state, retrying only on that business state —
   never on transport errors.
@@ -53,7 +55,7 @@ async with EFacturaClient(provider) as efactura:
 
 ```python
 async for message in efactura.list_messages(cif="RO12345678", days=30):
-    print(message.message_id, message.message_type, message.details)
+    print(message.id, message.message_type, message.details)
 ```
 
 A single async iterator that pages ANAF's message list under the hood — window by

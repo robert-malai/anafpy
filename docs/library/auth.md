@@ -70,7 +70,8 @@ The login stores tokens through the `TokenStore` protocol (`load`/`save`/`clear`
   (macOS Keychain, Windows Credential Manager, Linux Secret Service/KWallet). On
   Windows the token set is transparently split across vault entries (Credential
   Manager caps one entry at 2560 bytes, smaller than an ANAF JWT).
-- **`FileTokenStore`** — a JSON file (default `~/.anafpy/tokens.json`), the
+- **`FileTokenStore`** — a JSON file at the path you pass (the CLI and the MCP
+  server default it to `~/.anafpy/tokens.json`; the class has no default), the
   opt-out for Docker/headless hosts without a credential store. Select it with
   `--store-backend file` on the CLI or `ANAFPY_TOKEN_STORE_BACKEND=file`
   (`--store` / `ANAFPY_TOKEN_STORE` moves the file).

@@ -1,7 +1,9 @@
 # Tools
 
 The `anafpy[mcp]` extra ships a **local stdio MCP server** that wraps the typed
-clients as tools for Claude (Desktop, Code, Cowork). It runs on your own machine:
+clients as tools for Claude (Desktop, Code, Cowork). Two tool groups need a
+further extra on a manual install — `declaratie_sign` needs `anafpy[declaratii]`,
+the UIT documents need `anafpy[cards]`; the Desktop extension bundles both. It runs on your own machine:
 tool calls use your own tokens, and downloaded files land on your own filesystem.
 The [setup walkthrough](setup.md) gets you from zero to a working connection.
 
@@ -44,7 +46,7 @@ and flags the difference — so the rate's real date is what reaches you.
 | Tool | What it does |
 |---|---|
 | `auth_status` | Reports whether the stored ANAF login is valid, and when the tokens expire |
-| `auth_login` | Runs the one-time OAuth login: opens your browser on ANAF's certificate page, catches the redirect on a local listener, and stores the tokens — needs your explicit go-ahead (`confirm=true`), one attempt per call |
+| `auth_login` | Runs the one-time OAuth login: opens your browser on ANAF's certificate page, catches the redirect on a local listener, and stores the tokens — needs your explicit go-ahead (`confirm=true`), one attempt per call, waiting up to `timeout_s` (60–300 s) for you to finish in the browser |
 
 `auth_login` is needed at first setup and again roughly yearly, when the
 refresh token expires. Claude never sees your PIN or the certificate — that
@@ -60,7 +62,7 @@ Read tools, freely callable:
 
 | Tool | What it does |
 |---|---|
-| `efactura_list_messages` | List received/sent messages for a date window |
+| `efactura_list_messages` | List received/sent messages for a date window — `days` (1–60) or `start` + `end`, optionally narrowed by `filter` (`E` errors, `T` sent, `P` received, `R` buyer messages) |
 | `efactura_download` | Download a message as an easy-to-read flat view; optionally save the signed ZIP (`save_zip_as`) and/or ANAF's official PDF rendering (`save_pdf_as`) to paths you name |
 | `efactura_get_status` | An upload's processing state (`ok`/`nok`), with the download id when accepted |
 
@@ -107,7 +109,8 @@ your explicit approval:
 Every `prepare*` — e-Factura and e-Transport — returns a human-readable preview
 plus a **confirmation token** cryptographically bound to the exact document
 bytes and the CIF being filed for. The matching `*_submit` files only when given
-that token and `confirm=true`, and each token is **single-use** — so a
+that token and `confirm=true`, and each token is **single-use** and expires
+**15 minutes** after prepare (a longer review just means preparing again) — so a
 non-idempotent upload can never be repeated on one approval, and any mangling of
 the document between prepare and submit fails closed.
 
@@ -129,13 +132,13 @@ fresh login rather than failing obscurely.
 |---|---|
 | `spv_list_certificates` | Certificates usable for SPV in the OS key store (Keychain / CertStore), token and cloud-HSM ones included |
 | `spv_select_certificate` | Persist which certificate the SPV login uses |
-| `spv_login` | Establish a fresh SPV session — requires your explicit approval (`confirm=true`) since it fires your certificate PIN/2FA |
+| `spv_login` | Establish a fresh SPV session — requires your explicit approval (`confirm=true`) since it fires your certificate PIN/2FA; waits up to `timeout_s` (30–300 s) |
 | `spv_status` | Session smoke test; reports the certificate's CNP/serial and `authorized_cuis` — every CUI/CNP it has SPV rights for |
 | `spv_lista_mesaje` | Inbox messages from the last N days, filterable by CUI and message kind, paged |
-| `spv_descarca` | Download one message's PDF to a path you name (never into context; existing files never replaced without `overwrite`) |
+| `spv_descarca` | Download one message's PDF to a path you name — `save_as`, or `dest_dir` for a generated file name (never into context; existing files never replaced without `overwrite`) |
 | `spv_nomenclature` | The SPV code lists: every report type `spv_cerere` accepts, each with a plain-language description of what it contains (so "my VAT return for March" finds `D300` without you knowing the code) and its per-type parameters, and ANAF's fixed reason (`motiv`) list for income certificates — Claude maps your stated purpose onto the exact wording ANAF prints on the certificate |
-| `spv_cerere` | Request a report — `VECTOR FISCAL`, `Obligatii de plata`, `Istoric declaratii`, the `D1xx`/`D3xx` duplicates, `Duplicat Recipisa`, `Adeverinte Venit`, … Parameters are validated per report type before anything is sent; identical same-day repeats are deduped |
-| `spv_asteapta_raport` | Wait for a requested report to land in the inbox and save its PDF; a `pending` answer just means "call again later" |
+| `spv_cerere` | Request a report — `VECTOR FISCAL`, `Obligatii de plata`, `Istoric declaratii`, the `D1xx`/`D3xx` duplicates, `Duplicat Recipisa`, `Adeverinte Venit`, … Parameters are validated per report type before anything is sent; identical same-day repeats are deduped (`force=true` overrides) |
+| `spv_asteapta_raport` | Wait for a requested report to land in the inbox and save its PDF (`save_as` or `dest_dir`; one call waits at most 15 minutes); a `pending` answer just means "call again later" |
 
 Like the e-Factura PDF, a message's document is also available as the MCP
 resource `spvmsg://<mesaj_id>/pdf` — a disk-free path for hosts with resource
@@ -171,10 +174,10 @@ configuration and no login at all.
 | `declaratie_sign` | Sign a rendered PDF with your qualified certificate — requires your explicit approval (`confirm=true`) since it fires your PIN/2FA prompt; failures come back as `signed=false` + guidance |
 | `declaratie_nr_evid` | Compose the 23-char `nr_evid` payment-evidence number for the self-assessed forms — `form=` `D300` (needs `tip_decont`), `D100`/`D710` (need `cod_oblig` + `scadenta`), `D101` (adds `in_liquidation`), `D301` (takes `mijl_trans`). It has a check digit — never compute it by hand |
 | `declaratie_duk_install` | Install or update DUKIntegrator from ANAF's official update feed — no manual download. Named forms install exactly those validators; a bare call converges the common preinstall set plus everything already installed. HTTPS-pinned to `static.anaf.ro`, manifest-audited, safe to repeat; the ~91 MB D406T archive downloads only when that form is named |
-| `declaratie_duk_status` | The DUKIntegrator install: directory, Java version, and installed-vs-current validator versions (CLI-mode DUK does not auto-update — `declaratie_duk_install` refreshes it); the current feed is still returned before DUK is installed. Each form's `state` keeps `current` / `stale` / `not installed` / `not in feed` (D406T) apart, and `stale` flags only the ones an update would fix |
+| `declaratie_duk_status` | The DUKIntegrator install: directory, Java version, and installed-vs-current validator versions (CLI-mode DUK does not auto-update — `declaratie_duk_install` refreshes it); the current feed is still returned before DUK is installed. Each form's `state` keeps `current` / `stale` / `not installed` / `not in feed` (D406T) / `unknown` (installed with no recorded version) apart, and `stale` flags only the ones an update would fix |
 | `declaratie_portal_status` | Probe whether the filing-portal session is still alive (they die after ~10 idle minutes) — a plain page fetch, never fires your PIN/2FA |
-| `declaratie_portal_login` | Log in to the filing portal with the selected certificate — requires your explicit approval (`confirm=true`) since it fires your PIN/2FA prompt; deliberately outside the submit flow, so one login serves the whole filing |
-| `declaratie_prepare` | STEP 1 of filing: reads the signed PDF and returns a confirmation token bound to its exact bytes (plus a local heads-up if no embedded signature is detected). Nothing is filed |
+| `declaratie_portal_login` | Log in to the filing portal with the selected certificate — requires your explicit approval (`confirm=true`) since it fires your PIN/2FA prompt; deliberately outside the submit flow, so one login serves the whole filing; waits up to `timeout_s` (30–300 s) |
+| `declaratie_prepare` | STEP 1 of filing: reads the signed PDF and returns a confirmation token bound to its exact bytes and upload filename (plus a local heads-up if no embedded signature is detected). Nothing is filed |
 | `declaratie_submit` | STEP 2: uploads the signed PDF to the production portal — requires the prepare token and your explicit `confirm=true`, probes the session *before* spending the single-use token, and returns the portal's verdict with the upload index (feed it to `declaratie_status` / `declaratie_recipisa`) |
 | `declaratie_status` | Check a filed declaration's processing state by upload index + CUI — returns the client-layer `DeclarationStatusList` directly, containing all the CUI's filings from the last 3 months (max 200). Config/network/input failures return the same typed shape with `found=false` and `message` |
 | `declaratie_recipisa` | Save the digitally signed recipisa (filing receipt) PDF to a path you name — available only ~60 days from filing, so archive it |
@@ -193,7 +196,7 @@ Configuration is environment-only, set in the MCP client's server entry:
 
 | Variable | Meaning |
 |---|---|
-| `ANAFPY_CLIENT_ID` / `ANAFPY_CLIENT_SECRET` | Your ANAF OAuth application. Optional — without them the server still starts and serves the public `anaf_*` lookups and `efactura_validate`; the authenticated tools explain how to enable themselves |
+| `ANAFPY_CLIENT_ID` / `ANAFPY_CLIENT_SECRET` | Your ANAF OAuth application. Optional — without them the server still starts and serves everything that does not ride OAuth (the public `anaf_*` lookups, `efactura_validate`, `bnr_fx_rate`, the SPV and declaration tools); the OAuth tools explain how to enable themselves |
 | `ANAFPY_CIF` | Default fiscal code (digits only) used when the conversation doesn't say otherwise |
 | `ANAFPY_ENV` | `prod` (default) or `test` — ANAF's TEST environment for practicing |
 | `ANAFPY_TOKEN_STORE_BACKEND` | `keyring` (default, OS credential store) or `file` for headless/Docker hosts |

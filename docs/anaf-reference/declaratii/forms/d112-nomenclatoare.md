@@ -6,12 +6,15 @@ sources:
   - url: https://static.anaf.ro/static/10/Anaf/Declaratii_R/AplicatiiDec/structura_D112_0126_030226.pdf
     title: "D112 structure annex, 2026 revision (v7) — the appendix nomenclatoare (Nomenclator 1–12, case de sănătate, coduri fiscale AJOFM/CASAN)"
     retrieved: 2026-07-17
+  - url: https://static.anaf.ro/static/10/Anaf/Declaratii_R/AplicatiiDec/structura_D112_0726_070926.pdf
+    title: "D112 structure annex, 07/2026 revision (edition 07.09.2026) — appendix token-diffed against the 03.02.2026 edition: the nomenclatoare are unchanged (layout reflow only; pages now 83–92)"
+    retrieved: 2026-11-16
   - url: https://static.anaf.ro/static/10/Anaf/Declaratii_R/AplicatiiDec/d112_10102024.xsd
     title: "D112 v6 XSD — Str_casaAngListSType (health-house sigla), Str_contractTypeSType, Str_codBoalaSType enumerations"
     retrieved: 2026-07-17
 compiled: 2026-07-17
 compiled_by: claude-opus-4-8
-last_verified: 2026-07-17
+last_verified: 2026-11-16
 status: draft
 ---
 

@@ -5,8 +5,9 @@ installed from the `anafpy` marketplace (`/plugin marketplace add robert-malai/a
 and surface in Cowork as Agent Skills.
 
 - `skills/etransport-declare/` — file an RO e-Transport declaration and obtain a UIT.
-- `skills/declaratie-prepare/` — author, validate (DUKIntegrator), render, and sign a
-  tax declaration; manual filing, then status/recipisa.
+- `skills/declaratie-prepare/` — author, validate (DUKIntegrator), render, sign, and
+  file a tax declaration (manual filing when the portal tools are switched
+  off), then status/recipisa.
 - `skills/personal-income-summary/` — summarize a person's realized income from the
   SPV mailbox (income certificates + Declarația Unică).
 

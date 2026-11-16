@@ -71,8 +71,9 @@ does not ask to be declared:
   vegetal agricultural products moved after harvest.
 
 **Who must declare** is fixed by law per operation — check that the filing CIF
-(from `auth_status`) is the obligated party, and flag a mismatch instead of
-filing past it: the RO supplier (TTN, LIC, call-off stock out), the RO
+(the `cif` you pass, or the configured default — every prepare result echoes it
+back as `cif`) is the obligated party, and flag a mismatch instead of filing
+past it: the RO supplier (TTN, LIC, call-off stock out), the RO
 beneficiary/client (AIC, call-off stock in), the consignee/shipper named in the
 customs declaration (IMP/EXP), the RO service provider or beneficiary of the
 processing (lohn), the depozitar (DIN/DIE).
@@ -95,8 +96,11 @@ Timing the user must be able to meet:
 
 ## Step 1 — check the connection
 
-Call `auth_status` first. If there is no token, stop and tell the user to run
-`anafpy auth login` in a terminal (the server cannot do it).
+Call `auth_status` first. If it reports `needs_login`, offer to log in: with the
+user's explicit approval call `auth_login` with `confirm=true` (it opens their
+browser on ANAF's certificate login page — never call it uninvited), or have
+them run `anafpy auth login` in a terminal. If `credentials_configured` is
+`false`, stop — the OAuth client id and secret have to be configured first.
 
 ## Step 2 — extract and map the data
 
@@ -111,7 +115,7 @@ CMR, a delivery note, a spreadsheet. Read it and fill the declaration:
 | `vehicle` | yes | `plate`, `carrier_name`/`carrier_country`/`carrier_code`, `transport_date`; `trailer1`/`trailer2` if any. Plates are normalized automatically (spaces/dashes stripped). |
 | `start_location` / `end_location` | yes | Exactly **one** of `address` (county + locality + street), `border_point`, or `customs_office` per end. Which combination each operation type expects is in the rules table below — ANAF rejects mismatches on upload. |
 | `goods[]` | ≥ 1 line | per line: `name`, `operation_scope` (usually `COMERCIALIZARE`; `ACELASI_CU_OPERATIUNEA` when the scope is the operation itself), `quantity` + `unit_code` (UN/ECE: `KGM` kg, `LTR` litre, `H87` piece), `gross_weight` (kg), optional `net_weight`, `tariff_code` (NC, 4/6/8 digits — copy from the invoice, never guess), `value_ron` (excl. VAT). |
-| `documents[]` | ≥ 1 | the accompanying document: `doc_type` `CMR` / `FACTURA` / `AVIZ_DE_INSOTIRE_A_MARFII` / `ALTELE`, with `date` and `number`. Cite the actual source document you extracted from. |
+| `documents[]` | ≥ 1 | the accompanying document: `doc_type` `CMR` / `FACTURA` / `AVIZ_DE_INSOTIRE_A_MARFII` / `ALTELE`, with `date` and `number` (always give the number when the document has one). `ALTELE` **requires** a `note` naming the document. Cite the actual source document you extracted from. |
 | `declarant_ref` | no | the user's own reference (order number, file id) — useful for finding the filing later. |
 | `correction_of_uit` | no | set **only** when correcting an already-issued UIT (see "After filing"). |
 
@@ -279,7 +283,8 @@ On approval, call `etransport_submit` with `document={"xml": <the xml from
 prepare>}`, the `confirmation_token`, the same `cif`, and `confirm=True`. A
 successful upload returns the **UIT** immediately, but it only becomes valid
 once processing finishes: poll `etransport_get_status` with the returned
-`upload_id` until the state leaves `in prelucrare` (usually seconds).
+`upload_id` until `is_terminal` is true — the state has left `in prelucrare`
+(usually seconds).
 
 On **`ok`**, do all four, in order:
 
@@ -309,7 +314,7 @@ On **`ok`**, do all four, in order:
    `save_as` a full path named after the code (e.g. `UIT-<code>.pdf`) in the
    folder the source documents came from or wherever the user keeps artifacts —
    ask when there is no natural place. Pass `uit_expiry` **only** when the
-   lookup returned one, exactly as it came back — never compute or adjust a date
+   lookup item carried one (its `uit_expiry` field), exactly as it came back — never compute or adjust a date
    yourself. With none, the card prints the art. 11 window instead, in amber and
    captioned as an estimate; the result's `validity.source` says which you got
    (`anaf` or `statutory`). Relay it the way the document does — quote an
@@ -326,7 +331,8 @@ Both documents are informative — generated locally, not issued by ANAF, and
 they say so on their face. An existing file is never replaced unless the user
 asks for `overwrite=true`.
 
-On **`nok`**: report ANAF's error messages verbatim, propose the fix, and go
+On **`nok`** (or `XML cu erori nepreluat de sistem`): report ANAF's error
+messages verbatim, propose the fix, and go
 back to step 3 — the token was consumed, so a corrected filing needs a fresh
 prepare **and a fresh approval**.
 
@@ -388,7 +394,7 @@ then submit with the token. Present them with step 4's frame, adapted:
   operation being filed and always stay. The rows below them are context from
   a fresh `etransport_lookup` on the UIT (`organizer_cui` = the carrier's code
   — step 5's scoping caveat applies) — never from conversation memory. Drop
-  the *UIT expires from* row when the lookup carries no `data_exp_uit`; if the
+  the *UIT expires from* row when the lookup item's `uit_expiry` is null; if the
   lookup returns nothing at all, keep only the two identity rows and say so —
   do not reconstruct the rest.
 - **Deletion** body is `#### Effect`: a bold one-liner — deleting makes the UIT
@@ -403,11 +409,11 @@ then submit with the token. Present them with step 4's frame, adapted:
 
   | Vehicle | Current | New |
   |---|---|---|
-  | Plate | <nr_veh> | **<plate>** |
-  | Trailer 1 | <nr_rem1> | **<trailer1>** |
-  | Trailer 2 | <nr_rem2> | **<trailer2>** |
+  | Plate | <lookup `plate`> | **<plate>** |
+  | Trailer 1 | <lookup `trailer1`> | **<trailer1>** |
+  | Trailer 2 | <lookup `trailer2`> | **<trailer2>** |
 
-  Changed at: <datetime | now>
+  Changed at: <`changed_at` from the prepare preview — always the prepare-time moment>
   ```
 
   Question: `Change the vehicle on UIT <uit> with ANAF?`

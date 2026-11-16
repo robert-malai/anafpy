@@ -37,8 +37,7 @@ authorization step is gated by a **qualified digital certificate**.
 
 > **Status:** draft, compiled from the sources above. The endpoint behaviour facts
 > in §3, §5, §6 were additionally verified by a live probe on 2026-06-28. Anything
-> not so marked is from the 2022-dated official PDF and should be re-confirmed during
-> implementation.
+> not so marked is from the 2022-dated official PDF.
 
 ## 1. Prerequisites
 
@@ -60,7 +59,7 @@ In the *Profil Oauth* form you provide:
 | Field | Notes |
 |---|---|
 | **Denumire aplicație** | Application name. |
-| **Callback URL 1** | The redirect URI. **Must match exactly** at token time. Multiple callback URLs can be added (`+`). May be a localhost URL — it does **not** need a public server (only your browser hits it) — **but the scheme must be `https://`**: registering an `http://` callback fails with an HTTP 400 from the portal's F5 APM backend (`/mgmt/tm/apm/oauth/oauth-client-app`). Register `https://localhost:PORT/callback`; capture the code via anafpy's `auth login --paste` (no listener) or its TLS listener (`--tls-cert`). *(Both facts are this project's live verifications: `https://` registrable 2026-06-28; `http://` rejected 2026-07-02. The full authorize→exchange flow against an `https://localhost` callback was live-completed 2026-07-02 — observed token lifetimes match §5's 90d/365d. The PDF's example uses Postman's `oauth.pstmn.io` callback.)* |
+| **Callback URL 1** | The redirect URI. **Must match exactly** at token time. Multiple callback URLs can be added (`+`). May be a localhost URL — it does **not** need a public server (only your browser hits it) — **but the scheme must be `https://`**: registering an `http://` callback fails with an HTTP 400 from the portal's F5 APM backend (`/mgmt/tm/apm/oauth/oauth-client-app`). Register `https://localhost:PORT/callback`; capture the code with `anafpy auth login` — by default its listener serves TLS with a per-attempt self-signed certificate (one expected browser warning); `--tls-cert`/`--tls-key` supply your own, `--paste` runs no listener. *(Both facts are this project's live verifications: `https://` registrable 2026-06-28; `http://` rejected 2026-07-02. The full authorize→exchange flow against an `https://localhost` callback was live-completed 2026-07-02 — observed token lifetimes match §5's 90d/365d. The PDF's example uses Postman's `oauth.pstmn.io` callback.)* |
 | **Serviciu** | One or more of: **E-Factura**, **E-Transport**. |
 
 Pressing **Generare Client ID** issues a **Client ID** and **Client Secret**. The
@@ -125,7 +124,8 @@ https://logincert.anaf.ro/anaf-oauth2/v1/authorize
 
 > **Implementation note:** the cert handshake is a browser + USB/PKCS#11 operation that
 > a library cannot drive. `anafpy auth login` opens this URL and runs a localhost
-> callback listener to capture `code`.
+> callback listener to capture `code`. Unlike ANAF's reference flow it adds a random
+> `state` and rejects a redirect that does not echo it.
 >
 > Provenance: official PDF pp. 23–27.
 
@@ -232,22 +232,6 @@ a token is accepted.
 - If tokens are compromised, send them to ANAF to block their access.
 
 > Provenance: official PDF pp. 20–22, 29; live /revoke probe 2026-07-05.
-
-## 10. `anafpy` implementation checklist
-
-- [ ] `client_id`/`client_secret` via config (keychain-backed in Cowork); never logged.
-- [ ] Authorize URL builder with `response_type=code`, `client_id`, exact
-      `redirect_uri`, `token_content_type=jwt`.
-- [ ] Localhost callback listener (host-side `auth login`); exchange `code` **within
-      60 s**.
-- [ ] Token + refresh calls use **HTTP Basic** auth; `token_content_type=jwt` in the
-      token body.
-- [ ] Persist **both** tokens after refresh (refresh-token rotation).
-- [ ] Schedule refresh from the JWT `exp` (or refresh-on-401).
-- [ ] Surface 403 / 429 distinctly; do not auto-retry in the client.
-- [ ] **Verify end-to-end during implementation:** a real refresh round-trip (the live
-      probe only confirmed cert-free transport + OAuth error handling, not a full
-      refresh with valid credentials).
 
 > ⚠️ **Stale e-Transport facts in this 2022 PDF** (p. 30) — resolved in the
 > [e-Transport doc](../etransport/api.md), which is the current truth: the upload path

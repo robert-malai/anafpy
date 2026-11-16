@@ -137,7 +137,8 @@ plus — vezi [ruta prin terminal](#ruta-prin-terminal) mai jos.)
 
 Pentru e-Transport, depunerea este intenționat în doi pași: Claude pregătește
 declarația și îți arată o previzualizare, iar **nimic nu este depus până nu aprobi
-explicit** — abia atunci trimite și raportează UIT-ul. Încearcă cerându-i lui
+explicit** — abia atunci trimite, raportează UIT-ul și îl salvează ca un card pentru
+șofer (un PDF făcut pentru ecranul telefonului). Încearcă cerându-i lui
 Claude să declare un transport dintr-o factură sau un CMR pe care le ai la îndemână.
 
 ## Pasul 6 (opțional) — Deblochează uneltele pentru cutia poștală SPV
@@ -154,19 +155,12 @@ separat, la fel de „aproape o singură dată" — diferența este că sesiunil
 de scurtă durată (sub o oră de inactivitate), așa că refaci autentificarea când ai
 nevoie data viitoare de SPV, nu anual.
 
-Selecția inițială a certificatului folosește comanda de terminal `anafpy` —
-instaleaz-o mai întâi ([ruta prin terminal](#ruta-prin-terminal) explică cum).
+Cere-i lui Claude: *„Listează certificatele mele pentru SPV"*, apoi
+*„Folosește-l pe cel numit …"*, apoi *„Autentifică-mă în SPV"* — Claude îți
+cere confirmarea, apoi se declanșează solicitarea de PIN/2FA a token-ului.
 
-Pe **Windows**, rulează întâi `curl --version` — acesta este singurul loc în
-care se mai folosește curl-ul calculatorului (extensia vine cu al ei; comanda
-din terminal, nu). Versiunile **8.13–8.15** ale curl-ului încorporat strică
-autentificarea cu certificat la ANAF, iar calculatoarele Windows-on-ARM au
-nevoie oricum de curl-ul din Git for Windows, indiferent de versiune — aplică
-rezolvarea cu `ANAFPY_CURL` din [tabelul de depanare](#depanare) *înainte* de
-prima încercare de autentificare, ca să nu eșueze după ce ai introdus deja
-PIN-ul.
-
-Într-un terminal:
+Aceiași trei pași există și ca comenzi de terminal
+([ruta prin terminal](#ruta-prin-terminal) le instalează):
 
 ```bash
 anafpy spv certs                  # listează certificatele tale
@@ -179,6 +173,14 @@ Certificatele de tip token USB și cele din cloud (de ex. certSIGN vToken) apar 
 pentru SPV în browser. Autentificarea poate eșua ocazional din partea ANAF; rulează
 pur și simplu din nou (solicitarea ta de PIN/2FA se declanșează la fiecare încercare
 — este normal).
+
+Pe **Windows**, comenzile din terminal folosesc curl-ul calculatorului
+(extensia vine cu al ei), așa că rulează `curl --version` înaintea lor.
+Versiunile **8.13–8.15** ale curl-ului încorporat strică autentificarea cu
+certificat la ANAF, iar calculatoarele Windows-on-ARM au nevoie oricum de
+curl-ul din Git for Windows, indiferent de versiune — aplică rezolvarea cu
+`ANAFPY_CURL` din [tabelul de depanare](#depanare) *înainte* de prima încercare
+de autentificare, ca să nu eșueze după ce ai introdus deja PIN-ul.
 
 Apoi întreabă-l pe Claude: *„Care este statusul meu SPV?"* — ar trebui să raporteze
 certificatul tău și lista de firme (CUI-uri) pe care le poate interoga. Când sesiunea
@@ -226,7 +228,7 @@ DUKIntegrator? Direcționează `ANAFPY_DUK_DIR` către el în blocul `env` al
 configurării manuale — un folder explicit are întotdeauna prioritate față de
 cel gestionat.)
 
-Repornește Claude și cere-i *„verifică instalarea pentru declarații"* — Claude
+Apoi cere-i *„verifică instalarea pentru declarații"* — Claude
 rulează `declaratie_duk_status`, care confirmă instalarea și te avertizează dacă
 un validator este învechit (DUKIntegrator în linie de comandă nu se actualizează
 singur, spre deosebire de fereastra sa desktop — Claude rezolvă asta cu
@@ -274,8 +276,7 @@ servește ca prompt-uri în meniul **+** din Claude Desktop.
 ## Ruta prin terminal
 
 Nimic de mai sus nu are nevoie de un terminal. Unealta în linie de comandă
-există pentru pașii opționali (selecția certificatului SPV de la pasul 6),
-pentru opțiunile pe care setările extensiei nu le expun și pentru dezvoltatorii
+există pentru deautentificare, pentru opțiunile pe care setările extensiei nu le expun și pentru dezvoltatorii
 care preferă să lege serverul manual.
 
 ### Instalează unealta în linie de comandă
@@ -299,16 +300,18 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 Închide și redeschide terminalul, apoi:
 
 ```bash
-uv tool install "anafpy[mcp]"
+uv tool install "anafpy[mcp,declaratii,cards]"
 ```
 
 Comanda descarcă anafpy de pe [PyPI](https://pypi.org/project/anafpy/) și
 instalează două comenzi: `anafpy` (CLI-ul) și `anafpy-mcp` (același server pe
-care îl împachetează extensia, pentru configurarea manuală de mai jos). Ele
+care îl împachetează extensia, pentru configurarea manuală de mai jos —
+extra-urile `declaratii` și `cards` adaugă semnarea declarațiilor și
+documentele UIT, pe care extensia le include deja). Ele
 ajung în `~/.local/bin` pe macOS și în `%USERPROFILE%\.local\bin` pe Windows.
 Ca să actualizezi mai târziu: `uv tool upgrade anafpy`. (Dezvoltatorii care
 preferă să ruleze dintr-un checkout al sursei: vezi
-[README-ul](https://github.com/robert-malai/anafpy#install).)
+[CONTRIBUTING.md](https://github.com/robert-malai/anafpy/blob/main/CONTRIBUTING.md).)
 
 ### Autentificarea, din terminal
 
@@ -429,7 +432,10 @@ claude mcp add anafpy \
   `anafpy auth logout` într-un terminal (are nevoie de
   [unealta în linie de comandă](#ruta-prin-terminal)). Șterge token-urile de pe
   acest calculator — după aceea uneltele răspund „autentifică-te la ANAF" până
-  când cineva se autentifică din nou cu certificatul. (ANAF nu oferă nicio
+  când cineva se autentifică din nou cu certificatul. `anafpy spv logout` face
+  același lucru pentru sesiunea SPV; certificatul ales rămâne reținut în
+  `~/.anafpy/spv-identity.json` (numele și amprenta lui, niciodată cheia) —
+  șterge și acel fișier. (ANAF nu oferă nicio
   modalitate ca un program să anuleze token-urile din partea sa; ele expiră
   singure. Ca să întrerupi totul și din partea ANAF, folosește *Renunțare
   Oauth* în portalul ANAF, care șterge întreaga înregistrare a aplicației.)

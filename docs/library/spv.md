@@ -24,7 +24,7 @@ ANAF fronts SPV with an F5 APM **cookie session** (see the
    requests are plain HTTPS with the session cookies — no certificate, no
    prompts. Polling never wakes your token.
 
-The session is a bearer credential, persisted like the OAuth tokens: an
+The session is a bearer credential, persisted like the OAuth file token store: an
 owner-only (`0600`) JSON file, `~/.anafpy/spv-session.json` by default. The
 layering mirrors the OAuth clients exactly — `SpvClient` takes an
 `SpvSessionProvider` the way `EFacturaClient` takes a `TokenProvider`, and an

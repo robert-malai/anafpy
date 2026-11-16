@@ -33,7 +33,7 @@ company-income branch.
 For personal income, two SPV reports are the right default — request **both**
 for each year:
 
-1. **`Adeverințe Venit`** (income certificate) — the PRIMARY source. It
+1. **`Adeverinte Venit`** (income certificate) — the PRIMARY source. It
    aggregates every realized income ANAF has on record for the person that year:
    salaries (from employer D112 filings), independent activity / intellectual
    property (from the Declarația Unică), interest (from D205), etc., each with
@@ -50,7 +50,8 @@ legal entities, not personal income.
 ## Workflow
 
 ### 1. Confirm the SPV session
-Call `auth_status`, then `spv_status`. `spv_status` returns the certificate
+Call `spv_status` (SPV rides the certificate session — the OAuth `auth_status`
+says nothing about it). It returns the certificate
 holder's `cnp` and `authorized_cuis`. If there is no active session, tell the
 user to log in host-side (`anafpy spv login`) or, only if they explicitly ask,
 call `spv_login(confirm=true)` (this fires their PIN/2FA). Do not proceed

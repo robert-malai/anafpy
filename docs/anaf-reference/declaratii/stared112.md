@@ -123,8 +123,9 @@ GET https://www.anaf.ro/StareD112/ObtineRecipisa?numefisier=<index>.pdf
 `anafpy.declaratii.status.DeclarationStatusClient`:
 
 - `check_status(index, cui, filed_at_counter=False)` → `DeclarationStatusList`
-  (`found=False` for §2.2; §2.3 raises `AnafResponseError` since inputs are
-  validated client-side first).
+  (`found=False` for §2.2; a malformed CUI or internet index raises
+  `AnafConfigError` locally, and the §2.3 page — still reachable for a counter
+  registration number — raises `AnafResponseError`).
 - `download_receipt(index)` → `bytes | None` (`None` for the empty-body case).
 
 MCP: `declaratie_status`, `declaratie_recipisa`. CLI: `anafpy declaratii

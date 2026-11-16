@@ -97,7 +97,7 @@ archive (~350 KB) only for older dates. And what is fetched is cached for as
 long as BNR could still change it:
 
 - a **closed year's archive** is final — BNR will never add a day to a year
-  that has ended — so it is held for the life of the process;
+  that has ended — so it never expires (the cache keeps the 8 most recently used documents);
 - a document BNR is **still updating** (today's file, the ten-day window, the
   current year's archive) is re-read every 15 minutes, so a 13:00 publication
   is picked up promptly.
