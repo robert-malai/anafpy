@@ -67,7 +67,7 @@ jobs:
         python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.3.0
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.3.0
+      - uses: astral-sh/setup-uv@v10.4.0
       - name: Build sdist + wheel
         run: uv build
       - uses: actions/upload-artifact@v7
@@ -115,7 +115,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.3.0
+      - uses: astral-sh/setup-uv@v10.4.0
       - name: Point the cryptography sdist build at Homebrew's OpenSSL
         if: matrix.target == 'darwin-x64'
         run: echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
