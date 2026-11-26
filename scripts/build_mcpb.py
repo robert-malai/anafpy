@@ -75,9 +75,9 @@ MCPB_PACKER = "@anthropic-ai/mcpb@2.1.2"
 # for the newest release, then a clone of it for the commit (an annotated
 # tag's own object id is NOT the commit id).
 CURL_REPOSITORY = "https://github.com/curl/curl"
-CURL_VERSION = "8.21.0"
-CURL_TAG = "curl-8_21_0"
-CURL_COMMIT = "68720b4837284335b2d63cb358f8f6ce65f5bc55"
+CURL_VERSION = "8.23.0"
+CURL_TAG = "curl-8_23_0"
+CURL_COMMIT = "3163ec065643ba20709f190111f42c3e1fe95273"
 
 # Schannel and nothing else. The whole point of shipping curl is the platform
 # key store — a LibreSSL/OpenSSL curl (what curl.se's own Windows binaries

@@ -221,6 +221,9 @@ relative_files = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Explicit since pytest-asyncio 1.5 warns when unset; every async fixture here is
+# function-scoped, so this is the behaviour the suite already had.
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 # Only consulted when a run passes --junitxml (CI does). Codecov's Test Analytics
 # wants the `legacy` family: it puts the dotted module path in `classname`, which
